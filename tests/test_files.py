@@ -1,7 +1,7 @@
 import zipfile
 from io import BytesIO
 from ebooklib import epub
-from app.files import parse_file,export_txt,export_epub,decode_text
+from storage.files import parse_file,export_txt,export_epub,decode_text
 
 def test_gb18030():
     s='第一章 少年\n林羽来到山门前。'*30

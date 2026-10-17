@@ -1,5 +1,5 @@
 import pytest
-from app.glossary import parse_glossary,protect,translate_with_glossary
+from translation.glossary import parse_glossary,protect,translate_with_glossary
 
 def test_parse():assert list(parse_glossary('林 -> Lâm\n林羽 -> Lâm Vũ'))==['林羽','林']
 @pytest.mark.parametrize('bad',['no arrow','a ->',' -> b','a -> ⟦G1⟧'])

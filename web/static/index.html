@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Novel Translator · Dịch truyện Trung → Việt</title>
+<link rel="stylesheet" href="/static/fonts/inter.css">
+<link rel="stylesheet" href="/static/fonts/jetbrains-mono.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-icon" aria-hidden="true">文</span>
+    <div>
+      <div class="brand-title">
+        <strong>AI Novel Translator</strong>
+        <span class="brand-ver">v2.0</span>
+      </div>
+      <span class="brand-sub">HACHIMIMT LOCAL-FIRST · DỊCH TRUYỆN CHUYÊN SÂU</span>
+    </div>
+  </div>
+
+  <nav class="mobile-tabs" aria-label="Chuyển chế độ xem trên điện thoại">
+    <button class="m-tab active" id="tab-sidebar">Cấu hình &amp; Mục lục</button>
+    <button class="m-tab" id="tab-reader">Đọc truyện</button>
+  </nav>
+
+  <div class="header-right">
+    <span id="hw-pill" class="pill hw-pill" title="Cấu hình phần cứng tự động nhận diện">⚡ CPU...</span>
+    <span id="status" class="chip">● Sẵn sàng</span>
+    <a class="button export" id="export-txt" href="/api/export/txt" title="Tải về file TXT bản dịch">↓ <span>Xuất TXT</span></a>
+    <a class="button export" id="export-epub" href="/api/export/epub" title="Tải về file EPUB đầy đủ">↓ <span>Xuất EPUB</span></a>
+    <a class="button export" id="export-audio" href="/api/export/audio" title="Tải về file ZIP chứa toàn bộ audio MP3 đã tạo">🎧 <span>Xuất Audio</span></a>
+    <button type="button" class="button btn-settings" id="btn-open-settings" title="Cài đặt nâng cao (Giọng đọc, Cảm xúc, Google Drive, Gộp nhóm)">⚙ <span>Cài đặt</span></button>
+  </div>
+</header>
+
+<main class="workspace">
+  <!-- SIDEBAR: Cấu hình và Mục lục -->
+  <aside class="sidebar" id="sidebar" aria-label="Cấu hình và mục lục">
+    <!-- 01: Nguồn truyện -->
+    <section class="panel import-panel">
+      <div class="section-heading">
+        <h2><span class="step">01</span> Nguồn truyện</h2>
+      </div>
+      <label id="dropzone" class="dropzone" tabindex="0">
+        <input id="file" type="file" accept=".txt,.epub" hidden>
+        <span class="upload-icon" aria-hidden="true">↑</span>
+        <strong>Chọn tệp truyện (.txt, .epub)</strong>
+        <span>hoặc kéo thả vào đây</span>
+      </label>
+      <form id="path-form" class="path-row">
+        <input id="path" placeholder="Đường dẫn tệp trên máy (C:\...txt)" autocomplete="off">
+        <button type="submit" id="load-path">Nạp</button>
+      </form>
+      <div id="file-info" class="file-info" hidden>
+        <span aria-hidden="true">▤</span>
+        <div class="file-meta">
+          <strong id="filename"></strong>
+          <small id="encoding"></small>
+        </div>
+        <div class="file-actions">
+          <span class="count" id="chapter-count">0 chương</span>
+          <button type="button" id="btn-delete-book" class="btn-danger-sm" title="Xóa toàn bộ truyện">
+            🗑 Xóa truyện
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="book-title-panel" hidden>
+      <label class="field-label" for="book-output-title">Tên truyện / thư mục đầu ra</label>
+      <input id="book-output-title" type="text" maxlength="200" placeholder="Nhập tên truyện tiếng Việt">
+      <button type="button" id="btn-save-book-title" class="btn-ghost" style="margin-top:8px;">Lưu tên truyện</button>
+      <p class="range-hint">Text và audio lưu trong thư mục riêng theo tên này. Mặc định dùng tên file truyện.</p>
+    </section>
+
+    <!-- 02: Cấu hình dịch -->
+    <section class="panel config-panel">
+      <div class="section-heading">
+        <h2><span class="step">02</span> Cấu hình dịch</h2>
+      </div>
+
+      <div class="field-group">
+        <div class="label-with-badge">
+          <label for="engine" class="field-label">Mô hình</label>
+          <span id="model-badge" class="badge badge-success">✓ Sẵn sàng</span>
+        </div>
+        <select id="engine">
+          <optgroup label="Model CTranslate2 trên máy (Đã tải đủ)">
+            <option value="HachimiMT-60-QT" selected>HachimiMT-60-QT (Cổ trang / Tiên hiệp) ~58 MB</option>
+            <option value="HachimiMT-60">HachimiMT-60 (Hiện đại / Đô thị) ~57 MB</option>
+            <option value="HachimiMT-40-QT">HachimiMT-40-QT (Nhanh &amp; nhẹ) ~43 MB</option>
+            <option value="HachimiMT-30">HachimiMT-30 (Siêu nhẹ) ~35 MB</option>
+            <option value="MoxhiMT-60">MoxhiMT-60 (Cổ trang / Kiếm hiệp) ~58 MB</option>
+            <option value="MoxhiMT-30">MoxhiMT-30 (Gọn nhẹ) ~38 MB</option>
+            <option value="MoxhiMT-30-QT">MoxhiMT-30-QT (Cổ trang nhẹ) ~38 MB</option>
+            <option value="HirashibaMT-Medium">HirashibaMT-Medium (Chất lượng cao) ~62 MB</option>
+            <option value="HirashibaMT-Tiny">HirashibaMT-Tiny (Siêu tốc) ~17 MB</option>
+          </optgroup>
+          <optgroup label="Trực tuyến Hugging Face Space (Online)">
+            <option value="space">🌐 Trực tuyến: HachimiMT-60-QT (HF Space API)</option>
+            <option value="space:HachimiMT-60">🌐 Trực tuyến: HachimiMT-60 Đô thị (HF Space API)</option>
+            <option value="space:MoxhiMT-60">🌐 Trực tuyến: MoxhiMT-60 Kiếm hiệp (HF Space API)</option>
+          </optgroup>
+        </select>
+        <div class="engine-note" id="engine-note" style="display:none;">
+          <strong id="engine-note-title"></strong>
+          <p id="engine-note-desc"></p>
+        </div>
+      </div>
+
+      <!-- 3 Tùy chọn: Beam, Chia chunk, Chuẩn hóa chữ Hán -->
+      <div class="triplet-cards">
+        <!-- 1. Beam (1–4) -->
+        <div class="triplet-card">
+          <div class="triplet-header">
+            <h3>Beam (1–4)</h3>
+          </div>
+          <div class="beam-row">
+            <span class="beam-num">1</span>
+            <input type="range" id="beam-size" min="1" max="4" value="2" step="1">
+            <span class="beam-num">4</span>
+            <span id="beam-val" class="beam-pill">2</span>
+          </div>
+        </div>
+
+        <!-- 2. Chia chunk -->
+        <div class="triplet-card">
+          <div class="triplet-header">
+            <h3>Chia chunk</h3>
+          </div>
+          <div class="chunk-radios">
+            <label class="chunk-radio active" id="chunk-sentence-label">
+              <input type="radio" name="chunk_mode" value="sentence" checked hidden>
+              <span class="chunk-indicator"></span>
+              <strong>Theo câu</strong>
+            </label>
+            <label class="chunk-radio" id="chunk-paragraph-label">
+              <input type="radio" name="chunk_mode" value="paragraph" hidden>
+              <span class="chunk-indicator"></span>
+              <strong>Theo đoạn</strong>
+            </label>
+          </div>
+        </div>
+
+        <!-- 3. Chuẩn hóa chữ Hán -->
+        <div class="triplet-card">
+          <div class="triplet-header">
+            <h3>Chữ Hán</h3>
+          </div>
+          <div class="norm-select-wrapper">
+            <select id="normalize-mode" class="norm-select">
+              <option value="auto" selected>Tự động phồn → giản</option>
+              <option value="t2s">Ép phồn → giản</option>
+              <option value="none">Giữ nguyên</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tùy chọn hậu kỳ -->
+      <div class="feature-box">
+        <div class="feature-header">HẬU KỲ CHUYÊN SÂU</div>
+        <label class="toggle-row">
+          <input id="opt-honorific" type="checkbox" checked>
+          <div class="toggle-info">
+            <strong>Chuẩn hóa xưng hô Hán-Việt</strong>
+          </div>
+        </label>
+        <label class="toggle-row">
+          <input id="opt-pronoun" type="checkbox" checked>
+          <div class="toggle-info">
+            <strong>Ổn định đại từ V9</strong>
+          </div>
+        </label>
+        <label class="toggle-row">
+          <input id="opt-t2s" type="checkbox" checked>
+          <div class="toggle-info">
+            <strong>Chuyển Phồn thể sang Giản thể</strong>
+          </div>
+        </label>
+      </div>
+
+      <!-- Tùy chọn Audio TTS -->
+      <div class="feature-box audio-box">
+        <div class="feature-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>TỰ ĐỘNG TẠO AUDIO (TTS)</span>
+          <a href="#" id="link-open-audio-settings" style="font-size:11px; color:var(--green, #4ade80); text-decoration:none;">⚙ Nâng cao</a>
+        </div>
+        <label class="toggle-row">
+          <input id="opt-audio" type="checkbox" checked>
+          <div class="toggle-info">
+            <strong>Tạo audio khi dịch xong mỗi chương</strong>
+          </div>
+        </label>
+        
+        <div class="audio-cfg-grid">
+          <div class="audio-cfg-row">
+            <span>Giọng đọc:</span>
+            <select id="voice-select" class="audio-cfg-select">
+              <option value="ngochuyennew">Ngọc Huyền (Mới)</option>
+            </select>
+          </div>
+
+          <div class="audio-cfg-row">
+            <span>Cảm xúc:</span>
+            <select id="emotion-preset" class="audio-cfg-select">
+              <option value="default" selected>Cân bằng (Chuẩn)</option>
+              <option value="calm">Điềm tĩnh (Báo chí)</option>
+              <option value="expressive">Truyền cảm (Kể chuyện)</option>
+              <option value="dramatic">Kịch tính (Cao trào)</option>
+            </select>
+          </div>
+
+          <div class="audio-cfg-row">
+            <span>Tốc độ đọc:</span>
+            <select id="audio-speed" class="audio-cfg-select">
+              <option value="0.9">0.9x (Chậm)</option>
+              <option value="1.0" selected>1.0x (Chuẩn)</option>
+              <option value="1.15">1.15x (Nhanh vừa)</option>
+              <option value="1.25">1.25x (Nhanh)</option>
+            </select>
+          </div>
+
+          <div class="audio-cfg-row">
+            <span>Định dạng:</span>
+            <select id="audio-format" class="audio-cfg-select">
+              <option value="mp3" selected>MP3 (Chuẩn)</option>
+              <option value="m4b">M4B (Audiobook)</option>
+              <option value="m4a">M4A (AAC)</option>
+              <option value="opus">Opus (Gọn nhẹ)</option>
+              <option value="wav">WAV (Gốc)</option>
+            </select>
+          </div>
+
+          <label class="toggle-row auto-group-row" style="grid-column: 1 / -1; margin-top:8px; border-top:1px dashed #28372d; padding-top:8px;">
+            <input id="opt-auto-group" type="checkbox" checked>
+            <div class="toggle-info">
+              <strong>Tự động gộp audio thành file lớn</strong>
+              <span class="subtext" style="display:block; font-size:11px; color:#8ba091; margin-top:2px;">
+                Cứ đủ <input type="number" id="opt-group-size" value="50" min="2" max="500" style="width:48px; padding:1px 4px; text-align:center; background:#121714; border:1px solid #334438; border-radius:4px; color:#4ade80; font-weight:bold;"> chương sẽ gộp thành 1 file audio lớn
+              </span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Dải chương dịch -->
+      <div class="feature-box range-box">
+        <div class="feature-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>DẢI CHƯƠNG DỊCH</span>
+          <button type="button" id="btn-clear-trans-range" class="btn-text" style="font-size:11px;">Dịch toàn bộ</button>
+        </div>
+        <div class="range-inputs-row">
+          <label class="range-input-item">
+            <span>Từ chương:</span>
+            <input type="number" id="trans-range-start" min="1" placeholder="1" class="range-num-input">
+          </label>
+          <label class="range-input-item">
+            <span>đến:</span>
+            <input type="number" id="trans-range-end" min="1" placeholder="5" class="range-num-input">
+          </label>
+        </div>
+        <div class="range-hint">
+          <span>💡 Để trống = Dịch toàn bộ truyện. Nhập 1 số để <strong>tự động dịch đến giới hạn</strong> truyện (hoặc 1 đến 5 để dịch dải). Tự động gộp file nếu số chương &lt; số chương/nhóm.</span>
+        </div>
+      </div>
+
+      <!-- Từ điển & Thuật ngữ -->
+      <div class="field-group">
+        <div class="glossary-header">
+          <label for="glossary" class="field-label">Từ điển thuật ngữ</label>
+          <div class="glossary-actions">
+            <button type="button" id="btn-import-glossary" class="btn-text">Nạp tệp</button>
+            <input type="file" id="glossary-file" accept=".txt,.tsv" hidden>
+            <button type="button" id="btn-clear-glossary" class="btn-text">Xóa</button>
+          </div>
+        </div>
+        <textarea id="glossary" rows="3" spellcheck="false" placeholder="Nguồn -> Đích (hoặc dán dạng TSV)"></textarea>
+      </div>
+
+      <div class="batch-row">
+        <label for="batch">Batch size:</label>
+        <input id="batch" type="number" min="1" max="64" value="8">
+        <span>segment / lượt</span>
+      </div>
+
+      <label class="reset-label">
+        <input id="reset" type="checkbox">
+        <span>Dịch lại từ đầu</span>
+      </label>
+
+      <button class="primary" id="start">
+        ▷ <span>Bắt đầu dịch</span>
+      </button>
+
+      <div class="controls">
+        <button id="pause" disabled>Ⅱ Tạm dừng</button>
+        <button id="stop" disabled>□ Dừng</button>
+      </div>
+
+      <div class="progress-container">
+        <div class="progress-label">
+          <span id="progress-text">0 / 0 chương</span>
+          <strong id="percent">0%</strong>
+        </div>
+        <progress id="progress" value="0" max="100" aria-label="Tiến độ dịch"></progress>
+        <div class="output-dirs-hint" style="margin-top:6px; font-size:10px; color:#8ba091; display:flex; justify-content:space-between;">
+          <span>📁 Văn bản: <code id="output-text-path">output_text/</code></span>
+          <span>🎧 Audio: <code id="output-audio-path">output_audio/</code></span>
+        </div>
+        <p class="save-note" id="save-note" style="display:none;"></p>
+        <div id="merge-audio-result" class="merge-result-card" style="display:none; margin-top:10px;" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- 03: Mục lục -->
+    <section class="panel toc-panel">
+      <div class="section-heading">
+        <h2><span class="step">03</span> Mục lục</h2>
+        <span class="count" id="toc-count">0</span>
+      </div>
+      <div class="toc-search-row">
+        <input id="search" type="search" placeholder="Tìm chương truyện…" aria-label="Tìm chương">
+      </div>
+
+      <nav id="toc" class="toc" aria-label="Danh sách chương">
+        <div class="toc-empty">Chương truyện sẽ xuất hiện tại đây.</div>
+      </nav>
+    </section>
+
+    <div class="sidebar-foot">
+      <span>✦ HACHIMIMT 2.0</span>
+      <span>Cổ trang · Tiên hiệp · Đô thị</span>
+    </div>
+  </aside>
+
+  <!-- READER: Khung đọc song song -->
+  <section class="reader" id="reader" aria-label="Khung đọc truyện">
+    <div class="reader-toolbar">
+      <div class="breadcrumb">
+        BẢN THẢO <span>/</span> <span id="book-name">Chưa nạp truyện</span>
+      </div>
+      <span id="connection" class="connection">● Đang kết nối</span>
+    </div>
+
+    <div class="chapter-toolbar">
+      <div class="chapter-info">
+        <p class="eyebrow" id="chapter-index"></p>
+        <h1 id="chapter-title">Chưa chọn chương</h1>
+        <p id="chapter-subtitle" class="reader-error" style="display:none"></p>
+      </div>
+      <div class="chapter-actions">
+        <div class="chapter-single-ops" id="chapter-single-ops" hidden>
+          <button type="button" id="btn-reset-current" class="btn-tool-danger" title="Xóa bản dịch chương này (đưa về chưa dịch để dịch lại)">↺ Xóa bản dịch</button>
+          <button type="button" id="btn-delete-current" class="btn-tool-danger" title="Xóa hẳn chương này khỏi truyện">🗑 Xóa chương</button>
+        </div>
+        <div class="chapter-arrows">
+          <button id="prev" aria-label="Chương trước" disabled title="Chương trước (Phím [ hoặc Mũi tên trái)">← Trước</button>
+          <button id="next" aria-label="Chương sau" disabled title="Chương sau (Phím ] hoặc Mũi tên phải)">Sau →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Thanh Audio Player cho chương -->
+    <div class="chapter-audio-bar" id="chapter-audio-bar" hidden>
+      <div class="audio-player-wrap">
+        <audio id="audio-player" controls preload="none"></audio>
+        <div class="audio-btn-group">
+          <button type="button" id="btn-regen-audio" class="btn-tool" title="Tạo lại file audio cho chương này">🎙 Tạo Audio</button>
+          <a id="btn-download-audio" class="btn-tool" download title="Tải file MP3 của chương">⬇ Tải MP3</a>
+        </div>
+      </div>
+      <span id="audio-status-msg" class="audio-status-msg"></span>
+    </div>
+
+    <!-- Reading tool bar: chế độ xem, cỡ chữ, copy, cuộn đồng bộ -->
+    <div class="pane-labels">
+      <div class="label-source-box">
+        <span class="lang-badge">中</span>
+        <strong>Nguyên tác</strong>
+      </div>
+
+      <div class="reading-tools">
+        <!-- Chế độ xem -->
+        <div class="view-switch" role="group" aria-label="Chế độ xem">
+          <button class="view-btn active" data-mode="parallel" title="Xem song song 2 cột">◫ Song song</button>
+          <button class="view-btn" data-mode="target" title="Chỉ xem bản dịch tiếng Việt">☰ Bản dịch</button>
+          <button class="view-btn" data-mode="source" title="Chỉ xem nguyên tác tiếng Trung">☷ Nguyên tác</button>
+        </div>
+
+        <!-- Cỡ chữ -->
+        <div class="font-controls" title="Chỉnh cỡ chữ đọc">
+          <button id="font-dec" class="font-btn" aria-label="Giảm cỡ chữ">A-</button>
+          <span id="font-val">17px</span>
+          <button id="font-inc" class="font-btn" aria-label="Tăng cỡ chữ">A+</button>
+        </div>
+
+        <!-- Sao chép bản dịch -->
+        <button id="copy-btn" class="tool-btn" title="Sao chép toàn bộ bản dịch chương hiện tại">
+          📋 <span>Sao chép</span>
+        </button>
+
+        <!-- Cuộn đồng bộ -->
+        <label class="sync-label" title="Cuộn đồng thời cả 2 khung văn bản">
+          <input type="checkbox" id="sync" checked>
+          <span>Đồng bộ</span>
+        </label>
+      </div>
+
+      <div class="label-target-box">
+        <span class="lang-badge vi">VI</span>
+        <strong>Bản dịch</strong>
+      </div>
+    </div>
+
+    <!-- Màn hình chờ khi chưa chọn chương -->
+    <div id="reader-empty" class="reader-empty">
+      <div class="empty-glyph" aria-hidden="true">文<span>→</span>Vi</div>
+      <h2>Câu chuyện đang chờ bạn.</h2>
+      <p>Nạp một tệp TXT hoặc EPUB để bắt đầu.<br>Nguyên tác và bản dịch sẽ được đặt cạnh nhau,<br>căn chỉnh từng đoạn một.</p>
+      <button id="empty-upload">Chọn truyện đầu tiên ↗</button>
+      <div class="empty-features">
+        <span>CTranslate2 INT8</span>
+        <span>Chuẩn hóa xưng hô V9</span>
+        <span>Từ điển thuật ngữ</span>
+        <span>Tự động lưu</span>
+      </div>
+    </div>
+
+    <!-- Khung đọc chính -->
+    <div class="reading-panes" id="reading-panes" hidden>
+      <div id="source-pane" class="text-pane" lang="zh" aria-label="Nguyên tác tiếng Trung"></div>
+      <div id="target-pane" class="text-pane target" lang="vi" aria-label="Bản dịch tiếng Việt"></div>
+    </div>
+
+    <footer class="reader-footer">
+      <span id="reader-note">BẢN DỊCH CỦA BẠN · DỮ LIỆU CỦA BẠN</span>
+      <span id="segments">Sẵn sàng khi bạn sẵn sàng</span>
+    </footer>
+  </section>
+</main>
+
+<div id="notice" class="notice" role="status" aria-live="polite" hidden>
+  <span id="notice-text"></span>
+  <button id="dismiss" aria-label="Đóng thông báo">×</button>
+</div>
+
+<!-- MODAL CÀI ĐẶT NÂNG CAO -->
+<div id="settings-modal" class="modal-backdrop" hidden>
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2>⚙ Cài đặt nâng cao &amp; Tùy chọn hệ thống</h2>
+      <button type="button" class="modal-close" id="btn-close-settings">&times;</button>
+    </div>
+    
+    <div class="modal-tabs">
+      <button type="button" class="modal-tab active" data-tab="tab-tts">Giọng đọc &amp; Cảm xúc</button>
+      <button type="button" class="modal-tab" data-tab="tab-clean">Xử lý Mục lục &amp; Rác</button>
+      <button type="button" class="modal-tab" data-tab="tab-cache">Xóa Cache &amp; Data</button>
+    </div>
+
+    <div class="modal-body">
+      <!-- TAB 1: Giọng đọc & Cảm xúc -->
+      <div class="tab-pane active" id="pane-tab-tts">
+        <div class="form-group">
+          <label for="modal-voice">Giọng đọc Piper TTS (22 giọng khả dụng):</label>
+          <select id="modal-voice" class="form-select"></select>
+          <small class="form-hint">Bao gồm Ngọc Huyền (Mới &amp; Cũ), Ban Mai, Adam, Chiếu Thành, Nam Trầm, Mai Phương, Ngọc Ngạn, Việt Thảo, v.v.</small>
+        </div>
+
+        <div class="form-group">
+          <label>Mức độ cảm xúc &amp; Ngữ điệu (noise_scale):</label>
+          <div class="emotion-presets">
+            <button type="button" class="btn-preset active" data-scale="0.667" data-w="0.8">Cân bằng (Chuẩn)</button>
+            <button type="button" class="btn-preset" data-scale="0.40" data-w="0.6">Điềm tĩnh (Báo chí)</button>
+            <button type="button" class="btn-preset" data-scale="0.85" data-w="0.9">Truyền cảm (Kể chuyện)</button>
+            <button type="button" class="btn-preset" data-scale="1.15" data-w="1.0">Kịch tính (Cao trào)</button>
+          </div>
+          <div class="slider-row" style="margin-top: 10px; display:flex; align-items:center; gap:10px;">
+            <span style="min-width:170px; font-size:13px;">Biến thiên cao độ (0.2 - 1.4):</span>
+            <input type="range" id="modal-noise-scale" min="0.2" max="1.4" step="0.05" value="0.667" style="flex:1;">
+            <span id="noise-scale-val" class="pill" style="min-width:40px; text-align:center;">0.67</span>
+          </div>
+          <div class="slider-row" style="margin-top: 8px; display:flex; align-items:center; gap:10px;">
+            <span style="min-width:170px; font-size:13px;">Nhịp điệu ngắt nghỉ (0.4 - 1.4):</span>
+            <input type="range" id="modal-noise-w" min="0.4" max="1.4" step="0.05" value="0.8" style="flex:1;">
+            <span id="noise-w-val" class="pill" style="min-width:40px; text-align:center;">0.80</span>
+          </div>
+        </div>
+
+        <div class="form-row-2" style="display:flex; gap:15px; margin-top:10px;">
+          <div class="form-group" style="flex:1;">
+            <label for="modal-audio-format">Định dạng file Audio:</label>
+            <select id="modal-audio-format" class="form-select">
+              <option value="mp3" selected>MP3 (Phổ biến nhất)</option>
+              <option value="m4b">M4B (Audiobook)</option>
+              <option value="m4a">M4A / AAC (Chất lượng cao)</option>
+              <option value="opus">Opus (Dung lượng siêu nhẹ)</option>
+              <option value="wav">WAV (Chất lượng gốc)</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label for="modal-audio-bitrate">Bitrate âm thanh:</label>
+            <select id="modal-audio-bitrate" class="form-select">
+              <option value="64k">64 kbps (Gọn nhẹ)</option>
+              <option value="96k" selected>96 kbps (Chuẩn nghe truyện)</option>
+              <option value="128k">128 kbps (Rõ nét)</option>
+              <option value="192k">192 kbps (Chất lượng cao)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: Xử lý Mục lục & Dọn dẹp -->
+      <div class="tab-pane" id="pane-tab-clean" style="display:none;">
+        <div class="form-group">
+          <label class="toggle-row">
+            <input id="modal-auto-remove-toc" type="checkbox" checked>
+            <div class="toggle-info">
+              <strong>Tự động phát hiện và xóa bỏ phần mục lục rác ở đầu file</strong>
+            </div>
+          </label>
+          <small class="form-hint" style="display:block; margin-top:4px; color:#888;">Tự động nhận diện các trang chỉ chứa danh sách tên chương, "Mục lục", "目录", "TOC" để loại bỏ, không tốn thời gian dịch rác.</small>
+        </div>
+
+        <div class="form-group" style="margin-top: 15px; border-top:1px solid rgba(255,255,255,0.1); padding-top:12px;">
+          <label style="font-weight:600; display:block; margin-bottom:6px;">Dọn dẹp chương truyện rác:</label>
+          <p class="form-hint" style="color:#888; font-size:13px; margin-bottom:8px;">Xóa tất cả các chương trống không có chữ (do file gốc bị lỗi hoặc có trang trắng).</p>
+          <button type="button" id="btn-modal-purge-empty" class="btn-danger-sm">🧹 Quét và Xóa các chương rỗng</button>
+        </div>
+      </div>
+
+      <!-- TAB 3: Xóa Cache & Data của mọi thứ -->
+      <div class="tab-pane" id="pane-tab-cache" style="display:none;">
+        <p class="modal-desc" style="color:var(--text-dim,#aaa); font-size:13px; margin-bottom:14px;">
+          Dọn dẹp bộ nhớ đệm, tệp tin tạm và xóa toàn bộ dữ liệu truyện, văn bản đã dịch và audio trên máy.
+        </p>
+
+        <div class="cache-cards" style="display:flex; flex-direction:column; gap:12px;">
+          <!-- Mục 1: Dọn Cache & File tạm -->
+          <div class="cache-card" style="background:#131a15; border:1px solid #28372d; border-radius:6px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong style="display:block; font-size:13px; color:#cbd5e1; margin-bottom:3px;">🧹 Dọn Cache &amp; Tệp tạm hệ thống</strong>
+              <span style="font-size:11px; color:#888;">Xóa các file tạm wav/tmp, cache audio, giải phóng dung lượng RAM &amp; ổ cứng.</span>
+            </div>
+            <button type="button" id="btn-purge-cache-only" class="btn-ghost" style="flex-shrink:0; margin-left:12px; white-space:nowrap;">
+              Dọn Cache
+            </button>
+          </div>
+
+          <!-- Mục 2: Xóa Dữ liệu Truyện & Toàn bộ Output -->
+          <div class="cache-card" style="background:#131a15; border:1px solid #28372d; border-radius:6px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong style="display:block; font-size:13px; color:#cbd5e1; margin-bottom:3px;">📂 Xóa toàn bộ Output Text &amp; Audio</strong>
+              <span style="font-size:11px; color:#888;">Xóa output và bản dịch của truyện hiện tại; giữ output các truyện khác.</span>
+            </div>
+            <button type="button" id="btn-purge-data-only" class="btn-ghost" style="flex-shrink:0; margin-left:12px; white-space:nowrap; color:#fca5a5; border-color:#5c2422;">
+              Xóa Data
+            </button>
+          </div>
+
+          <!-- Mục 3: Xóa sạch tất cả (All in One) -->
+          <div class="cache-card danger" style="background:rgba(248,113,113,0.06); border:1px solid rgba(248,113,113,0.25); border-radius:6px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong style="display:block; font-size:13px; color:#f87171; margin-bottom:3px;">💥 Xóa sạch toàn bộ (Cache + Data mọi thứ)</strong>
+              <span style="font-size:11px; color:#aaa;">Đưa ứng dụng về trạng thái mới tinh: xóa toàn bộ truyện, file text, audio và toàn bộ cache.</span>
+            </div>
+            <button type="button" id="btn-purge-everything" class="btn-danger-sm" style="flex-shrink:0; margin-left:12px; white-space:nowrap; padding:6px 14px; font-weight:600;">
+              Xóa sạch tất cả
+            </button>
+          </div>
+        </div>
+
+        <div id="purge-status-msg" style="margin-top:12px; font-size:12px; min-height:18px;"></div>
+      </div>
+    </div>
+
+    <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px; padding:12px 18px; border-top:1px solid rgba(255,255,255,0.1);">
+      <button type="button" id="btn-save-settings" class="primary">Lưu Cài Đặt</button>
+      <button type="button" id="btn-cancel-settings" class="btn-ghost">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js" defer></script>
+</body>
+</html>

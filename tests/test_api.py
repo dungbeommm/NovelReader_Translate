@@ -59,3 +59,34 @@ def test_reset_and_delete_chapters(client):
     del_batch=client.post('/api/chapters/delete',json={'ids':[id3]},headers=H)
     assert del_batch.status_code==200 and del_batch.json()['deleted_count']==1
     assert len(client.get('/api/chapters').json())==1
+
+
+def test_delete_chapter_with_disk_files_and_purge(client):
+    from web import runtime
+    content = '第一章\nNội dung 1\n第二章\nNội dung 2\n第三章\n'.encode('utf-8')
+    r = client.post('/api/upload', files={'file': ('book2.txt', content)}, headers=H)
+    assert r.status_code == 200
+    chaps = client.get('/api/chapters').json()
+    assert len(chaps) == 3
+
+    # Tạo file text và audio giả lập trên đĩa cho chương 1, 2
+    store = runtime.store
+    (store.text_dir / 'chuong_0001.txt').write_text('Bản dịch 1', encoding='utf-8')
+    (store.text_dir / 'chuong_0002.txt').write_text('Bản dịch 2', encoding='utf-8')
+    (store.audio_dir / 'chuong_0002.mp3').write_bytes(b'mp3_2')
+
+    # Xóa chương 1
+    del1 = client.post(f'/api/chapters/{chaps[0]["id"]}/delete', headers=H)
+    assert del1.status_code == 200
+    assert del1.json()['ok'] is True
+
+    # Kiểm tra chương 2 cũ nay trở thành chương 1 và file đĩa được dời sang chuong_0001
+    assert (store.text_dir / 'chuong_0001.txt').read_text(encoding='utf-8') == 'Bản dịch 2'
+    assert (store.audio_dir / 'chuong_0001.mp3').read_bytes() == b'mp3_2'
+
+    # Test purge-empty
+    purge_res = client.post('/api/chapters/purge-empty', headers=H)
+    assert purge_res.status_code == 200
+    data = purge_res.json()
+    assert data['ok'] is True
+    assert 'message' in data

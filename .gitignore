@@ -1,6 +1,9 @@
-.venv/
+.env
+*.log
 __pycache__/
 .pytest_cache/
 data/
 models/
-*.log
+output_text/
+output_audio/
+.venv/

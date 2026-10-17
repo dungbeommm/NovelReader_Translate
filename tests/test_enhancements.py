@@ -1,9 +1,9 @@
 import importlib
 import pytest
 from fastapi.testclient import TestClient
-from app.glossary import parse_glossary
-from app.engines import invert_opener_spacing, list_available_models
-from app.jobs import apply_postprocess
+from translation.glossary import parse_glossary
+from translation.engines import invert_opener_spacing, list_available_models
+from workflows.jobs import apply_postprocess
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):

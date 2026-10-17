@@ -1,5 +1,5 @@
 import pytest
-from app.text import split_chapters, segment_text, paragraphs, make_plan, assemble, normalize,postprocess
+from translation.text import split_chapters, segment_text, paragraphs, make_plan, assemble, normalize,postprocess
 
 @pytest.mark.parametrize('heading',['第一章 少年','第〇二節 出发','第102回 故事','Chapter 12 Dawn','第两百卷 风起'])
 def test_chapter_forms(heading):

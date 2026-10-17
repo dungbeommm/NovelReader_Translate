@@ -3,15 +3,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Add src to sys.path
-SRC_DIR = Path(__file__).resolve().parent.parent / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
-
-from novel_text import split_chapters, paragraphs, make_plan, assemble
-from novel_store import Store
-from novel_files import parse_file, export_txt, export_epub
-from novel_service import NovelService
+from translation.core.novel_text import split_chapters, paragraphs, make_plan, assemble
+from translation.core.novel_store import Store
+from translation.core.novel_files import parse_file, export_txt, export_epub
+from translation.core.novel_service import NovelService
 
 
 SAMPLE_TXT = """第1章 Mở đầu
