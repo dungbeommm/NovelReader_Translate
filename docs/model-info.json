@@ -1,0 +1,28 @@
+{
+  "id": "ngocdang83/HachimiMT-60-QT",
+  "sha": "fca7a1ed9fd876bf602e9ffd5332e73229d815a6",
+  "lastModified": "2026-09-12T16:50:21.000Z",
+  "cardData": {
+    "language": [
+      "zh",
+      "vi"
+    ],
+    "license": "cc-by-4.0",
+    "library_name": "transformers",
+    "pipeline_tag": "translation",
+    "tags": [
+      "translation",
+      "chinese-vietnamese",
+      "marian",
+      "webnovel",
+      "xianxia",
+      "convert",
+      "nmt",
+      "machine-translation"
+    ],
+    "datasets": [
+      "ngocdang83/tran-vi-teacher",
+      "chi-vi/hirashiba-mt-zh2vi-b-filtered"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+fastapi==0.143.3
+uvicorn==0.54.0
+websockets==15.0.1
+pydantic==2.13.5
+ebooklib==0.20
+beautifulsoup4==4.15.0
+charset-normalizer==3.5.2
+huggingface-hub==2.2.0
+ctranslate2==4.8.3
+sentencepiece==0.2.2
+gradio-client==2.7.2
+opencc-python-reimplemented==0.1.7
+pytest==9.1.1
+httpx==0.28.1
+python-multipart==0.0.32
