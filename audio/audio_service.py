@@ -155,8 +155,17 @@ def list_available_voices() -> list[dict]:
     return voices
 
 
+def is_cuda_available_for_piper() -> bool:
+    """Kiểm tra ONNX Runtime có CUDAExecutionProvider khả dụng để tăng tốc GPU hay không."""
+    try:
+        import onnxruntime as ort
+        return "CUDAExecutionProvider" in ort.get_available_providers()
+    except Exception:
+        return False
+
+
 def get_voice(voice_id: str = "ngochuyennew"):
-    """Nạp và cache PiperVoice theo voice_id (tự động tải nếu chưa có)."""
+    """Nạp và cache PiperVoice theo voice_id (tự động kích hoạt GPU CUDA nếu có)."""
     voice_id = (voice_id or "ngochuyennew").strip()
     if voice_id in _voice_instances:
         return _voice_instances[voice_id]
@@ -183,9 +192,32 @@ def get_voice(voice_id: str = "ngochuyennew"):
 
         log.info("Đang nạp Piper voice model: %s", model_path.name)
         from piper import PiperVoice
-        inst = PiperVoice.load(str(model_path), config_path=str(config_path) if config_path.is_file() else None)
+
+        use_cuda = is_cuda_available_for_piper()
+        inst = None
+        if use_cuda:
+            try:
+                log.info("🚀 Kích hoạt GPU (CUDA) cho Piper TTS: %s", voice_id)
+                inst = PiperVoice.load(
+                    str(model_path),
+                    config_path=str(config_path) if config_path.is_file() else None,
+                    use_cuda=True
+                )
+            except Exception as cuda_exc:
+                log.warning("Piper TTS chạy GPU thất bại (%s), chuyển về CPU...", cuda_exc)
+                inst = None
+
+        if inst is None:
+            inst = PiperVoice.load(
+                str(model_path),
+                config_path=str(config_path) if config_path.is_file() else None,
+                use_cuda=False
+            )
+
         _voice_instances[voice_id] = inst
-        log.info("Đã nạp xong model: %s", voice_id)
+        active_providers = getattr(inst.session, "get_providers", lambda: [])() if hasattr(inst, "session") else []
+        device_label = "GPU (CUDA)" if any("CUDA" in str(p) for p in active_providers) else "CPU"
+        log.info("Đã nạp xong model TTS %s [Thiết bị: %s]", voice_id, device_label)
         return inst
 
 
