@@ -43,8 +43,89 @@ def block_optional_torch_import() -> Iterator[None]:
             pass
 
 
+def preload_cuda_libraries() -> None:
+    """Preload NVIDIA CUDA runtime libraries (libcublas, libcudnn, etc.) if available.
+    
+    Prevents 'RuntimeError: Library libcublas.so.12 is not found or cannot be loaded'
+    on Linux (Google Colab / Kaggle / Linux) by preloading libcublas.so.12 and libcublasLt.so.12
+    with RTLD_GLOBAL before CTranslate2 requests them.
+    """
+    import os
+    import sys
+    import ctypes
+    import site
+    from pathlib import Path
+
+    search_dirs: list[Path] = []
+
+    try:
+        import nvidia
+        nvidia_root = Path(nvidia.__file__).resolve().parent
+        for sub in ["cublas", "cudnn", "cuda_runtime", "cuda_nvrtc"]:
+            lib_dir = nvidia_root / sub / "lib"
+            if lib_dir.is_dir() and lib_dir not in search_dirs:
+                search_dirs.append(lib_dir)
+    except Exception:
+        pass
+
+    try:
+        for site_pkg in site.getsitepackages():
+            p = Path(site_pkg) / "nvidia"
+            if p.is_dir():
+                for sub in ["cublas", "cudnn", "cuda_runtime", "cuda_nvrtc"]:
+                    lib_dir = p / sub / "lib"
+                    if lib_dir.is_dir() and lib_dir not in search_dirs:
+                        search_dirs.append(lib_dir)
+    except Exception:
+        pass
+
+    try:
+        import torch
+        t_lib = Path(torch.__file__).resolve().parent / "lib"
+        if t_lib.is_dir() and t_lib not in search_dirs:
+            search_dirs.append(t_lib)
+    except Exception:
+        pass
+
+    for p_str in ["/usr/local/cuda/lib64", "/usr/local/cuda-12/lib64", "/usr/lib/x86_64-linux-gnu"]:
+        d = Path(p_str)
+        if d.is_dir() and d not in search_dirs:
+            search_dirs.append(d)
+
+    if search_dirs:
+        dir_strs = [str(d) for d in search_dirs]
+        cur_ld = os.environ.get("LD_LIBRARY_PATH", "")
+        new_ld = ":".join(dir_strs + ([cur_ld] if cur_ld else []))
+        os.environ["LD_LIBRARY_PATH"] = new_ld
+
+    if sys.platform.startswith("linux"):
+        lib_candidates = [
+            ["libcudart.so.12", "libcudart.so"],
+            ["libcublasLt.so.12", "libcublasLt.so"],
+            ["libcublas.so.12", "libcublas.so"],
+            ["libcudnn.so.9", "libcudnn.so.8", "libcudnn.so"],
+        ]
+        mode = getattr(ctypes, "RTLD_GLOBAL", 0)
+        for group in lib_candidates:
+            loaded = False
+            for lib_dir in search_dirs:
+                if loaded:
+                    break
+                for name in group:
+                    target = lib_dir / name
+                    if target.is_file():
+                        try:
+                            ctypes.CDLL(str(target), mode=mode)
+                            loaded = True
+                            break
+                        except Exception:
+                            pass
+
+
 def import_ctranslate2(*, block_torch: bool = True) -> ModuleType:
     """Import ctranslate2 without letting optional torch stall startup."""
+    preload_cuda_libraries()
+
     existing = sys.modules.get("ctranslate2")
     if existing is not None:
         return existing
