@@ -207,17 +207,26 @@ class LocalEngine(TranslatorEngine):
         self.source = spm.SentencePieceProcessor(model_file=str(model_dir / 'source.spm'))
         self.target = spm.SentencePieceProcessor(model_file=str(model_dir / 'target.spm'))
 
+        has_cuda = False
         try:
-            from .hardware import detect_hardware_profile
+            from translation.core.hardware import detect_hardware_profile
             profile = detect_hardware_profile()
-            intra_threads = profile.intra_threads if profile else max(1, min(8, (os.cpu_count() or 2) - 1))
+            intra_threads = profile.ct2_threads if profile else max(1, min(8, (os.cpu_count() or 2) - 1))
+            has_cuda = profile.has_cuda if profile else False
         except Exception:
             intra_threads = max(1, min(8, (os.cpu_count() or 2) - 1))
+            try:
+                has_cuda = ctranslate2.get_cuda_device_count() > 0
+            except Exception:
+                has_cuda = False
+
+        device = 'cuda' if has_cuda else 'cpu'
+        compute_type = 'int8_float16' if has_cuda else 'int8'
 
         self.model = ctranslate2.Translator(
             str(model_dir / 'ct2-int8_float32'),
-            device='cpu',
-            compute_type='int8',
+            device=device,
+            compute_type=compute_type,
             inter_threads=1,
             intra_threads=intra_threads
         )

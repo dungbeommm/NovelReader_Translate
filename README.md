@@ -1,5 +1,9 @@
 # Novel Tool — Dịch truyện, tạo audio và quản lý đầu ra
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dungbeommm/NovelReader_Translate/blob/main/NovelReader_Colab.ipynb)
+
+> 💡 **Chạy online không cần cài máy:** Bạn có thể mở ngay trên Google Colab với GPU T4 miễn phí qua notebook [`NovelReader_Colab.ipynb`](NovelReader_Colab.ipynb).
+
 Mã nguồn được chia ngang hàng theo chức năng, không còn thư mục `translator/` bao ngoài.
 
 ## Cấu trúc

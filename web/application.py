@@ -1,4 +1,4 @@
-"""FastAPI composition; business logic lives in the sibling service modules."""
+import os
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -20,8 +20,18 @@ async def lifespan(app):
 
 async def local_guard(request:Request,call_next):
     origin=request.headers.get('origin')
-    if origin and origin != str(request.base_url).rstrip('/'):
-        return Response('Chỉ cho phép cùng origin.',status_code=403)
+    if origin:
+        allow_tunnel = (
+            os.environ.get("ALLOWED_HOSTS") == "*"
+            or os.environ.get("ALLOW_TUNNEL") == "1"
+            or bool(os.environ.get("COLAB_GPU"))
+        )
+        if not allow_tunnel:
+            origin_host = origin.split("://")[-1].rstrip('/')
+            base_host = str(request.base_url).split("://")[-1].rstrip('/')
+            req_host = request.headers.get('host', '').rstrip('/')
+            if origin_host not in (base_host, req_host) and origin != str(request.base_url).rstrip('/'):
+                return Response('Chỉ cho phép cùng origin.', status_code=403)
     if request.url.path.startswith('/api/') and request.method in ('POST','PUT','DELETE','PATCH') and request.headers.get('x-app-request')!='novel-translator':
         return Response('Thiếu header bảo vệ.',status_code=403)
     size=request.headers.get('content-length')
@@ -33,7 +43,17 @@ async def local_guard(request:Request,call_next):
 def create_app():
     runtime.initialize()
     app = FastAPI(title='AI Novel Translator', lifespan=lifespan)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=['localhost', '127.0.0.1', '[::1]', 'testserver'])
+    
+    env_hosts = os.environ.get("ALLOWED_HOSTS", "").strip()
+    allow_tunnel = (
+        env_hosts == "*"
+        or os.environ.get("ALLOW_TUNNEL") == "1"
+        or bool(os.environ.get("COLAB_GPU"))
+    )
+    if not allow_tunnel:
+        allowed = [h.strip() for h in env_hosts.split(",")] if env_hosts else ['localhost', '127.0.0.1', '[::1]', 'testserver']
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed)
+
     app.middleware('http')(local_guard)
     # Static /api/export/audio must precede /api/export/{format}.
     for module in (audio, gdrive, translation, system, progress, books):
