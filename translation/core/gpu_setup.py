@@ -17,12 +17,13 @@ import os
 import sys
 from typing import Callable, Iterator
 
-# Các channel CUDA mà PyTorch stable phát hành (cao → thấp). Xác minh tại
-# https://pytorch.org/get-started/locally/ (hiện: cu118, cu126, cu128).
+# Các channel CUDA mà PyTorch stable phát hành (cao → thấp).
 # (major, minor, "cuXXX")
 _TORCH_CUDA_CHANNELS = [
     (12, 8, "cu128"),
     (12, 6, "cu126"),
+    (12, 4, "cu124"),
+    (12, 1, "cu121"),
     (11, 8, "cu118"),
 ]
 
