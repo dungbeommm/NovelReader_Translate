@@ -238,7 +238,7 @@ def test_restart_recovers_interrupted_audio(tmp_path, monkeypatch):
 def test_gpu_schema_default_and_queue_validation(monkeypatch):
     monkeypatch.setenv('COLAB_GPU', '1')
     monkeypatch.delenv('HACHIMIMT_WEB_BATCH_SIZE', raising=False)
-    assert Config().batch_size == 64
+    assert Config().batch_size == 96
     with pytest.raises(ValueError):
         Config(audio_queue_size=0)
 
@@ -272,3 +272,42 @@ def test_benchmark_cli_help_without_gradio():
                             cwd=root, capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr
     assert '--beam' in result.stdout and '--backend' in result.stdout
+
+
+def test_cuda_conv_policy_and_runtime_fallback_disabled(monkeypatch):
+    from tts.cuda_session import configure_cuda_session, guard_cuda_session
+    monkeypatch.setenv('PIPER_DEVICE', 'cuda')
+    class Session:
+        disabled = 0
+        def set_providers(self, providers):
+            self.providers = providers
+        def disable_fallback(self):
+            self.disabled += 1
+        def get_providers(self):
+            return ['CUDAExecutionProvider', 'CPUExecutionProvider']
+    session = Session()
+    configure_cuda_session(session)
+    assert session.providers[0][1]['cudnn_conv1d_pad_to_nc1d'] == '1'
+    assert session.providers[0][1]['cudnn_conv_algo_search'] == 'DEFAULT'
+    guard_cuda_session(SimpleNamespace(session=session))
+    assert session.disabled == 2
+
+
+def test_cuda_guard_detects_provider_lost_after_inference(monkeypatch):
+    from tts.cuda_session import guard_cuda_session
+    monkeypatch.setenv('PIPER_REQUIRE_CUDA', '1')
+    session = SimpleNamespace(disable_fallback=lambda: None,
+                              get_providers=lambda: ['CPUExecutionProvider'])
+    with pytest.raises(RuntimeError, match='mất CUDA'):
+        guard_cuda_session(SimpleNamespace(session=session))
+
+
+@pytest.mark.parametrize('batch', [96, 128, 192, 256])
+def test_web_allows_larger_translation_batches(batch):
+    assert Config(batch_size=batch).batch_size == batch
+
+
+@pytest.mark.parametrize('batch', [0, 257])
+def test_web_rejects_batch_outside_bounds(batch):
+    with pytest.raises(ValueError):
+        Config(batch_size=batch)

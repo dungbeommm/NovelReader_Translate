@@ -2,7 +2,7 @@
 
 ## Đã chạy trên máy bàn giao (Linux, Python 3.13)
 
-- **123 passed**: toàn bộ `tests/`, bao gồm 15 test mới về pipeline/CLI/GPU-policy; engine và giọng được giả lập trong test điều phối.
+- **125 passed**: toàn bộ `tests/`, bao gồm 17 test mới về pipeline/CLI/GPU-policy; engine và giọng được giả lập trong test điều phối.
 - CT2 **4.6.0**, ONNX Runtime **1.23.2 CPU**, Piper **1.8.0** được cài trong môi trường kiểm thử tách biệt. Đây không phải bằng chứng GPU inference.
 - Test pipeline: dịch tiến lên trong lúc TTS bị chặn; job giữ active đến khi audio/mã hóa xong; bật/tắt tuần tự; hàng đợi có giới hạn; pause/stop không deadlock khi hàng đợi đầy; audio lỗi vẫn tiếp tục các chương khác.
 - Test checkpoint: phục hồi queued/generating sau restart; tiếp tục audio thiếu/lỗi mà không dịch lại text hoàn tất.

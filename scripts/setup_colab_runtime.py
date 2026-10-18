@@ -4,6 +4,7 @@ Run before importing onnxruntime/piper/ctranslate2 in the notebook kernel. If
 those modules were imported earlier, restart the kernel after this script.
 """
 import subprocess
+import os
 import sys
 from pathlib import Path
 
@@ -14,7 +15,7 @@ def main():
     pip = [sys.executable, '-m', 'pip']
     subprocess.run(pip + ['install', '-q', '-r', str(ROOT / 'requirements.txt'),
                          'ctranslate2==4.6.0',
-                         'nvidia-cublas-cu12>=12,<13', 'nvidia-cudnn-cu12>=9,<10',
+                         'nvidia-cublas-cu12>=12,<13', os.getenv('NOVEL_CUDNN_SPEC', 'nvidia-cudnn-cu12==9.10.2.21'),
                          'nvidia-cuda-runtime-cu12>=12,<13'], check=True)
     # piper-tts itself may require the CPU distribution. Remove both AFTER all
     # normal dependency resolution; the GPU wheel provides the same ort module.

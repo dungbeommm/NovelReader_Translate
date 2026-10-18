@@ -17,6 +17,19 @@ def main():
     args = parser.parse_args()
     from translation.core.ct2_safe_import import import_ctranslate2
     ct2 = import_ctranslate2()
+    import importlib.metadata
+    import ctypes
+    for package in ('onnxruntime-gpu', 'nvidia-cudnn-cu12', 'ctranslate2', 'piper-tts'):
+        try:
+            print(f'{package}={importlib.metadata.version(package)}', flush=True)
+        except importlib.metadata.PackageNotFoundError:
+            print(f'{package}=not-installed', flush=True)
+    try:
+        cudnn = ctypes.CDLL('libcudnn.so.9')
+        cudnn.cudnnGetVersion.restype = ctypes.c_size_t
+        print(f'loaded_cudnn_version={cudnn.cudnnGetVersion()}', flush=True)
+    except OSError as exc:
+        print(f'cuDNN load check: {exc}', flush=True)
     if ct2.get_cuda_device_count() < 1:
         raise RuntimeError('CT2 không thấy GPU. Chọn runtime T4 và kiểm tra nvidia-smi.')
     from translation.engines import LocalEngine
@@ -34,17 +47,24 @@ def main():
     providers = voice.session.get_providers()
     if 'CUDAExecutionProvider' not in providers:
         raise RuntimeError(f'Piper session không dùng CUDA: {providers}')
-    buffer = io.BytesIO()
+    # Separate WAVs because Piper sets WAV parameters on each synthesis call.
     before = time.perf_counter()
-    with wave.open(buffer, 'wb') as wav:
-        synthesize_wav(voice, 'Xin chào, kiểm tra giọng đọc trên GPU.', wav)
-    with wave.open(io.BytesIO(buffer.getvalue()), 'rb') as wav:
-        duration = wav.getnframes() / wav.getframerate()
+    durations = []
+    for text in ('Xin chào, kiểm tra giọng đọc trên GPU.',
+                 ('người lữ hành bước qua khu rừng và nhìn về phía chân trời ' * 20).strip()):
+        buffer = io.BytesIO()
+        with wave.open(buffer, 'wb') as wav:
+            synthesize_wav(voice, text, wav)
+        with wave.open(io.BytesIO(buffer.getvalue()), 'rb') as wav:
+            durations.append(wav.getnframes() / wav.getframerate())
+    duration = sum(durations)
+    if 'CUDAExecutionProvider' not in voice.session.get_providers():
+        raise RuntimeError('Piper rơi về CPU sau inference')
     print(json.dumps({'ct2_device': device, 'translation_sample': output,
                       'tts': tts_runtime_status(), 'audio_seconds': duration,
                       'synthesis_seconds': round(time.perf_counter() - before, 3)},
                      ensure_ascii=False, indent=2))
-    if duration <= 0:
+    if any(value <= 0 for value in durations):
         raise RuntimeError('Piper trả về audio rỗng')
 
 

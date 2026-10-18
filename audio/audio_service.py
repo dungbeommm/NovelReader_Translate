@@ -238,6 +238,8 @@ def get_voice(voice_id: str = "ngochuyennew"):
                     str(model_path),
                     config_path=str(config_path) if config_path.is_file() else None,
                     use_cuda=True)
+                from tts.cuda_session import configure_cuda_session
+                configure_cuda_session(inst.session)
                 providers = inst.session.get_providers()
                 if 'CUDAExecutionProvider' not in providers:
                     raise RuntimeError(f'Piper session không dùng CUDA: {providers}')

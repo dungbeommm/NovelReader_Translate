@@ -11,7 +11,7 @@ class Config(BaseModel):
     engine:str=Field(default='HachimiMT-60-QT',min_length=1,max_length=100)
     backend:str=Field(default='ct2',pattern=r'^(ct2|transformers|pytorch)$')
     glossary:str=Field(default='',max_length=100000)
-    batch_size:int=Field(default_factory=lambda: max(1, min(64, int(os.getenv('HACHIMIMT_WEB_BATCH_SIZE', '64' if os.getenv('COLAB_GPU') else '8')))),ge=1,le=64)
+    batch_size:int=Field(default_factory=lambda: max(1, min(256, int(os.getenv('HACHIMIMT_WEB_BATCH_SIZE', '96' if os.getenv('COLAB_GPU') else '8')))),ge=1,le=256)
     reset:bool=False
     honorific_mode:str=Field(default='safe',pattern=r'^(safe|xianxia_strict|off)$')
     pronoun_harmonizer:bool=True

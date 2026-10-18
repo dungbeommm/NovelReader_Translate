@@ -331,7 +331,7 @@ class Job:
                 for attempt in range(3):
                     try:
                         pending = [i for i, v in enumerate(values) if v is None]
-                        batch_size = max(1, int(config.get('batch_size', 64 if os.getenv('COLAB_GPU') else 8)))
+                        batch_size = max(1, int(config.get('batch_size', 96 if os.getenv('COLAB_GPU') else 8)))
                         offset = 0
                         while offset < len(pending):
                             if not self.checkpoint():

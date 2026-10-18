@@ -19,7 +19,7 @@ Nếu trước đó đã import ONNX Runtime/Piper/CT2 vào kernel rồi mới c
 | --- | --- |
 | Backend | CT2 |
 | Model tải khi kiểm tra | HachimiMT-60-QT |
-| Batch Web (số đoạn đưa vào engine mỗi lượt) | 64 |
+| Batch Web (số đoạn đưa vào engine mỗi lượt) | 96 (cho phép 1–256) |
 | Batch CT2 nội bộ | 96 |
 | CT2 batch type / window | tokens / 16 |
 | Compute type | int8_float16 |
@@ -28,7 +28,7 @@ Nếu trước đó đã import ONNX Runtime/Piper/CT2 vào kernel rồi mới c
 | Tự gộp audio | Mặc định tắt; khi bật chỉ gộp ở cuối tác vụ |
 | Piper | Bắt buộc CUDA, báo lỗi thay vì chuyển CPU âm thầm |
 
-Batch Web và batch nội bộ **khác nhau**. Thay biến môi trường cần khởi động lại backend để nạp lại model. UI lấy batch đề xuất phần cứng rồi giới hạn tối đa 64; cấu hình đã lưu của truyện vẫn được giữ.
+Batch Web và batch nội bộ **khác nhau**. Thay biến môi trường cần khởi động lại backend để nạp lại model. UI lấy batch đề xuất phần cứng rồi giới hạn tối đa 256; cấu hình đã lưu của truyện vẫn được giữ.
 
 Thiếu VRAM khi dịch: chương trình giảm batch và thử lại **cùng đoạn**, không bỏ đoạn. Với OOM ở TTS hoặc lỗi không phục hồi được: chương audio được đánh dấu lỗi; hãy giảm tải/đổi sang chạy tuần tự rồi tiếp tục. Khi chỉnh lại notebook có thể giảm batch nội bộ 96 → 64 → 32. Không dùng BF16 trên T4.
 
@@ -144,3 +144,27 @@ python -m translation.core.benchmark_sweep /content/mau.txt \
 ```
 
 Core benchmark không bao gồm checkpoint Web, TTS hay MP3. Log Web có `TIMING translation` và `TIMING audio` theo chương. Xem `docs/QA_T4_WEB.md` để biết phạm vi kiểm thử thực tế và giới hạn chưa xác nhận.
+
+
+## Bản vá Conv1D/cuDNN trên T4
+
+Sau log `HEURISTIC_QUERY_FAILED`/`No valid engine configs` do người dùng cung cấp:
+- Đổi padding Conv1D sang `[N,C,1,D]` và đặt `cudnn_conv_algo_search=DEFAULT`.
+- Gọi `session.disable_fallback()` trong chế độ CUDA bắt buộc trước suy luận;
+  kiểm tra provider cả trước và sau, không chỉ khi nạp model.
+- Cố định cuDNN 9.10.2.21 thay vì cho phép tự cập nhật lên 9.27.x.
+  Đây là rollback tương thích để thử, chưa xác nhận giải quyết trên GPU người dùng.
+- Smoke test giọng ngắn và dài dùng WAV riêng và kiểm tra CUDA sau inference.
+- Không chuyển TTS sang CPU và tuyên bố là đã sửa GPU.
+
+Phải dừng server, cài runtime rồi restart session Colab để bỏ các thư viện CUDA/cuDNN đã nạp.
+Bản vá không xóa database, model hoặc output. Xem `docs/CUDNN_T4_FIX.md`.
+
+
+## Batch Web phiên bản 3
+
+Colab mặc định 96 đoạn/lượt, bằng mức cấu hình CT2 96; giới hạn Web/API tăng lên 256.
+Có thể thử Web batch 128 → 192 → 256 và so thời gian cùng vài chương; tăng Web batch
+không tự tăng ngân sách CT2 nội bộ 96. GPU không cần đầy VRAM để chạy hiệu quả.
+Nếu truyện đã lưu batch 64, nhập 96 trong giao diện; bản mới không tự ghi đè thiết lập
+đã lưu của truyện. Không cần chỉnh mã nguồn. Giữ beam 2 và một worker TTS.

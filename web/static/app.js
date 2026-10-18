@@ -132,7 +132,7 @@ async function loadHardware() {
       $('hw-pill').textContent = `⚡ ${dev}: ${currentHardware.cpu_count} luồng${devName}`;
       $('hw-pill').title = currentHardware.summary || '';
       if (currentHardware.batch_size && !$('batch').value) {
-        $('batch').value = Math.max(1, Math.min(64, currentHardware.batch_size));
+        $('batch').value = Math.max(1, Math.min(256, currentHardware.batch_size));
       }
       updateModelInfo();
     }
@@ -1242,8 +1242,8 @@ $('path-form').onsubmit = e => {
 // ----------------- TRANSLATION CONTROLS & RANGE SCOPING -----------------
 function buildTranslatePayload(extraConfig = {}) {
   const batch = Number($('batch').value);
-  if (!Number.isInteger(batch) || batch < 1 || batch > 64) {
-    throw new Error('Batch size phải từ 1 đến 64.');
+  if (!Number.isInteger(batch) || batch < 1 || batch > 256) {
+    throw new Error('Batch size phải từ 1 đến 256.');
   }
 
   const selectedChunkMode = document.querySelector('input[name="chunk_mode"]:checked')?.value || 'sentence';
@@ -1754,7 +1754,7 @@ safe(async () => {
       if (c.backend) setBackend(c.backend);
       if (c.engine) $('engine').value = c.engine === 'local' ? 'HachimiMT-60-QT' : c.engine;
       $('glossary').value = c.glossary || '';
-      $('batch').value = c.batch_size || Math.min(64, currentHardware?.batch_size || 8);
+      $('batch').value = c.batch_size || Math.min(256, currentHardware?.batch_size || 8);
       if ($('opt-audio-pipeline')) $('opt-audio-pipeline').checked = c.audio_pipeline !== false;
       if (c.honorific_mode !== undefined) $('opt-honorific').checked = c.honorific_mode !== 'off';
       if (c.pronoun_harmonizer !== undefined) $('opt-pronoun').checked = !!c.pronoun_harmonizer;
