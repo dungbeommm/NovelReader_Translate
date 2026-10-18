@@ -4,6 +4,7 @@ const $ = id => document.getElementById(id);
 let chapters = [], selected = null, state = { progress: { status: 'ready', active: false } };
 let visible = 100, busy = false, ws, retry = 1000;
 let availableModels = [];
+let currentHardware = null, isDownloadingModel = false;
 let currentFontSize = parseInt(localStorage.getItem('novel_font_size') || '17', 10);
 let currentViewMode = localStorage.getItem('novel_view_mode') || 'parallel';
 let isSelectMode = false;
@@ -124,13 +125,16 @@ $('tab-reader').onclick = () => {
 // ----------------- HARDWARE & MODELS -----------------
 async function loadHardware() {
   try {
-    const hw = await api('/api/hardware');
-    if (hw) {
-      const dev = hw.is_gpu ? 'GPU' : 'CPU';
-      $('hw-pill').textContent = `⚡ ${dev}: ${hw.cpu_count} luồng`;
-      if (hw.batch_size && !$('batch').value) {
-        $('batch').value = hw.batch_size;
+    currentHardware = await api('/api/hardware');
+    if (currentHardware) {
+      const dev = currentHardware.is_gpu ? 'GPU' : (currentHardware.has_discrete_gpu ? 'GPU rời' : 'CPU');
+      const devName = currentHardware.gpu_name ? ` (${currentHardware.gpu_name})` : '';
+      $('hw-pill').textContent = `⚡ ${dev}: ${currentHardware.cpu_count} luồng${devName}`;
+      $('hw-pill').title = currentHardware.summary || '';
+      if (currentHardware.batch_size && !$('batch').value) {
+        $('batch').value = currentHardware.batch_size;
       }
+      updateModelInfo();
     }
   } catch {}
 }
@@ -177,29 +181,125 @@ function updateModelInfo() {
   const key = $('engine').value;
   const m = availableModels.find(x => x.id === key);
   const badge = $('model-badge');
+  const btnBadge = $('btn-download-model');
+  const downloadBox = $('engine-download-box');
+  const btnAction = $('btn-download-model-action');
+  const gpuHint = $('engine-gpu-hint');
+  const noteEl = $('engine-note');
+
   const selectedBackend = document.querySelector('input[name="backend"]:checked')?.value || 'ct2';
   const isTorch = selectedBackend === 'transformers' || selectedBackend === 'pytorch';
   const backendLabel = isTorch ? 'PyTorch' : 'CTranslate2';
 
-  if (!m) return;
+  if (!m) {
+    if (noteEl) noteEl.style.display = 'none';
+    if (btnBadge) btnBadge.style.display = 'none';
+    if (downloadBox) downloadBox.style.display = 'none';
+    return;
+  }
+
+  if (noteEl) noteEl.style.display = 'flex';
 
   if (m.id === 'space' || m.id.startsWith('space:')) {
     badge.className = 'badge badge-success';
     badge.textContent = '🌐 Space Online';
+    if (btnBadge) btnBadge.style.display = 'none';
+    if (downloadBox) downloadBox.style.display = 'none';
     $('engine-note-title').textContent = `${m.name} · Trực tuyến HF Space`;
     $('engine-note-desc').textContent = m.desc || 'Dịch trực tuyến qua HF Space (ngocdang83/HachimiMT-demo). Không tốn tài nguyên máy.';
   } else if (m.downloaded) {
     badge.className = 'badge badge-success';
     badge.textContent = `✓ Sẵn sàng (${backendLabel})`;
+    if (btnBadge) btnBadge.style.display = 'none';
+    if (downloadBox) downloadBox.style.display = 'none';
     $('engine-note-title').textContent = `${m.name} · Offline (${backendLabel})`;
     $('engine-note-desc').textContent = m.desc || `Model đã có trên máy, chạy hoàn toàn offline qua ${backendLabel}.`;
   } else {
     badge.className = 'badge badge-warning';
     badge.textContent = `⬇ Chưa tải (${backendLabel})`;
-    $('engine-note-title').textContent = `Tự động tải khi dịch (~${m.size_mb} MB) · ${backendLabel}`;
-    $('engine-note-desc').textContent = m.desc ? `${m.desc} Sẽ tải về một lần duy nhất từ Hugging Face.` : `Model sẽ được tải tự động (${backendLabel}) trong lần dịch đầu tiên.`;
+    $('engine-note-title').textContent = `Chưa có trọng số model (~${m.size_mb || 58} MB) · ${backendLabel}`;
+    $('engine-note-desc').textContent = m.desc ? `${m.desc} Bấm nút bên dưới để tải về máy hoặc hệ thống sẽ tự động tải khi bắt đầu dịch.` : `Model sẽ được tải tự động (${backendLabel}) khi dịch hoặc bạn có thể tải trước.`;
+
+    if (btnBadge) {
+      btnBadge.style.display = 'inline-block';
+      btnBadge.textContent = '⬇ Tải model';
+      btnBadge.title = `Tải model ${key} (${backendLabel})`;
+    }
+    if (downloadBox) {
+      downloadBox.style.display = 'flex';
+      if (btnAction) {
+        btnAction.textContent = `⬇ Tải model ${backendLabel} (~${m.size_mb || 58} MB)`;
+      }
+      if (gpuHint) {
+        gpuHint.style.display = 'inline-flex';
+        const hasGpu = currentHardware && (currentHardware.is_gpu || currentHardware.has_discrete_gpu);
+        if (hasGpu) {
+          gpuHint.className = 'gpu-hint';
+          const gpuLabel = currentHardware.gpu_name || 'NVIDIA GPU';
+          const vramLabel = currentHardware.vram_gb ? ` (${currentHardware.vram_gb} GB)` : '';
+          gpuHint.textContent = `⚡ GPU rời khả dụng: ${gpuLabel}${vramLabel} — Đề xuất tải để tăng tốc!`;
+        } else {
+          gpuHint.className = 'gpu-hint no-gpu';
+          gpuHint.textContent = `ℹ️ Đang chạy CPU. Bấm nút để tải model offline về máy.`;
+        }
+      }
+    }
   }
 }
+
+async function downloadCurrentModel() {
+  if (isDownloadingModel) return;
+  const select = $('engine');
+  const key = select.value;
+  if (!key || key.startsWith('space')) return;
+  const selectedBackend = document.querySelector('input[name="backend"]:checked')?.value || 'ct2';
+  const isTorch = selectedBackend === 'transformers' || selectedBackend === 'pytorch';
+  const backendLabel = isTorch ? 'PyTorch' : 'CTranslate2';
+
+  const btnAction = $('btn-download-model-action');
+  const btnBadge = $('btn-download-model');
+  const origActionText = btnAction ? btnAction.textContent : '';
+  const origBadgeText = btnBadge ? btnBadge.textContent : '';
+
+  isDownloadingModel = true;
+  if (btnAction) {
+    btnAction.disabled = true;
+    btnAction.textContent = `⏳ Đang tải ${key} (${backendLabel})...`;
+  }
+  if (btnBadge) {
+    btnBadge.disabled = true;
+    btnBadge.textContent = '⏳ Đang tải...';
+  }
+
+  notice(`⏳ Đang tải model ${key} (${backendLabel}) từ Hugging Face... Vui lòng đợi trong giây lát.`);
+
+  try {
+    const res = await api('/api/models/download', {
+      model_id: key,
+      backend: selectedBackend
+    });
+    notice(`✅ ${res.message || 'Đã tải xong model!'}`);
+    await loadModels();
+  } catch (err) {
+    notice(`❌ ${err.message || 'Lỗi khi tải model.'}`, true);
+  } finally {
+    isDownloadingModel = false;
+    if (btnAction) {
+      btnAction.disabled = false;
+      btnAction.textContent = origActionText;
+    }
+    if (btnBadge) {
+      btnBadge.disabled = false;
+      btnBadge.textContent = origBadgeText;
+    }
+    updateModelInfo();
+  }
+}
+
+if ($('btn-download-model')) $('btn-download-model').onclick = () => downloadCurrentModel();
+if ($('btn-download-model-action')) $('btn-download-model-action').onclick = () => downloadCurrentModel();
+$('engine').onchange = () => updateModelInfo();
+
 
 // ----------------- TTS VOICES & AUDIO CONFIG -----------------
 let availableVoices = [];
@@ -797,10 +897,10 @@ function renderProgress(progress) {
   $('stop').disabled = !p.active || p.status === 'stopping';
   $('pause').textContent = p.status === 'paused' ? '▷ Tiếp tục' : 'Ⅱ Tạm dừng';
 
-  const inputs = ['engine', 'glossary', 'batch', 'reset', 'load-path', 'file', 'opt-honorific', 'opt-pronoun', 'opt-t2s', 'beam-size', 'normalize-mode', 'btn-delete-book', 'btn-save-book-title', 'book-output-title', 'btn-trans-range', 'btn-auto-group-audio', 'range-start', 'range-end', 'trans-range-start', 'trans-range-end', 'toc-group-size', 'btn-reset-current', 'btn-delete-current'];
+  const inputs = ['engine', 'glossary', 'batch', 'reset', 'load-path', 'file', 'opt-honorific', 'opt-pronoun', 'opt-t2s', 'beam-size', 'normalize-mode', 'btn-delete-book', 'btn-save-book-title', 'book-output-title', 'btn-trans-range', 'btn-auto-group-audio', 'range-start', 'range-end', 'trans-range-start', 'trans-range-end', 'toc-group-size', 'btn-reset-current', 'btn-delete-current', 'btn-download-model', 'btn-download-model-action'];
   inputs.forEach(id => {
     const el = $(id);
-    if (el) el.disabled = p.active || busy;
+    if (el) el.disabled = p.active || busy || isDownloadingModel;
   });
   if ($('chunk-sentence-label')) $('chunk-sentence-label').style.pointerEvents = (p.active || busy) ? 'none' : 'auto';
   if ($('chunk-paragraph-label')) $('chunk-paragraph-label').style.pointerEvents = (p.active || busy) ? 'none' : 'auto';

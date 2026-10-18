@@ -118,3 +118,8 @@ class GDriveConfigInput(BaseModel):
 
 class BookTitleInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
+
+
+class ModelDownloadInput(BaseModel):
+    model_id: str = Field(min_length=1, max_length=100)
+    backend: str = Field(default='ct2', pattern=r'^(ct2|transformers|pytorch)$')

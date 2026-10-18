@@ -103,7 +103,10 @@
       <div class="field-group">
         <div class="label-with-badge">
           <label for="engine" class="field-label">Mô hình</label>
-          <span id="model-badge" class="badge badge-success">✓ Sẵn sàng</span>
+          <div class="badge-actions">
+            <span id="model-badge" class="badge badge-success">✓ Sẵn sàng</span>
+            <button type="button" id="btn-download-model" class="btn btn-download-badge" style="display:none;" title="Tải model về máy">⬇ Tải model</button>
+          </div>
         </div>
         <select id="engine">
           <optgroup label="Model CTranslate2 trên máy (Đã tải đủ)">
@@ -126,6 +129,12 @@
         <div class="engine-note" id="engine-note" style="display:none;">
           <strong id="engine-note-title"></strong>
           <p id="engine-note-desc"></p>
+          <div id="engine-download-box" class="engine-download-box" style="display:none;">
+            <button type="button" id="btn-download-model-action" class="btn btn-download-action">
+              ⬇ Tải model ngay
+            </button>
+            <span id="engine-gpu-hint" class="gpu-hint" style="display:none;"></span>
+          </div>
         </div>
       </div>
 
