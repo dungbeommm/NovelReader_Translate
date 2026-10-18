@@ -137,13 +137,17 @@ async function loadHardware() {
 
 async function loadModels() {
   try {
-    availableModels = await api('/api/models');
+    const selectedBackend = document.querySelector('input[name="backend"]:checked')?.value || 'ct2';
+    availableModels = await api('/api/models?backend=' + encodeURIComponent(selectedBackend));
     const select = $('engine');
     const curVal = select.value || 'HachimiMT-60-QT';
     select.replaceChildren();
 
+    const isTorch = selectedBackend === 'transformers' || selectedBackend === 'pytorch';
     const localGroup = document.createElement('optgroup');
-    localGroup.label = 'Model CTranslate2 trên máy (Đã tải đủ)';
+    localGroup.label = isTorch
+      ? 'Model PyTorch trên máy (Đã tải đủ)'
+      : 'Model CTranslate2 trên máy (Đã tải đủ)';
     const spaceGroup = document.createElement('optgroup');
     spaceGroup.label = 'Trực tuyến Hugging Face Space (Online)';
 
@@ -173,6 +177,9 @@ function updateModelInfo() {
   const key = $('engine').value;
   const m = availableModels.find(x => x.id === key);
   const badge = $('model-badge');
+  const selectedBackend = document.querySelector('input[name="backend"]:checked')?.value || 'ct2';
+  const isTorch = selectedBackend === 'transformers' || selectedBackend === 'pytorch';
+  const backendLabel = isTorch ? 'PyTorch' : 'CTranslate2';
 
   if (!m) return;
 
@@ -183,14 +190,14 @@ function updateModelInfo() {
     $('engine-note-desc').textContent = m.desc || 'Dịch trực tuyến qua HF Space (ngocdang83/HachimiMT-demo). Không tốn tài nguyên máy.';
   } else if (m.downloaded) {
     badge.className = 'badge badge-success';
-    badge.textContent = '✓ Sẵn sàng';
-    $('engine-note-title').textContent = `${m.name} · Offline`;
-    $('engine-note-desc').textContent = m.desc || 'Model đã có trên máy, chạy hoàn toàn offline trên CPU.';
+    badge.textContent = `✓ Sẵn sàng (${backendLabel})`;
+    $('engine-note-title').textContent = `${m.name} · Offline (${backendLabel})`;
+    $('engine-note-desc').textContent = m.desc || `Model đã có trên máy, chạy hoàn toàn offline qua ${backendLabel}.`;
   } else {
     badge.className = 'badge badge-warning';
-    badge.textContent = `⬇ Chưa tải (~${m.size_mb} MB)`;
-    $('engine-note-title').textContent = `Tự động tải khi dịch (~${m.size_mb} MB)`;
-    $('engine-note-desc').textContent = m.desc ? `${m.desc} Sẽ tải về một lần duy nhất từ Hugging Face.` : 'Model sẽ được tải tự động trong lần dịch đầu tiên.';
+    badge.textContent = `⬇ Chưa tải (${backendLabel})`;
+    $('engine-note-title').textContent = `Tự động tải khi dịch (~${m.size_mb} MB) · ${backendLabel}`;
+    $('engine-note-desc').textContent = m.desc ? `${m.desc} Sẽ tải về một lần duy nhất từ Hugging Face.` : `Model sẽ được tải tự động (${backendLabel}) trong lần dịch đầu tiên.`;
   }
 }
 
@@ -714,6 +721,22 @@ async function purgeEmptyChapters() {
 if ($('btn-purge-empty')) $('btn-purge-empty').onclick = () => safe(purgeEmptyChapters);
 if ($('btn-modal-purge-empty')) $('btn-modal-purge-empty').onclick = () => safe(purgeEmptyChapters);
 
+// ----------------- ENGINE / BACKEND CONTROLS (CTranslate2, PyTorch) -----------------
+function setBackend(backend) {
+  const isTorch = backend === 'transformers' || backend === 'pytorch';
+  const val = isTorch ? 'transformers' : 'ct2';
+  if ($('backend-ct2-label')) $('backend-ct2-label').classList.toggle('active', !isTorch);
+  if ($('backend-torch-label')) $('backend-torch-label').classList.toggle('active', isTorch);
+  const radios = document.querySelectorAll('input[name="backend"]');
+  radios.forEach(r => {
+    r.checked = (r.value === val);
+  });
+  localStorage.setItem('novel_backend', val);
+  loadModels();
+}
+if ($('backend-ct2-label')) $('backend-ct2-label').onclick = () => setBackend('ct2');
+if ($('backend-torch-label')) $('backend-torch-label').onclick = () => setBackend('transformers');
+
 // ----------------- TRIPLET CONTROLS (BEAM, CHUNK, NORMALIZE) -----------------
 function setChunkMode(mode) {
   const isPara = mode === 'paragraph';
@@ -781,6 +804,8 @@ function renderProgress(progress) {
   });
   if ($('chunk-sentence-label')) $('chunk-sentence-label').style.pointerEvents = (p.active || busy) ? 'none' : 'auto';
   if ($('chunk-paragraph-label')) $('chunk-paragraph-label').style.pointerEvents = (p.active || busy) ? 'none' : 'auto';
+  if ($('backend-ct2-label')) $('backend-ct2-label').style.pointerEvents = (p.active || busy) ? 'none' : 'auto';
+  if ($('backend-torch-label')) $('backend-torch-label').style.pointerEvents = (p.active || busy) ? 'none' : 'auto';
 
   $('save-note').textContent = p.message || 'Tiến độ được lưu tự động trên máy của bạn.';
   for (const id of ['export-txt', 'export-epub']) {
@@ -1143,8 +1168,11 @@ function buildTranslatePayload(extraConfig = {}) {
   }
   if (!Number.isInteger(groupSize) || groupSize < 2 || groupSize > 500) throw new Error('Số chương mỗi nhóm phải từ 2 đến 500.');
 
+  const selectedBackend = document.querySelector('input[name="backend"]:checked')?.value || 'ct2';
+
   return {
     engine: $('engine').value,
+    backend: selectedBackend,
     glossary: $('glossary').value,
     batch_size: batch,
     reset: extraConfig.reset !== undefined ? extraConfig.reset : $('reset').checked,
@@ -1613,12 +1641,15 @@ function connect() {
 safe(async () => {
   setFontSize(currentFontSize);
   setViewMode(currentViewMode);
+  const savedBackend = localStorage.getItem('novel_backend') || 'ct2';
+  setBackend(savedBackend);
   await Promise.all([loadHardware(), loadModels(), loadVoices(), loadGdriveSettings()]);
   const s = await refreshAll();
 
   if (s.book) {
     try {
       const c = JSON.parse(s.book.config);
+      if (c.backend) setBackend(c.backend);
       if (c.engine) $('engine').value = c.engine === 'local' ? 'HachimiMT-60-QT' : c.engine;
       $('glossary').value = c.glossary || '';
       $('batch').value = c.batch_size || 8;

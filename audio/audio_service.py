@@ -21,27 +21,77 @@ _voice_lock = threading.Lock()
 _voice_instances = {}
 
 
+def ensure_voice_downloaded(voice_id: str) -> bool:
+    """Tự động tải model giọng đọc và file config nếu chưa có trên máy."""
+    voice_id = (voice_id or "ngochuyennew").strip()
+    model_path = VOICE_DIR / f"{voice_id}.onnx"
+    config_path = VOICE_DIR / f"{voice_id}.onnx.json"
+
+    if model_path.is_file() and model_path.stat().st_size > 10 * 1024 * 1024 and config_path.is_file():
+        return True
+
+    log.info("Đang tự động tải model giọng đọc: %s...", voice_id)
+    VOICE_DIR.mkdir(parents=True, exist_ok=True)
+
+    onnx_urls = [
+        f"https://cdn.ainovelreader.com/tts_model/{voice_id}.onnx",
+        f"https://raw.githubusercontent.com/dungbeommm/NovelReader_voices/main/voices/low/low-{voice_id}/{voice_id}.onnx",
+    ]
+    json_urls = [
+        f"https://cdn.ainovelreader.com/tts_model/{voice_id}.onnx.json",
+        f"https://raw.githubusercontent.com/dungbeommm/NovelReader_voices/main/voices/low/low-{voice_id}/{voice_id}.onnx.json",
+    ]
+
+    import urllib.request
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+
+    def _dl(urls, out_file, min_size=50):
+        if out_file.is_file() and out_file.stat().st_size >= min_size:
+            return True
+        tmp_file = out_file.with_suffix(".tmp")
+        for u in urls:
+            try:
+                req = urllib.request.Request(u, headers=headers)
+                with urllib.request.urlopen(req, timeout=30) as resp, open(tmp_file, "wb") as f:
+                    while True:
+                        chunk = resp.read(65536)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                if tmp_file.stat().st_size >= min_size:
+                    tmp_file.replace(out_file)
+                    return True
+                tmp_file.unlink(missing_ok=True)
+            except Exception:
+                tmp_file.unlink(missing_ok=True)
+        return False
+
+    json_ok = _dl(json_urls, config_path, min_size=50)
+    onnx_ok = _dl(onnx_urls, model_path, min_size=10 * 1024 * 1024)
+    return onnx_ok and json_ok
+
+
 def list_available_voices() -> list[dict]:
-    """Danh sách tất cả các giọng đọc khả dụng trên máy."""
+    """Danh sách tất cả các giọng đọc khả dụng trên máy (và có thể tự động tải)."""
     manifest_file = VOICE_DIR / "voices_manifest.json"
-    manifest_data = {}
+    manifest_items = []
     if manifest_file.is_file():
         try:
-            items = json.loads(manifest_file.read_text(encoding="utf-8"))
-            for it in items:
-                manifest_data[it["id"]] = it
+            manifest_items = json.loads(manifest_file.read_text(encoding="utf-8"))
         except Exception:
-            pass
+            manifest_items = []
 
     voices = []
-    # Quét tất cả các file .onnx trong thư mục voice
+    seen_ids = set()
+
+    # 1. Quét tất cả các file .onnx đã có sẵn trong thư mục voice
     for onnx in sorted(VOICE_DIR.glob("*.onnx")):
         vid = onnx.stem
         cfg = onnx.with_suffix(".onnx.json")
         if not cfg.is_file():
             continue
 
-        meta = manifest_data.get(vid, {})
+        meta = next((it for it in manifest_items if it.get("id") == vid), {})
         display_name = meta.get("name")
         gender = meta.get("gender")
         if not gender:
@@ -62,6 +112,7 @@ def list_available_voices() -> list[dict]:
             else:
                 display_name = "Ngọc Huyền (Mới)" if vid == "ngochuyennew" else vid
 
+        seen_ids.add(vid)
         voices.append({
             "id": vid,
             "name": display_name,
@@ -69,7 +120,34 @@ def list_available_voices() -> list[dict]:
             "is_default": (vid == "ngochuyennew"),
             "size_mb": round(onnx.stat().st_size / (1024 * 1024), 1),
             "onnx_file": str(onnx.name),
-            "json_file": str(cfg.name)
+            "json_file": str(cfg.name),
+            "downloaded": True
+        })
+
+    # 2. Đưa thêm các giọng trong manifest (nếu chưa tải) để luôn hiển thị đầy đủ
+    for it in manifest_items:
+        vid = it.get("id")
+        if not vid or vid in seen_ids:
+            continue
+        display_name = it.get("name", vid)
+        gender = it.get("gender")
+        if not gender:
+            gender = "female" if vid in [
+                "ngochuyennew", "ngochuyen", "banmai", "calmwoman3688",
+                "maiphuong", "phuongtrang", "thanhphuong2", "vunga",
+                "lacphi", "vais1000medium"
+            ] else "male"
+
+        seen_ids.add(vid)
+        voices.append({
+            "id": vid,
+            "name": display_name,
+            "gender": gender,
+            "is_default": (vid == "ngochuyennew"),
+            "size_mb": it.get("size_mb", 60.6),
+            "onnx_file": it.get("onnx_file", f"{vid}.onnx"),
+            "json_file": it.get("json_file", f"{vid}.onnx.json"),
+            "downloaded": False
         })
 
     # Đưa giọng mặc định lên đầu, sau đó sắp xếp theo giới tính rồi đến tên
@@ -78,7 +156,7 @@ def list_available_voices() -> list[dict]:
 
 
 def get_voice(voice_id: str = "ngochuyennew"):
-    """Nạp và cache PiperVoice theo voice_id."""
+    """Nạp và cache PiperVoice theo voice_id (tự động tải nếu chưa có)."""
     voice_id = (voice_id or "ngochuyennew").strip()
     if voice_id in _voice_instances:
         return _voice_instances[voice_id]
@@ -90,8 +168,13 @@ def get_voice(voice_id: str = "ngochuyennew"):
         model_path = VOICE_DIR / f"{voice_id}.onnx"
         config_path = VOICE_DIR / f"{voice_id}.onnx.json"
 
+        if not (model_path.is_file() and config_path.is_file()):
+            ensure_voice_downloaded(voice_id)
+
         if not model_path.is_file():
-            # Fallback về ngochuyennew nếu giọng yêu cầu chưa có
+            # Fallback về ngochuyennew nếu giọng yêu cầu tải thất bại
+            if voice_id != "ngochuyennew":
+                ensure_voice_downloaded("ngochuyennew")
             model_path = VOICE_DIR / "ngochuyennew.onnx"
             config_path = VOICE_DIR / "ngochuyennew.onnx.json"
 

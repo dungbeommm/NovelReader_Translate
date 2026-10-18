@@ -99,17 +99,64 @@ def process_voice(folder_name):
     }
 
 def main():
-    print("Dang ket noi GitHub de lay danh sach giong doc...")
-    req = urllib.request.Request(GITHUB_API, headers=HEADERS)
-    items = json.loads(urllib.request.urlopen(req, timeout=15).read().decode('utf-8'))
-    
-    # Loai tru ngochuyennew vi da co san
-    folders = [it['name'] for it in items if it['name'] != 'low-ngochuyennew']
-    print(f"Tim thay {len(folders)} giong can tai. Bat dau tai song song (3 luong)...")
-    
-    results = []
-    # Them ngochuyennew vao danh sach manifest
+    import argparse
+    parser = argparse.ArgumentParser(description="Tải các model giọng đọc Piper TTS tiếng Việt.")
+    parser.add_argument('--default-only', action='store_true', help='Chỉ tải giọng mặc định (ngochuyennew ~60MB).')
+    parser.add_argument('--voice', type=str, default=None, help='Chỉ tải một giọng cụ thể theo ID (ví dụ: banmai, deepman3909).')
+    args = parser.parse_args()
+
+    # 1. Tải giọng mặc định ngochuyennew nếu chưa có
     ngoc_huyen_onnx = VOICE_DIR / "ngochuyennew.onnx"
+    ngoc_huyen_json = VOICE_DIR / "ngochuyennew.onnx.json"
+    if not (ngoc_huyen_onnx.is_file() and ngoc_huyen_onnx.stat().st_size > 10*1024*1024 and ngoc_huyen_json.is_file()):
+        print("Đang tải giọng mặc định: Ngọc Huyền (Mới)...")
+        download_file("https://cdn.ainovelreader.com/tts_model/ngochuyennew.onnx.json", ngoc_huyen_json, min_size=50)
+        download_file("https://cdn.ainovelreader.com/tts_model/ngochuyennew.onnx", ngoc_huyen_onnx, min_size=10*1024*1024)
+
+    if args.default_only:
+        print("Đã tải xong giọng mặc định ngochuyennew.")
+        return
+
+    if args.voice:
+        v_id = args.voice.replace("low-", "")
+        print(f"Đang tải giọng yêu cầu: {v_id}...")
+        download_file(f"https://cdn.ainovelreader.com/tts_model/{v_id}.onnx.json", VOICE_DIR / f"{v_id}.onnx.json", min_size=50)
+        download_file(f"https://cdn.ainovelreader.com/tts_model/{v_id}.onnx", VOICE_DIR / f"{v_id}.onnx", min_size=10*1024*1024)
+        print(f"Hoàn tất tải giọng {v_id}.")
+        return
+
+    print("Đang kết nối để lấy danh sách giọng đọc...")
+    folders = []
+    try:
+        req = urllib.request.Request(GITHUB_API, headers=HEADERS)
+        items = json.loads(urllib.request.urlopen(req, timeout=10).read().decode('utf-8'))
+        folders = [it['name'] for it in items]
+    except Exception as exc:
+        print(f"⚠️ Không kết nối được GitHub API ({exc}), sử dụng available_voices.json nội bộ...")
+        avail_file = VOICE_DIR / "available_voices.json"
+        if avail_file.is_file():
+            try:
+                avail = json.loads(avail_file.read_text(encoding='utf-8'))
+                folders = [it.get('folder', f"low-{it['id']}") for it in avail if it.get('folder') or it.get('id')]
+            except Exception:
+                pass
+
+    if not folders:
+        # Fallback danh sách cứng 21 folder
+        folders = [
+            "low-banmai", "low-calmwoman3688", "low-adam1", "low-chieuthanh",
+            "low-deepman3909", "low-kinhphat", "low-duyoryx3175", "low-lacphi",
+            "low-maiphuong", "low-manhdung", "low-minhquang", "low-minhkhang",
+            "low-ngochuyen", "low-ngocngan3701", "low-taian4", "low-phuongtrang",
+            "low-vais1000medium", "low-thanhphuong2", "low-thientam", "low-vunga",
+            "low-vietthao3886"
+        ]
+
+    # Bỏ qua low-ngochuyennew nếu có trong folders vì đã xử lý ở trên
+    folders = [f for f in folders if f != 'low-ngochuyennew']
+    print(f"Tìm thấy {len(folders)} giọng cần tải. Bắt đầu tải song song (3 luồng)...")
+
+    results = []
     results.append({
         'id': 'ngochuyennew',
         'name': 'Ngọc Huyền (Nữ) - Mặc định',
@@ -118,19 +165,18 @@ def main():
         'json_file': 'ngochuyennew.onnx.json',
         'size_mb': round(ngoc_huyen_onnx.stat().st_size / (1024*1024), 1) if ngoc_huyen_onnx.is_file() else 0
     })
-    
+
     with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {executor.submit(process_voice, f): f for f in folders}
         for future in as_completed(futures):
             res = future.result()
             results.append(res)
             print(f"[{len(results)-1}/{len(folders)}] {res.get('name', res.get('id'))}: {res.get('status')} ({res.get('size_mb', 0)} MB)")
-            
-            # Luu manifest lien tuc
+
             manifest_file = VOICE_DIR / 'voices_manifest.json'
             manifest_file.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding='utf-8')
 
-    print(f"\nHoan tat! Tong cong co {len(results)} giong doc da cap nhat trong manifest.")
+    print(f"\nHoàn tất! Tổng cộng có {len(results)} giọng đọc đã cập nhật trong manifest.")
 
 if __name__ == '__main__':
     main()

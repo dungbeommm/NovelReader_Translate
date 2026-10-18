@@ -7,7 +7,8 @@ class ChapterIdsInput(BaseModel):ids:list[int]=Field(default_factory=list)
 
 
 class Config(BaseModel):
-    engine:str=Field(default='HachimiMT-60-QT',pattern=r'^(local|space|HachimiMT-60-QT|HachimiMT-60|HachimiMT-40-QT|HachimiMT-30)$')
+    engine:str=Field(default='HachimiMT-60-QT',min_length=1,max_length=100)
+    backend:str=Field(default='ct2',pattern=r'^(ct2|transformers|pytorch)$')
     glossary:str=Field(default='',max_length=100000)
     batch_size:int=Field(default=8,ge=1,le=64)
     reset:bool=False

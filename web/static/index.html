@@ -83,6 +83,23 @@
         <h2><span class="step">02</span> Cấu hình dịch</h2>
       </div>
 
+      <!-- Engine / Bộ máy dịch -->
+      <div class="field-group">
+        <label class="field-label">Engine (Bộ máy)</label>
+        <div class="chunk-radios" id="backend-radios">
+          <label class="chunk-radio active" id="backend-ct2-label" title="CTranslate2 INT8 — Tối ưu tốc độ cao, tiết kiệm RAM/VRAM">
+            <input type="radio" name="backend" value="ct2" checked hidden>
+            <span class="chunk-indicator"></span>
+            <strong>CTranslate2 — nhanh</strong>
+          </label>
+          <label class="chunk-radio" id="backend-torch-label" title="PyTorch Seq2Seq — Chạy qua Transformers / Torch">
+            <input type="radio" name="backend" value="transformers" hidden>
+            <span class="chunk-indicator"></span>
+            <strong>PyTorch</strong>
+          </label>
+        </div>
+      </div>
+
       <div class="field-group">
         <div class="label-with-badge">
           <label for="engine" class="field-label">Mô hình</label>

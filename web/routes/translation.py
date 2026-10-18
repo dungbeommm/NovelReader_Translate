@@ -7,8 +7,8 @@ from web.schemas import Config
 router = APIRouter()
 
 @router.get('/api/models')
-def models():
-    return list_available_models()
+def models(backend: str = 'ct2'):
+    return list_available_models(backend=backend)
 
 
 @router.get('/api/hardware')

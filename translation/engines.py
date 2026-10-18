@@ -106,21 +106,26 @@ def invert_opener_spacing(text: str) -> str:
         return text
     return _OPENER_SPACING_INVERSE.sub(r"\1", text)
 
-def is_model_downloaded(model_key: str) -> bool:
+def is_model_downloaded(model_key: str, backend: str = 'ct2') -> bool:
     if model_key not in MODELS:
         return False
     try:
-        import sys
         from translation.core.translator import is_model_downloaded as h_is_downloaded, Backend
-        return h_is_downloaded(model_key, Backend.CT2)
+        b = Backend.TRANSFORMERS if backend in ('transformers', 'pytorch', 'torch') else Backend.CT2
+        return h_is_downloaded(model_key, b)
     except Exception:
         pass
     model_dir = translation_models() / model_key
+    if backend in ('transformers', 'pytorch', 'torch'):
+        needed = [model_dir / n for n in ('model.safetensors', 'pytorch_model.bin')]
+        has_weights = any(p.is_file() for p in needed)
+        has_tok = (model_dir / 'source.spm').is_file() or (model_dir / 'tokenizer.json').is_file()
+        return has_weights and has_tok
     needed = [model_dir / 'ct2-int8_float32' / n for n in ('model.bin', 'config.json', 'shared_vocabulary.json')]
     needed += [model_dir / n for n in ('source.spm', 'target.spm')]
     return all(p.is_file() for p in needed)
 
-def list_available_models() -> list[dict]:
+def list_available_models(backend: str = 'ct2') -> list[dict]:
     items = []
     for key, cfg in MODELS.items():
         items.append({
@@ -128,7 +133,7 @@ def list_available_models() -> list[dict]:
             'name': cfg['name'],
             'size_mb': cfg['size_mb'],
             'desc': cfg['desc'],
-            'downloaded': is_model_downloaded(key),
+            'downloaded': is_model_downloaded(key, backend=backend),
             'recommended': key == 'HachimiMT-60-QT',
         })
     items.append({
@@ -168,8 +173,9 @@ class TranslatorEngine(ABC):
     def translate_raw(self, texts: list[str], beam_size: int | None = None, chunk_mode: str = 'sentence', normalize_mode: str = 'auto') -> list[str]: ...
 
 class LocalEngine(TranslatorEngine):
-    def __init__(self, model_key: str = 'HachimiMT-60-QT'):
+    def __init__(self, model_key: str = 'HachimiMT-60-QT', backend: str = 'ct2'):
         self.model_key = model_key if model_key in MODELS else 'HachimiMT-60-QT'
+        self.backend = backend.lower() if backend else 'ct2'
         self.config = MODELS.get(self.model_key, {})
         self.translator = None
         self.source = None
@@ -182,8 +188,9 @@ class LocalEngine(TranslatorEngine):
             import sys
             from translation.core.translator import HachimiTranslator, Backend
             self.translator = HachimiTranslator()
-            self.translator.load(self.model_key, Backend.CT2)
-            log.info("Loaded official HachimiTranslator core for %s", self.model_key)
+            target_backend = Backend.TRANSFORMERS if self.backend in ('transformers', 'pytorch', 'torch') else Backend.CT2
+            self.translator.load(self.model_key, target_backend)
+            log.info("Loaded official HachimiTranslator core for %s with backend %s", self.model_key, target_backend.value)
             return
         except Exception as exc:
             log.warning("HachimiTranslator core load failed (%s), using fallback CT2 loader: %s", self.model_key, exc)
@@ -264,8 +271,12 @@ class LocalEngine(TranslatorEngine):
             if not all_chunks:
                 return ['' for _ in texts]
 
-            # Parallel batch translation with clamped beam_size
-            translated_chunks = self.translator._translate_chunks_ct2(all_chunks, beam_size=beam)
+            # Batch translation with clamped beam_size
+            from translation.core.translator import Backend
+            if getattr(self.translator, '_backend', Backend.CT2) == Backend.TRANSFORMERS:
+                translated_chunks = self.translator._translate_torch_batch(all_chunks, beam_size=beam)
+            else:
+                translated_chunks = self.translator._translate_chunks_ct2(all_chunks, beam_size=beam)
 
             outputs = []
             for start, end in mapping:
@@ -402,12 +413,12 @@ class SpaceEngine(TranslatorEngine):
 
         return outputs
 
-def create_engine(name: str):
+def create_engine(name: str, backend: str = 'ct2', *args, **kwargs):
     if name == 'local':
-        return LocalEngine(model_key='HachimiMT-60-QT')
+        return LocalEngine(model_key='HachimiMT-60-QT', backend=backend)
     if name == 'space' or name.startswith('space:'):
         model_key = name.split(':', 1)[1] if ':' in name else 'HachimiMT-60-QT'
         return SpaceEngine(model_key=model_key)
     if name in MODELS:
-        return LocalEngine(model_key=name)
-    return LocalEngine(model_key='HachimiMT-60-QT')
+        return LocalEngine(model_key=name, backend=backend)
+    return LocalEngine(model_key='HachimiMT-60-QT', backend=backend)

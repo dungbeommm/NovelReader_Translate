@@ -243,7 +243,11 @@ class Job:
         group_failed = False
         target_id_set = set(target_chapter_ids) if target_chapter_ids else None
         try:
-            engine = create_engine(config.get('engine', 'HachimiMT-60-QT'))
+            backend = config.get('backend', 'ct2')
+            try:
+                engine = create_engine(config.get('engine', 'HachimiMT-60-QT'), backend=backend)
+            except TypeError:
+                engine = create_engine(config.get('engine', 'HachimiMT-60-QT'))
             engine.load()
             if not self.checkpoint():
                 return
