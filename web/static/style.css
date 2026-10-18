@@ -2250,3 +2250,7 @@ progress::-moz-progress-bar {
   .toggle-info { min-width: 0; overflow-wrap: anywhere; }
 }
 .toggle-info .subtext { font-size: 11px; color: var(--text-muted); line-height: 1.45; margin-top: 3px; }
+
+.export-destination { display: flex; align-items: center; gap: 5px; font-size: 11px; white-space: nowrap; }
+.export-destination select { max-width: 140px; padding: 5px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 5px; }
+@media (min-width: 601px) and (max-width: 1200px) { .header-right { flex-wrap: wrap; gap: 5px; } .brand-sub { display: none; } .topbar { height: auto; min-height: 64px; padding-top: 6px; padding-bottom: 6px; } }

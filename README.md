@@ -2,16 +2,22 @@
 
 Bản Web/Colab từ mã nguồn đính kèm, tối ưu luồng CTranslate2 + Piper. Không kèm trọng số model, tài khoản, token hay dữ liệu truyện cá nhân. Không có thành phần bot.
 
-## Chạy trên Colab T4
+## Chạy trên Colab T4 — phiên bản 4
 
-1. Giải nén `NovelReader_T4_Web_Optimized.zip` trên máy của bạn; mở `NovelReader_Colab.ipynb` bằng Google Colab (Upload notebook).
+1. Mở `NovelReader_Colab_GitHub_Drive_v4.ipynb` bằng Colab, hoặc `NovelReader_Colab.ipynb` trong gói này.
 2. Chọn **Runtime → Change runtime type → T4 GPU**.
-3. Chạy các cell theo thứ tự. Ở bước 1, tải lên **chính file ZIP đã sửa** khi được hỏi. Notebook không clone/pull repository gốc nên không làm mất bản vá.
-4. Bước 2 cài dependencies rồi chỉ giữ `onnxruntime-gpu==1.23.2`; CT2 được cố định `4.6.0` cho stack CUDA 12/cuDNN 9. Không chạy lại `pip install -r requirements.txt` sau đó; nếu cần cài lại, dùng `scripts/setup_colab_runtime.py`.
-5. Bước 4 chạy dịch và tạo WAV ngắn để kiểm tra **session CT2/Piper thực sự dùng CUDA**. Nếu lỗi thì xử lý trước khi mở Web.
-6. Mở link từ bước 5, nạp TXT/EPUB và chạy. **Stop cell server** khi xong; bước 6 tải bản sao lưu output + checkpoint.
+3. Chạy bước 1: tự tải từ `https://raw.githubusercontent.com/dungbeommm/NovelReader_Translate/main/NovelReader_GPU_notebook.zip`. **Không cần tự tải/chọn ZIP**. Notebook có lớp cập nhật nguồn v4 nên vẫn hoạt động nếu ZIP trên GitHub còn là v3; không tự đẩy thay đổi lên GitHub.
+4. Chạy bước 2–4: cài CT2 4.6.0 / ORT-GPU 1.23.2 / cuDNN 9.10.2.21 và kiểm tra inference GPU. Nếu lỗi, xử lý trước khi mở Web.
+5. Mở **link riêng theo phiên** được in ở bước 5; lần đầu đổi secret trong URL sang cookie HttpOnly và xóa query khỏi địa chỉ. Không chia sẻ link đó. Cell 5 phải tiếp tục chạy để nhận yêu cầu quyền Drive.
+6. Trong Web, **Lưu: Google Drive** là mặc định trên notebook mới. Bấm **Xuất TXT / EPUB / Audio**. Nếu chưa kết nối Drive, **quay về tab Colab** để cấp quyền khi được hỏi; không cần nhập Client ID/Secret/token vào Web.
+7. Kết quả được sao chép vào `MyDrive/NovelReader_Exports/<tên truyện>/`. Tên có timestamp + mã ngắn, không ghi đè bản trước. Audio được đóng thành ZIP trên ổ cục bộ trước khi chép. Bản gốc vẫn giữ tại Colab.
+8. Chọn **Lưu: Tải về máy** nếu không muốn cấp quyền Drive. Đợi thông báo hoàn tất trước khi Stop server hoặc ngắt runtime.
 
-Nếu trước đó đã import ONNX Runtime/Piper/CT2 vào kernel rồi mới cài lại thư viện, hãy **Restart session**, sau đó chạy lại từ bước 1. Runtime mới vẫn phải là T4.
+Drive mount do Colab thực hiện trong tab notebook, không giả lập popup Google trong tab Cloudflare. Google có thể không hỏi lại nếu đã cấp quyền/mount. Quyền mount có thể cho runtime truy cập rộng hơn thư mục xuất; chỉ chạy mã nguồn tin cậy và không chia sẻ link Web.
+
+Nếu đã import ONNX Runtime/Piper/CT2 vào kernel rồi mới cài lại thư viện, hãy **Restart session** rồi chạy từ bước 1. Bước 1 giữ `data/`, `models/`, output và `.env` hiện có. **Restart** khác với xóa runtime; luôn sao lưu kết quả trước khi bỏ phiên.
+
+Lưu ý: file ZIP đính kèm có thể đổi tên thành `NovelReader_GPU_notebook.zip` để bạn chủ động cập nhật vào repository. Notebook tải từ GitHub, không phụ thuộc file ZIP trong máy người dùng. Chưa thực hiện upload hoặc commit GitHub thay bạn.
 
 ### Cấu hình khởi đầu
 
@@ -38,7 +44,7 @@ Không bảo đảm số lần tăng tốc hay số ký tự/giây. Pipeline có
 
 - Model, SQLite, text, audio đang xử lý nằm trên `/content`, không ghi trực tiếp vào thư mục Drive mount. Đây là lưu trữ tạm: **sao lưu trước khi runtime ngắt**.
 - Bước sao lưu lấy snapshot SQLite và text/audio sau khi dừng server, không kèm cấu hình/token Drive. Muốn khôi phục: dừng server, đặt `data/novel.sqlite3`, `output_text/`, `output_audio/` của bản sao lưu vào đúng các thư mục dự án, rồi khởi động lại. Không trộn database với output của truyện khác.
-- Tunnel là link công khai **không có đăng nhập**. Ai có link có thể truy cập ứng dụng; không chia sẻ link và không dùng dữ liệu nhạy cảm. Tắt tunnel khi xong.
+- Notebook v4 bảo vệ Web/tài nguyên/API/WebSocket bằng secret ngẫu nhiên theo phiên và cookie HttpOnly. Ai có link riêng vẫn có thể truy cập ứng dụng; không chia sẻ. Đây không phải cơ chế phân quyền nhiều người dùng. Bản chạy local không đặt secret chỉ nên bind localhost.
 - Cell server dùng file log, không dùng pipe chưa được đọc. Stop gửi SIGTERM, đợi tối đa khoảng 135 giây rồi mới buộc dừng. Audio đang dở có thể cần tạo lại.
 
 ## Những thay đổi chính
@@ -143,7 +149,7 @@ python -m translation.core.benchmark_sweep /content/mau.txt \
   --beams 1,2 --batches 64,96 --windows 16
 ```
 
-Core benchmark không bao gồm checkpoint Web, TTS hay MP3. Log Web có `TIMING translation` và `TIMING audio` theo chương. Xem `docs/QA_T4_WEB.md` để biết phạm vi kiểm thử thực tế và giới hạn chưa xác nhận.
+Core benchmark không bao gồm checkpoint Web, TTS hay MP3. Log Web có `TIMING translation` và `TIMING audio` theo chương. Xem `docs/GITHUB_DRIVE_V4.md` cho kiểm thử hiện tại; các báo cáo phiên bản trước ghi riêng trong docs.
 
 
 ## Bản vá Conv1D/cuDNN trên T4

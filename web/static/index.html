@@ -30,6 +30,13 @@
   <div class="header-right">
     <span id="hw-pill" class="pill hw-pill" title="Cấu hình phần cứng tự động nhận diện">⚡ CPU...</span>
     <span id="status" class="chip">● Sẵn sàng</span>
+    <label class="export-destination" title="Lưu bản sao lên Drive hoặc tải về máy">
+      <span>Lưu:</span>
+      <select id="export-destination" aria-label="Nơi lưu bản xuất">
+        <option value="download">Tải về máy</option>
+        <option value="gdrive">Google Drive</option>
+      </select>
+    </label>
     <a class="button export" id="export-txt" href="/api/export/txt" title="Tải về file TXT bản dịch">↓ <span>Xuất TXT</span></a>
     <a class="button export" id="export-epub" href="/api/export/epub" title="Tải về file EPUB đầy đủ">↓ <span>Xuất EPUB</span></a>
     <a class="button export" id="export-audio" href="/api/export/audio" title="Tải về file ZIP chứa toàn bộ audio MP3 đã tạo">🎧 <span>Xuất Audio</span></a>

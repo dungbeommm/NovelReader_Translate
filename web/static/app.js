@@ -122,6 +122,46 @@ $('tab-reader').onclick = () => {
   workspace.classList.add('show-reader');
 };
 
+// Export buttons retain their download links; Drive is an explicit destination.
+async function loadExportDestination() {
+  const select = $('export-destination');
+  if (!select) return;
+  try {
+    const capability = await api('/api/export/drive/capabilities');
+    select.querySelector('[value="gdrive"]').disabled = !capability.colab_drive;
+    const saved = localStorage.getItem('novel_export_destination');
+    select.value = capability.colab_drive ? (saved || 'gdrive') : 'download';
+  } catch { select.value = 'download'; }
+  select.onchange = () => localStorage.setItem('novel_export_destination', select.value);
+}
+
+let driveExportBusy = false;
+for (const [id, format] of [['export-txt', 'txt'], ['export-epub', 'epub'], ['export-audio', 'audio']]) {
+  $(id).addEventListener('click', event => {
+    if ($('export-destination')?.value !== 'gdrive') return;
+    event.preventDefault();
+    if (driveExportBusy) { notice('Đang xuất lên Drive. Vui lòng đợi.'); return; }
+    safe(async () => {
+      driveExportBusy = true;
+      try {
+        const task = await api('/api/export/drive/' + format, {}, 'POST');
+        notice('Đang chuẩn bị. Nếu được hỏi, quay lại tab Colab để cấp quyền Google Drive.');
+        for (let i = 0; i < 3600; i++) {
+          const result = await api('/api/export/drive/status/' + task.id);
+          if (result.status === 'done') {
+            notice('✓ Đã lưu trong My Drive/' + result.drive_path + '. Bản gốc vẫn giữ tại Colab.');
+            return;
+          }
+          if (result.status === 'error' || result.status === 'auth_error') throw new Error(result.message);
+          notice(result.message || 'Đang xuất Google Drive…');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        throw new Error('Chưa nhận được kết quả. Kiểm tra thư mục NovelReader_Exports trong Drive trước khi xuất lại.');
+      } finally { driveExportBusy = false; }
+    });
+  });
+}
+
 // ----------------- HARDWARE & MODELS -----------------
 async function loadHardware() {
   try {
@@ -1745,7 +1785,7 @@ safe(async () => {
   setViewMode(currentViewMode);
   const savedBackend = localStorage.getItem('novel_backend') || 'ct2';
   setBackend(savedBackend);
-  await Promise.all([loadHardware(), loadModels(), loadVoices(), loadGdriveSettings()]);
+  await Promise.all([loadHardware(), loadModels(), loadVoices(), loadGdriveSettings(), loadExportDestination()]);
   const s = await refreshAll();
 
   if (s.book) {

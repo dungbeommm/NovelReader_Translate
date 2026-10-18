@@ -7,7 +7,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from storage.files import MAX_FILE
 from web import runtime
-from web.routes import books, translation, audio, gdrive, system, progress
+from web.access import protect_request
+from web.routes import books, translation, audio, gdrive, system, progress, drive_exports
 
 @asynccontextmanager
 async def lifespan(app):
@@ -19,6 +20,9 @@ async def lifespan(app):
 
 
 async def local_guard(request:Request,call_next):
+    access = protect_request(request)
+    if access is not None:
+        return access
     origin=request.headers.get('origin')
     if origin:
         allow_tunnel = (
@@ -37,7 +41,9 @@ async def local_guard(request:Request,call_next):
     size=request.headers.get('content-length')
     if size and (not size.isdigit() or int(size)>MAX_FILE+1024*1024):
         return Response('File quá lớn.',status_code=413)
-    return await call_next(request)
+    response = await call_next(request)
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    return response
 
 
 def create_app():
@@ -56,7 +62,7 @@ def create_app():
 
     app.middleware('http')(local_guard)
     # Static /api/export/audio must precede /api/export/{format}.
-    for module in (audio, gdrive, translation, system, progress, books):
+    for module in (audio, gdrive, translation, system, progress, drive_exports, books):
         app.include_router(module.router)
     app.mount('/static', StaticFiles(directory=runtime.ROOT / 'web/static'), name='static')
     return app
