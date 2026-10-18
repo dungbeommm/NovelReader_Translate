@@ -6,10 +6,19 @@ import argparse
 import importlib.metadata
 import os
 import platform
+import sys
 import time
 from pathlib import Path
 
-from translation.core.app import read_text_file
+# benchmark_sweep launches this file directly in a child process.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from storage.files import decode_text
+
+
+def read_text_file(path):
+    return decode_text(path.read_bytes())[0]
+
 from translation.core.ct2_safe_import import import_ctranslate2
 from translation.core.hardware import detect_hardware_profile
 from translation.core.text_preprocess import (

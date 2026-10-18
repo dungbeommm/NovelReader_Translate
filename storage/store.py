@@ -43,6 +43,9 @@ class Store:
             except Exception:
                 pass
 
+        with self.connect() as c:
+            c.execute("UPDATE chapter SET audio_status='none' WHERE audio_status IN ('queued', 'generating')")
+
         # Backward-compatible SQLite migration: persist the output folder per book.
         with self.connect() as c:
             columns = {row['name'] for row in c.execute('PRAGMA table_info(book)')}
@@ -186,10 +189,12 @@ class Store:
                 paras = []
             lines.append("\n\n".join(p.strip() for p in paras if p and p.strip()))
 
+        temp_file = full_file.with_suffix('.txt.tmp')
         try:
-            full_file.write_text("".join(lines), encoding='utf-8')
-        except Exception:
-            pass
+            temp_file.write_text("".join(lines), encoding='utf-8')
+            os.replace(temp_file, full_file)
+        finally:
+            temp_file.unlink(missing_ok=True)
         return full_file
 
     def replace(self, name, encoding, chapters):

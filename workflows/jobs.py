@@ -3,6 +3,8 @@ import threading
 import json
 import time
 import logging
+import os
+from workflows.audio_queue import AudioQueue
 from translation.engines import create_engine, invert_opener_spacing
 from translation.text import make_plan, assemble, postprocess
 from translation.glossary import parse_glossary
@@ -133,7 +135,7 @@ class Job:
             old = json.loads(book['config']) if book.get('config') else {}
             changed = old and any(
                 old.get(k) != config.get(k)
-                for k in ('engine', 'glossary', 'honorific_mode', 'pronoun_harmonizer', 'beam_size', 'chunk_mode', 'normalize_mode')
+                for k in ('backend', 'engine', 'glossary', 'honorific_mode', 'pronoun_harmonizer', 'beam_size', 'chunk_mode', 'normalize_mode')
             )
 
             all_chapters = self.store.list()
@@ -238,9 +240,42 @@ class Job:
             self.message = 'Đang hủy; đợi lời gọi engine hiện tại kết thúc'
             self.emit('status')
 
+    def _generate_audio(self, item, config):
+        cid, position, title, paras = item
+        if not self.checkpoint():
+            self.store.update(cid, audio_status='none')
+            return
+        try:
+            self.store.update(cid, audio_status='generating')
+            self.emit('chapter_audio_started', chapter_id=cid)
+            started = time.perf_counter()
+            audio_path = audio_service.generate_chapter_audio(
+                cid, position, title, paras, self.store.audio_dir,
+                voice_id=config.get('voice_id', 'ngochuyennew'),
+                speed=float(config.get('audio_speed', 1.0)),
+                noise_scale=float(config.get('noise_scale', 0.667)),
+                noise_w_scale=float(config.get('noise_w_scale', 0.8)),
+                fmt=config.get('audio_format', 'mp3'),
+                bitrate=config.get('audio_bitrate', '96k'))
+            self.store.update(cid, audio_status='done')
+            log.info('TIMING audio chapter=%s seconds=%.3f', position, time.perf_counter() - started)
+            self.emit('chapter_audio_done', chapter_id=cid, audio_url=f'/api/chapters/{cid}/audio')
+            try:
+                from gdrive import gdrive_service
+                if gdrive_service.get_gdrive_config().get('auto_upload'):
+                    threading.Thread(target=gdrive_service.upload_audio_file, args=(audio_path,), daemon=True).start()
+            except Exception:
+                log.exception('Không thể khởi tạo upload Drive')
+        except Exception as exc:
+            log.exception('Lỗi tạo audio cho chương %s', cid)
+            self.store.update(cid, audio_status='error')
+            self.emit('chapter_audio_error', chapter_id=cid, error=str(exc)[:300])
+
     def run(self, config, glossary, target_chapter_ids=None):
         current = None
         group_failed = False
+        audio_queue = None
+        export_dirty = False
         target_id_set = set(target_chapter_ids) if target_chapter_ids else None
         try:
             backend = config.get('backend', 'ct2')
@@ -256,10 +291,29 @@ class Job:
                     self.status = 'running'
                     self.message = ''
             self.emit('status')
+            if config.get('generate_audio', True) and config.get('audio_pipeline', True):
+                audio_queue = AudioQueue(
+                    lambda item: self._generate_audio(item, config), self.checkpoint,
+                    lambda item: self.store.update(item[0], audio_status='none'),
+                    maxsize=max(1, min(4, int(config.get('audio_queue_size', 2)))))
+
+            def queue_audio(item):
+                if audio_queue is not None:
+                    self.store.update(item[0], audio_status='queued')
+                    audio_queue.submit(item)
+                else:
+                    self._generate_audio(item, config)
+
             for row in self.store.list():
                 if target_id_set is not None and row['id'] not in target_id_set:
                     continue
                 if row['status'] == 'done':
+                    # Resume missing/failed audio without translating completed text again.
+                    if config.get('generate_audio', True) and not self.stop_flag.is_set():
+                        chapter = self.store.get(row['id'])
+                        exists = audio_service.get_chapter_audio_path(self.store.audio_dir, row['id'], row['position'])
+                        if chapter.get('audio_status') != 'done' or not exists:
+                            queue_audio((row['id'], row['position'], chapter['translated_title'] or chapter['title'], chapter['translated']))
                     continue
                 if not self.checkpoint():
                     break
@@ -273,30 +327,43 @@ class Job:
                 values = chapter['outputs'] or [None] * len(plan)
                 self.store.update(current, status='translating', plan=plan, outputs=values, error='')
                 self.emit('chapter_started', chapter_id=current)
+                chapter_started = time.perf_counter()
                 for attempt in range(3):
                     try:
                         pending = [i for i, v in enumerate(values) if v is None]
-                        batch_size = config.get('batch_size', 8)
-                        for offset in range(0, len(pending), batch_size):
+                        batch_size = max(1, int(config.get('batch_size', 64 if os.getenv('COLAB_GPU') else 8)))
+                        offset = 0
+                        while offset < len(pending):
                             if not self.checkpoint():
                                 return
                             ids = pending[offset:offset + batch_size]
                             try:
-                                translated = engine.translate(
-                                    [plan[i][1] for i in ids],
-                                    glossary,
-                                    beam_size=beam_size,
-                                    chunk_mode=chunk_mode,
-                                    normalize_mode=normalize_mode
-                                )
-                            except TypeError:
-                                translated = engine.translate([plan[i][1] for i in ids], glossary)
+                                try:
+                                    translated = engine.translate(
+                                        [plan[i][1] for i in ids], glossary,
+                                        beam_size=beam_size, chunk_mode=chunk_mode,
+                                        normalize_mode=normalize_mode)
+                                except TypeError:
+                                    translated = engine.translate([plan[i][1] for i in ids], glossary)
+                            except RuntimeError as exc:
+                                oom = any(word in str(exc).lower() for word in ('out of memory', 'cuda_error_out_of_memory', 'cudaerrormemoryallocation', 'cublas_status_alloc_failed'))
+                                reduced = False
+                                if oom:
+                                    reduce = getattr(engine, 'reduce_batch_size', None)
+                                    reduced = bool(reduce()) if reduce else False
+                                if oom and (batch_size > 1 or reduced):
+                                    batch_size = max(1, batch_size // 2)
+                                    log.warning('GPU OOM: giảm Web batch xuống %s, thử lại cùng đoạn', batch_size)
+                                    self.emit('batch_reduced', batch_size=batch_size, reason='GPU OOM')
+                                    continue
+                                raise
 
 
                             if len(translated) != len(ids):
                                 raise RuntimeError('Sai số lượng segment')
                             if self.stop_flag.is_set():
                                 return
+                            offset += len(ids)
                             for i, text in zip(ids, translated):
                                 values[i] = text
                             title, paras = assemble(plan, values, len(chapter['source']))
@@ -309,61 +376,16 @@ class Job:
                         title, paras = assemble(plan, values, len(chapter['source']))
                         title, paras = apply_postprocess(title, paras, chapter['title'], chapter['source'], config)
                         self.store.update(current, status='done', outputs=values, translated_title=title, translated=paras, error='')
+                        export_dirty = True
                         try:
                             self.store.export_chapter_text(current, title, paras, chapter['position'])
-                            self.store.export_full_book_text()
                         except Exception as e:
                             log.error("Lỗi xuất file text chương %d: %s", chapter['position'], e)
+                        log.info('TIMING translation chapter=%s seconds=%.3f', chapter['position'], time.perf_counter() - chapter_started)
                         self.emit('chapter_done', chapter_id=current)
 
-                        # Đồng thời tạo file audio cho chương vừa dịch
                         if config.get('generate_audio', True) and not self.stop_flag.is_set():
-                            try:
-                                self.store.update(current, audio_status='generating')
-                                self.emit('chapter_audio_started', chapter_id=current)
-                                audio_path = audio_service.generate_chapter_audio(
-                                    current,
-                                    chapter['position'],
-                                    title,
-                                    paras,
-                                    self.store.audio_dir,
-                                    voice_id=config.get('voice_id', 'ngochuyennew'),
-                                    speed=float(config.get('audio_speed', 1.0)),
-                                    noise_scale=float(config.get('noise_scale', 0.667)),
-                                    noise_w_scale=float(config.get('noise_w_scale', 0.8)),
-                                    fmt=config.get('audio_format', 'mp3'),
-                                    bitrate=config.get('audio_bitrate', '96k')
-                                )
-                                self.store.update(current, audio_status='done')
-                                self.emit('chapter_audio_done', chapter_id=current, audio_url=f'/api/chapters/{current}/audio')
-
-                                # Tự động upload lên Google Drive nếu đã cấu hình
-                                try:
-                                    from gdrive import gdrive_service
-                                    if gdrive_service.get_gdrive_config().get('auto_upload'):
-                                        threading.Thread(target=gdrive_service.upload_audio_file, args=(audio_path,), daemon=True).start()
-                                except Exception:
-                                    pass
-
-                                # Synchronous + cached: no overlapping merges and no chapters outside scope.
-                                if config.get('auto_group_audio'):
-                                    try:
-                                        merged_groups = merge_service.group_and_merge_chapters(
-                                            self.store, int(config.get('group_size', 50)),
-                                            config.get('audio_format', 'mp3'),
-                                            chapter_ids=target_chapter_ids,
-                                            bitrate=config.get('audio_bitrate', '96k'))
-                                        if merged_groups:
-                                            self.emit('audio_groups_updated', groups=merged_groups, group_size=int(config.get('group_size', 50)))
-                                    except Exception as merge_exc:
-                                        group_failed = True
-                                        log.warning('Lỗi gộp nhóm audio: %s', merge_exc)
-                                        self.emit('audio_group_error', error=str(merge_exc)[:300])
-
-                            except Exception as a_exc:
-                                log.exception('Lỗi tạo audio cho chương %s: %s', current, a_exc)
-                                self.store.update(current, audio_status='error')
-                                self.emit('chapter_audio_error', chapter_id=current, error=str(a_exc)[:300])
+                            queue_audio((current, chapter['position'], title, paras))
 
                         break
                     except Exception as exc:
@@ -377,6 +399,9 @@ class Job:
                             return
                 current = None
 
+            # Wait for TTS AND encoding before grouping/marking the job idle.
+            if audio_queue is not None:
+                audio_queue.close()
             if config.get('auto_group_audio') and not self.stop_flag.is_set():
                 try:
                     final_groups = merge_service.group_and_merge_chapters(
@@ -387,6 +412,8 @@ class Job:
                     if final_groups:
                         self.emit('audio_groups_updated', groups=final_groups, group_size=int(config.get('group_size', 50)))
                 except Exception as merge_exc:
+                    group_failed = True
+                    self.emit('audio_group_error', error=str(merge_exc)[:300])
                     log.warning('Lỗi gộp audio ở cuối job: %s', merge_exc)
         except Exception as exc:
             log.exception('Job failed')
@@ -394,6 +421,24 @@ class Job:
             self.message = str(exc)[:500]
             self.emit('error', message=self.message)
         finally:
+            if audio_queue is not None:
+                try:
+                    # On fatal translation errors, do not deadlock a paused consumer.
+                    if self.status == 'error':
+                        self.stop_flag.set()
+                        self.gate.set()
+                    audio_queue.close()
+                except Exception as exc:
+                    log.exception('Lỗi dừng audio worker')
+                    self.status = 'error'
+                    self.message = str(exc)[:500]
+            if export_dirty:
+                try:
+                    self.store.export_full_book_text()
+                except Exception as exc:
+                    log.exception('Lỗi xuất toàn bộ truyện')
+                    self.status = 'error'
+                    self.message = str(exc)[:500]
             if current:
                 chapter = self.store.get(current)
                 if chapter and chapter['status'] == 'translating':

@@ -1,6 +1,24 @@
 name: novel-tool
 services:
+  web:
+    build: .
+    platform: linux/amd64
+    restart: unless-stopped
+    init: true
+    ports: ["127.0.0.1:8000:8000"]
+    volumes:
+      - webdata:/app/data
+      - ./models/translation:/app/models/translation
+      - ./models/voices:/app/models/voices
+      - ./output_text:/app/output_text
+      - ./output_audio:/app/output_audio
+      - cache:/cache
+    stop_grace_period: 120s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
   tts:
+    profiles: [tts]
     build:
       context: .
       dockerfile: tts/Dockerfile
@@ -9,53 +27,9 @@ services:
     init: true
     volumes:
       - ./models/voices:/app/models/voices:ro
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=5)"]
-      interval: 20s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    logging:
-      driver: json-file
-      options: {max-size: "10m", max-file: "3"}
-  bot:
-    build: .
-    platform: linux/amd64
-    restart: unless-stopped
-    init: true
-    env_file: .env
-    environment:
-      TTS_URL: http://tts:8010
-    volumes:
-      - jobs:/botdata
-      - ./models/translation:/app/models/translation
-      - cache:/cache
-    depends_on:
-      tts:
-        condition: service_healthy
-    stop_grace_period: 30s
-    logging:
-      driver: json-file
-      options: {max-size: "10m", max-file: "3"}
-  web:
-    profiles: [web]
-    build: .
-    platform: linux/amd64
-    restart: unless-stopped
-    init: true
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
-    ports: ["127.0.0.1:8000:8000"]
-    volumes:
-      - webdata:/app/data
-      - ./models/translation:/app/models/translation
-      - ./models/voices:/app/models/voices:ro
-      - ./output_text:/app/output_text
-      - ./output_audio:/app/output_audio
-      - cache:/cache
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
 volumes:
-  jobs:
   cache:
   webdata:

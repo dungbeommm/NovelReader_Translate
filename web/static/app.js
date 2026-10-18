@@ -132,11 +132,12 @@ async function loadHardware() {
       $('hw-pill').textContent = `⚡ ${dev}: ${currentHardware.cpu_count} luồng${devName}`;
       $('hw-pill').title = currentHardware.summary || '';
       if (currentHardware.batch_size && !$('batch').value) {
-        $('batch').value = currentHardware.batch_size;
+        $('batch').value = Math.max(1, Math.min(64, currentHardware.batch_size));
       }
       updateModelInfo();
     }
   } catch {}
+  if (!$('batch').value) $('batch').value = 8;
 }
 
 async function loadModels() {
@@ -897,7 +898,7 @@ function renderProgress(progress) {
   $('stop').disabled = !p.active || p.status === 'stopping';
   $('pause').textContent = p.status === 'paused' ? '▷ Tiếp tục' : 'Ⅱ Tạm dừng';
 
-  const inputs = ['engine', 'glossary', 'batch', 'reset', 'load-path', 'file', 'opt-honorific', 'opt-pronoun', 'opt-t2s', 'beam-size', 'normalize-mode', 'btn-delete-book', 'btn-save-book-title', 'book-output-title', 'btn-trans-range', 'btn-auto-group-audio', 'range-start', 'range-end', 'trans-range-start', 'trans-range-end', 'toc-group-size', 'btn-reset-current', 'btn-delete-current', 'btn-download-model', 'btn-download-model-action'];
+  const inputs = ['engine', 'glossary', 'batch', 'reset', 'load-path', 'file', 'opt-audio-pipeline', 'opt-honorific', 'opt-pronoun', 'opt-t2s', 'beam-size', 'normalize-mode', 'btn-delete-book', 'btn-save-book-title', 'book-output-title', 'btn-trans-range', 'btn-auto-group-audio', 'range-start', 'range-end', 'trans-range-start', 'trans-range-end', 'toc-group-size', 'btn-reset-current', 'btn-delete-current', 'btn-download-model', 'btn-download-model-action'];
   inputs.forEach(id => {
     const el = $(id);
     if (el) el.disabled = p.active || busy || isDownloadingModel;
@@ -981,7 +982,7 @@ function renderToc() {
       audioBadge.textContent = '🎧';
       audioBadge.title = 'Đã có audio MP3';
       b.append(n, name, audioBadge, icon);
-    } else if (c.audio_status === 'generating') {
+    } else if (['queued', 'generating'].includes(c.audio_status)) {
       const audioBadge = document.createElement('span');
       audioBadge.className = 'toc-audio-badge generating';
       audioBadge.textContent = '🎙';
@@ -1121,7 +1122,7 @@ async function selectChapter(id, refresh = false) {
         downloadBtn.textContent = `⬇ Tải ${fmt.toUpperCase()}`;
         msg.textContent = '✓ Audio chương đã sẵn sàng';
         msg.className = 'audio-status-msg';
-      } else if (chapter.audio_status === 'generating') {
+      } else if (['queued', 'generating'].includes(chapter.audio_status)) {
         player.style.display = 'none';
         downloadBtn.hidden = true;
         msg.textContent = '⏳ Đang tạo audio…';
@@ -1275,6 +1276,7 @@ function buildTranslatePayload(extraConfig = {}) {
     backend: selectedBackend,
     glossary: $('glossary').value,
     batch_size: batch,
+    audio_pipeline: $('opt-audio-pipeline') ? $('opt-audio-pipeline').checked : true,
     reset: extraConfig.reset !== undefined ? extraConfig.reset : $('reset').checked,
     honorific_mode: $('opt-honorific').checked ? 'safe' : 'off',
     pronoun_harmonizer: $('opt-pronoun').checked,
@@ -1752,7 +1754,8 @@ safe(async () => {
       if (c.backend) setBackend(c.backend);
       if (c.engine) $('engine').value = c.engine === 'local' ? 'HachimiMT-60-QT' : c.engine;
       $('glossary').value = c.glossary || '';
-      $('batch').value = c.batch_size || 8;
+      $('batch').value = c.batch_size || Math.min(64, currentHardware?.batch_size || 8);
+      if ($('opt-audio-pipeline')) $('opt-audio-pipeline').checked = c.audio_pipeline !== false;
       if (c.honorific_mode !== undefined) $('opt-honorific').checked = c.honorific_mode !== 'off';
       if (c.pronoun_harmonizer !== undefined) $('opt-pronoun').checked = !!c.pronoun_harmonizer;
       if (c.beam_size) {

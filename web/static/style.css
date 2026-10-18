@@ -2233,3 +2233,20 @@ progress::-moz-progress-bar {
 #book-output-title { width: 100%; box-sizing: border-box; }
 
 .output-paths code { overflow-wrap: anywhere; }
+
+/* Keep all header actions reachable on phones without widening the viewport. */
+@media (max-width: 600px) {
+  body { display: flex; flex-direction: column; height: 100dvh; }
+  .topbar { display: grid; grid-template-columns: minmax(0, 1fr); height: auto; gap: 7px; padding: 10px 12px; }
+  .brand { min-width: 0; }
+  .brand-sub { display: none; }
+  .mobile-tabs { width: 100%; }
+  .m-tab { flex: 1; }
+  .header-right { min-width: 0; flex-wrap: wrap; gap: 6px; }
+  .header-right .button { padding: 6px 8px; font-size: 11px; }
+  .header-right .chip { font-size: 10px; padding: 4px 6px; }
+  .workspace { flex: 1; min-height: 0; height: auto; width: 100%; }
+  .sidebar { min-width: 0; padding: 16px 12px; }
+  .toggle-info { min-width: 0; overflow-wrap: anywhere; }
+}
+.toggle-info .subtext { font-size: 11px; color: var(--text-muted); line-height: 1.45; margin-top: 3px; }

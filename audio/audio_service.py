@@ -155,13 +155,42 @@ def list_available_voices() -> list[dict]:
     return voices
 
 
-def is_cuda_available_for_piper() -> bool:
-    """Kiểm tra ONNX Runtime có CUDAExecutionProvider khả dụng để tăng tốc GPU hay không."""
+def _prepare_ort():
+    import onnxruntime as ort
+    # ORT >=1.21 knows the pip NVIDIA runtime layout. Also support older ORT.
+    preload = getattr(ort, 'preload_dlls', None)
+    if preload:
+        try:
+            preload(directory='')
+        except Exception as exc:
+            log.warning('ORT preload: %s', exc)
     try:
-        import onnxruntime as ort
-        return "CUDAExecutionProvider" in ort.get_available_providers()
+        from translation.core.ct2_safe_import import preload_cuda_libraries
+        preload_cuda_libraries()
+    except Exception as exc:
+        log.debug('CUDA preload: %s', exc)
+    return ort
+
+
+def is_cuda_available_for_piper() -> bool:
+    try:
+        return 'CUDAExecutionProvider' in _prepare_ort().get_available_providers()
     except Exception:
         return False
+
+
+def tts_runtime_status():
+    try:
+        import onnxruntime as ort
+        available = ort.get_available_providers()
+        version = ort.__version__
+    except ImportError:
+        available, version = [], None
+    with _voice_lock:
+        loaded = {key: voice.session.get_providers() for key, voice in _voice_instances.items()}
+    return {'ort_version': version, 'available_providers': available,
+            'loaded_voices': loaded, 'requested_device': os.getenv('PIPER_DEVICE', 'auto'),
+            'require_cuda': os.getenv('PIPER_REQUIRE_CUDA', '0') == '1'}
 
 
 def get_voice(voice_id: str = "ngochuyennew"):
@@ -193,26 +222,35 @@ def get_voice(voice_id: str = "ngochuyennew"):
         log.info("Đang nạp Piper voice model: %s", model_path.name)
         from piper import PiperVoice
 
-        use_cuda = is_cuda_available_for_piper()
+        device = os.getenv('PIPER_DEVICE', 'auto').strip().lower()
+        if device not in {'auto', 'cpu', 'cuda'}:
+            raise ValueError('PIPER_DEVICE phải là auto, cpu hoặc cuda')
+        require_cuda = device == 'cuda' or os.getenv('PIPER_REQUIRE_CUDA') == '1'
+        if device == 'cpu' and require_cuda:
+            raise ValueError('PIPER_DEVICE=cpu xung đột PIPER_REQUIRE_CUDA=1')
+        use_cuda = device != 'cpu' and is_cuda_available_for_piper()
+        if require_cuda and not use_cuda:
+            raise RuntimeError('Piper không có CUDAExecutionProvider. Chạy lại cell cài GPU, restart runtime rồi kiểm tra CUDA/cuDNN.')
         inst = None
         if use_cuda:
             try:
-                log.info("🚀 Kích hoạt GPU (CUDA) cho Piper TTS: %s", voice_id)
                 inst = PiperVoice.load(
                     str(model_path),
                     config_path=str(config_path) if config_path.is_file() else None,
-                    use_cuda=True
-                )
-            except Exception as cuda_exc:
-                log.warning("Piper TTS chạy GPU thất bại (%s), chuyển về CPU...", cuda_exc)
+                    use_cuda=True)
+                providers = inst.session.get_providers()
+                if 'CUDAExecutionProvider' not in providers:
+                    raise RuntimeError(f'Piper session không dùng CUDA: {providers}')
+            except Exception as exc:
+                if require_cuda:
+                    raise RuntimeError('Piper khởi tạo CUDA thất bại; không chuyển sang CPU. Kiểm tra lib CUDA/cuDNN và log ORT.') from exc
+                log.warning('Piper CUDA thất bại (%s), dùng CPU; đặt PIPER_REQUIRE_CUDA=1 để dừng thay vì fallback.', exc)
                 inst = None
-
         if inst is None:
             inst = PiperVoice.load(
                 str(model_path),
                 config_path=str(config_path) if config_path.is_file() else None,
-                use_cuda=False
-            )
+                use_cuda=False)
 
         _voice_instances[voice_id] = inst
         active_providers = getattr(inst.session, "get_providers", lambda: [])() if hasattr(inst, "session") else []
@@ -352,7 +390,8 @@ def generate_chapter_audio(
     voice = get_voice(voice_id)
     length_scale = 1.0 / max(0.4, min(2.5, speed))
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    # Same filesystem for atomic publication; partial MP3s are never visible.
+    with tempfile.TemporaryDirectory(prefix=".audio-", dir=audio_dir) as tmp_dir:
         tmp_path = Path(tmp_dir)
         raw_wav = tmp_path / "chapter.wav"
         synth_text_to_wav(
@@ -365,8 +404,7 @@ def generate_chapter_audio(
         temp_target = tmp_path / f"converted.{fmt}"
         convert_wav(raw_wav, temp_target, fmt=fmt, bitrate=bitrate)
 
-        # Ghi đè an toàn vào chuong_xxxx.fmt và chapter_id.fmt
-        shutil.move(str(temp_target), str(out_file))
+        os.replace(temp_target, out_file)
 
     log.info("Tạo audio chương %d thành công [%s, %s]: %s (%d bytes)",
              position, voice_id, fmt, out_file.name, out_file.stat().st_size)

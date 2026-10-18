@@ -39,7 +39,7 @@ def build_plan(source, destination, flat_output=False):
     if source == destination:
         raise ValueError('Thư mục nguồn và đích phải khác nhau.')
     mappings = [('translator/models', 'models/translation'), ('tts/voice', 'models/voices'),
-                ('translator/data', 'data'), ('data', 'data/telegram')]
+                ('translator/data', 'data')]
     plan = []
     for old, new in mappings:
         for f in sorted((source / old).rglob('*')):

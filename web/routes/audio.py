@@ -10,6 +10,11 @@ from web.schemas import MergeAudioInput, AutoGroupInput, MergeRangeInput, MergeS
 
 router = APIRouter()
 
+@router.get('/api/tts/status')
+def tts_status():
+    return audio_service.tts_runtime_status()
+
+
 @router.get('/api/voices')
 def get_voices():
     return audio_service.list_available_voices()
@@ -34,6 +39,7 @@ def get_chapter_audio(id: int):
 
 @router.post('/api/chapters/{id}/audio')
 def generate_single_audio(id: int):
+    runtime.ensure_idle()
     chapter = runtime.store.get(id)
     if not chapter:
         raise HTTPException(404, 'Không tìm thấy chương.')

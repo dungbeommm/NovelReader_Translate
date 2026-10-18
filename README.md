@@ -1,193 +1,146 @@
-# Novel Tool — Dịch truyện, tạo audio và quản lý đầu ra
+# NovelReader T4 Web — Dịch truyện và tạo audio
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dungbeommm/NovelReader_Translate/blob/main/NovelReader_Colab.ipynb)
+Bản Web/Colab từ mã nguồn đính kèm, tối ưu luồng CTranslate2 + Piper. Không kèm trọng số model, tài khoản, token hay dữ liệu truyện cá nhân. Không có thành phần bot.
 
-> 💡 **Chạy online không cần cài máy:** Bạn có thể mở ngay trên Google Colab với GPU T4 miễn phí qua notebook [`NovelReader_Colab.ipynb`](NovelReader_Colab.ipynb).
+## Chạy trên Colab T4
 
-Mã nguồn được chia ngang hàng theo chức năng, không còn thư mục `translator/` bao ngoài.
+1. Giải nén `NovelReader_T4_Web_Optimized.zip` trên máy của bạn; mở `NovelReader_Colab.ipynb` bằng Google Colab (Upload notebook).
+2. Chọn **Runtime → Change runtime type → T4 GPU**.
+3. Chạy các cell theo thứ tự. Ở bước 1, tải lên **chính file ZIP đã sửa** khi được hỏi. Notebook không clone/pull repository gốc nên không làm mất bản vá.
+4. Bước 2 cài dependencies rồi chỉ giữ `onnxruntime-gpu==1.23.2`; CT2 được cố định `4.6.0` cho stack CUDA 12/cuDNN 9. Không chạy lại `pip install -r requirements.txt` sau đó; nếu cần cài lại, dùng `scripts/setup_colab_runtime.py`.
+5. Bước 4 chạy dịch và tạo WAV ngắn để kiểm tra **session CT2/Piper thực sự dùng CUDA**. Nếu lỗi thì xử lý trước khi mở Web.
+6. Mở link từ bước 5, nạp TXT/EPUB và chạy. **Stop cell server** khi xong; bước 6 tải bản sao lưu output + checkpoint.
 
-## Cấu trúc
+Nếu trước đó đã import ONNX Runtime/Piper/CT2 vào kernel rồi mới cài lại thư viện, hãy **Restart session**, sau đó chạy lại từ bước 1. Runtime mới vẫn phải là T4.
 
-```text
-tool/
-├── main.py                         # Điểm chạy Web UI
-├── paths.py                        # Đường dẫn dùng chung, không phụ thuộc thư mục chạy
-├── web/                            # Giao diện và API
-│   ├── application.py              # Ghép FastAPI, middleware, lifespan
-│   ├── runtime.py                  # Store và Job dùng chung
-│   ├── schemas.py                  # Kiểm tra dữ liệu API
-│   ├── routes/                     # books, translation, audio, gdrive, system, progress
-│   └── static/                     # HTML, JS, CSS, font
-├── translation/                    # Engine, thuật ngữ, xử lý văn bản
-│   └── core/                       # Backend Hachimi và mã bổ trợ được giữ lại
-├── tts/                            # Service giọng đọc Piper
-│   ├── server.py
-│   ├── synthesis.py                # Adapter Piper dùng chung cho Web và service
-│   ├── pipeline/batch_tts.py
-│   └── requirements.txt
-├── audio/                          # Tạo audio chương và gộp audio
-│   ├── audio_service.py
-│   └── merge_service.py
-├── gdrive/                         # Google Drive
-│   └── gdrive_service.py
-├── telegram/                       # Telegram Bot
-│   ├── bot.py
-│   ├── runner.py
-│   ├── state.py
-│   └── requirements.txt
-├── workflows/                      # Điều phối dịch → text → TTS → gộp → upload
-│   └── jobs.py
-├── storage/                        # Database, nhập/xuất TXT và EPUB
-│   ├── store.py
-│   └── files.py
-├── models/
-│   ├── translation/                # Model dịch tải về
-│   └── voices/                     # .onnx, .onnx.json và thông tin giọng đọc
-├── data/                           # Database/cấu hình, tạo khi chạy
-│   ├── novel.sqlite3
-│   ├── gdrive_config.json          # Chỉ tạo khi lưu cấu hình Drive; có thể chứa token
-│   ├── logs/
-│   └── telegram/                   # Hàng đợi và staging riêng của bot
-├── output_text/
-│   └── Tên truyện đã dịch/
-│       ├── chuong_0001.txt
-│       ├── chuong_0002.txt
-│       └── toan_bo_truyen.txt
-├── output_audio/
-│   └── Tên truyện đã dịch/
-│       ├── chuong_0001.mp3
-│       ├── chuong_0002.mp3
-│       └── audio_gop/
-│           ├── chuong_0001_0050.mp3
-│           └── chuong_0051_0100.mp3
-├── scripts/                        # Tải model/giọng và chuyển dữ liệu cũ
-├── tests/                          # Unit, regression và integration tests
-├── docs/
-├── compose.yaml
-├── Dockerfile
-├── requirements.txt
-├── .env.example
-├── start_web.bat
-├── FIX_NOTES.md
-└── README.md
-```
+### Cấu hình khởi đầu
 
-Các thư mục model/data/output có thể trống trong ZIP. Database/log chỉ sinh khi chạy. Gói mã không kèm trọng số model hay dữ liệu cá nhân.
+| Thiết lập | Notebook T4 |
+| --- | --- |
+| Backend | CT2 |
+| Model tải khi kiểm tra | HachimiMT-60-QT |
+| Batch Web (số đoạn đưa vào engine mỗi lượt) | 64 |
+| Batch CT2 nội bộ | 96 |
+| CT2 batch type / window | tokens / 16 |
+| Compute type | int8_float16 |
+| Beam Web | 2; thử 1 nếu chấp nhận đánh đổi chất lượng |
+| Pipeline audio | Bật, một worker, tối đa 2 chương đợi |
+| Tự gộp audio | Mặc định tắt; khi bật chỉ gộp ở cuối tác vụ |
+| Piper | Bắt buộc CUDA, báo lỗi thay vì chuyển CPU âm thầm |
 
-## Cài đặt và chạy Web
+Batch Web và batch nội bộ **khác nhau**. Thay biến môi trường cần khởi động lại backend để nạp lại model. UI lấy batch đề xuất phần cứng rồi giới hạn tối đa 64; cấu hình đã lưu của truyện vẫn được giữ.
 
-Khuyến nghị **Python 3.11**, FFmpeg và ffprobe trong PATH. Cần model dịch và giọng Piper có quyền sử dụng. Web dùng Piper cục bộ; không cần khởi động service TTS riêng.
+Thiếu VRAM khi dịch: chương trình giảm batch và thử lại **cùng đoạn**, không bỏ đoạn. Với OOM ở TTS hoặc lỗi không phục hồi được: chương audio được đánh dấu lỗi; hãy giảm tải/đổi sang chạy tuần tự rồi tiếp tục. Khi chỉnh lại notebook có thể giảm batch nội bộ 96 → 64 → 32. Không dùng BF16 trên T4.
 
-Windows CMD, từ thư mục `tool/`:
+Không bảo đảm số lần tăng tốc hay số ký tự/giây. Pipeline có thể tranh GPU với CT2; bỏ chọn **Pipeline dịch + audio** để so sánh chế độ tuần tự trên cùng vài chương, cùng giọng/beam.
 
-```bat
-py -3.11 -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\python.exe scripts\download_model.py --model HachimiMT-60-QT
-.venv\Scripts\python.exe scripts\download_voices.py
-start_web.bat
-```
+### Dữ liệu và an toàn Colab
 
-Các lệnh tải model/giọng cần Internet và có thể tải nhiều file lớn. Nếu đã có model, dùng công cụ chuyển dữ liệu bên dưới thay vì tải lại.
+- Model, SQLite, text, audio đang xử lý nằm trên `/content`, không ghi trực tiếp vào thư mục Drive mount. Đây là lưu trữ tạm: **sao lưu trước khi runtime ngắt**.
+- Bước sao lưu lấy snapshot SQLite và text/audio sau khi dừng server, không kèm cấu hình/token Drive. Muốn khôi phục: dừng server, đặt `data/novel.sqlite3`, `output_text/`, `output_audio/` của bản sao lưu vào đúng các thư mục dự án, rồi khởi động lại. Không trộn database với output của truyện khác.
+- Tunnel là link công khai **không có đăng nhập**. Ai có link có thể truy cập ứng dụng; không chia sẻ link và không dùng dữ liệu nhạy cảm. Tắt tunnel khi xong.
+- Cell server dùng file log, không dùng pipe chưa được đọc. Stop gửi SIGTERM, đợi tối đa khoảng 135 giây rồi mới buộc dừng. Audio đang dở có thể cần tạo lại.
 
-Linux/macOS:
+## Những thay đổi chính
+
+- Pipeline có hàng đợi giới hạn, một consumer TTS + mã hóa audio. Dịch chương kế tiếp không phải chờ MP3 chương trước; job chỉ chuyển idle khi worker đã kết thúc.
+- Công tắc pipeline/tuần tự trong Web; API có `audio_pipeline`, `audio_queue_size` (1–4).
+- Audio lỗi/thiếu được tiếp tục trên bản dịch đã hoàn thành khi chạy tiếp toàn bộ, không phải dịch lại. Lưu ý: hành vi cũ **chọn dải mà mọi chương đã dịch xong** vẫn là dịch lại dải đó; để chỉ bổ sung audio, bấm chạy tiếp toàn bộ hoặc dùng nút audio từng chương khi job rảnh.
+- Pause chặn việc bắt đầu audio tiếp theo; Stop kết thúc audio đang gọi rồi bỏ các phần đang đợi, giữ checkpoint. Trạng thái audio `queued/generating` được phục hồi sau khi khởi động lại.
+- Gộp chỉ một lần ở cuối tác vụ, đúng phạm vi chương. Lỗi gộp được báo thành lỗi job.
+- Xuất `toan_bo_truyen.txt` một lần ở cuối (kể cả dừng có kiểm soát), thay vì ghi lại toàn bộ sau mỗi chương. Text từng chương và checkpoint vẫn cập nhật trong lúc chạy.
+- Xuất file tổng và audio theo tệp tạm rồi thay thế an toàn, không lộ MP3 đang viết dở.
+- Có `/api/tts/status`, log providers của session Piper, và `scripts/check_gpu.py` kiểm tra CUDA + inference ngắn.
+- Docker/Compose mặc định chạy Web; không còn phụ thuộc, biến môi trường, volume hay lệnh khởi động bot.
+
+## Chạy cục bộ (CPU hoặc GPU đã cài CUDA)
+
+Khuyên dùng **Python 3.11**, FFmpeg/ffprobe trong PATH. Linux cần libgomp1/espeak-ng tùy runtime.
 
 ```sh
 python3.11 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
+python scripts/download_model.py --model HachimiMT-60-QT
 python -m uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-Mở `http://localhost:8000`. Không chạy nhiều worker vì ứng dụng dùng một thư viện truyện hiện tại và một hàng đợi dịch trong tiến trình.
+Giọng được tải khi dùng lần đầu. `scripts/download_voices.py` vẫn có thể tải cả kho giọng nếu bạn chủ động chạy; notebook chỉ tải giọng cần dùng.
 
-## Tên truyện và cách lưu output
+Requirements mặc định dùng ORT CPU để hỗ trợ máy không GPU. Với Colab dùng script cài GPU riêng. Không giữ đồng thời hai distribution `onnxruntime` và `onnxruntime-gpu`.
 
-1. Nạp TXT/EPUB. Mặc định tên thư mục là tên file không có phần mở rộng.
-2. Muốn dùng tên tiếng Việt, nhập ở **Tên truyện / thư mục đầu ra** và bấm **Lưu tên truyện**. Hệ thống không tự đoán tên dịch; bạn cung cấp tên muốn dùng.
-3. Text và audio được lưu ở hai nhánh có cùng tên thư mục. Đổi tên sẽ chuyển cả hai nhánh cùng dữ liệu hiện có.
-4. Nạp truyện mới chỉ thay thư viện SQLite hiện tại; output truyện trước vẫn được giữ. Tên trùng được thêm `_2`, `_3`… để không ghi đè. Database chưa phải thư viện nhiều truyện: output cũ được lưu, nhưng checkpoint chỉ dành cho truyện hiện tại.
-5. Tên có ký tự không hợp lệ trên Windows được làm sạch. Xóa truyện/reset/purge chỉ tác động output truyện hiện tại, không xóa output các truyện khác.
+`PIPER_DEVICE=auto|cpu|cuda` (mặc định `auto`); `PIPER_REQUIRE_CUDA=1` buộc dừng khi CUDA không dùng được. Chế độ `auto` có thể fallback CPU nhưng có cảnh báo log. Sau khi đổi thiết bị, khởi động lại server để bỏ cache giọng cũ.
 
-Audio gộp chỉ có một bản trong `audio_gop/`. Không tạo thêm bản sao audio chương dạng `chapter_<id>` hay bản sao audio gộp ở ngoài.
+Giữ **một Uvicorn worker** vì thư viện truyện và hàng đợi nằm trong cùng tiến trình. Không chạy nhiều phiên server dùng chung database/output.
 
-## Dịch theo dải và gộp audio
-
-- Nhập **1 đến 5**, bấm **Dịch + tạo audio dải này**: chỉ dịch lại và tạo audio chương 1–5. Nếu chỉ nhập 1 đầu số (VD: Từ chương 5), hệ thống tự động dịch đến giới hạn truyện (từ chương 5 đến hết).
-- **Tự động gộp audio khi nhỏ hơn số chương trong nhóm**: Không cần đủ số chương mới gộp; hệ thống tự động gộp file audio trong 2 trường hợp:
-  1. Số chương còn lại ở cuối truyện sau khi chia nhóm nhỏ hơn số chương quy định (VD: 120 chương, nhóm 50 → gộp 1–50, 51–100 và nhóm còn lại 101–120).
-  2. Số chương được chọn dịch nhỏ hơn số chương trong nhóm (VD: chọn dịch 1–5 với nhóm 50 → tự động gộp thành 1 file Chương 1–5).
-- **Gộp audio đã có theo nhóm N** đọc audio có sẵn của truyện. Nhóm thiếu audio ở giữa chờ bổ sung, không nhảy cóc; nhóm đủ hoặc nhóm còn lại ở cuối truyện đều được gộp.
-- Bật **Tự động gộp audio thành file lớn** để tự động kiểm tra và gộp nhóm sau khi các chương dịch xong.
-- Nhóm không đổi được dùng lại qua fingerprint nguồn, không mã hóa lại liên tục. Reset chương sẽ vô hiệu hóa audio gộp có chứa chương đó.
-- Đổi model/glossary hoặc thiết lập dịch khi đã có checkpoint cần reset/dịch lại để không trộn kết quả cũ với cấu hình mới.
-
-## Service TTS và Telegram
-
-Cài phụ thuộc bot nếu dùng:
+### Docker CPU
 
 ```sh
-pip install -r telegram/requirements.txt
+docker compose up --build -d web
 ```
 
-Chạy TTS từ thư mục gốc:
+Web bind `127.0.0.1:8000`. Đây là cấu hình CPU, **không phải image CUDA/T4**. Trên Linux chuẩn bị quyền ghi cho UID/GID **10001** ở các thư mục bind mount, không dùng chmod 777. `webdata` chứa checkpoint; model và output được bind mount.
+
+Service TTS riêng là tùy chọn, không cần cho Web:
 
 ```sh
+docker compose --profile tts up --build -d tts
+# Hoặc cục bộ:
 python -m uvicorn tts.server:app --host 127.0.0.1 --port 8010 --workers 1
 ```
 
-Đặt `TELEGRAM_BOT_TOKEN`, `ALLOWED_USER_IDS` và `TTS_URL=http://127.0.0.1:8010` trong biến môi trường rồi chạy:
+Service riêng vẫn dùng cấu hình riêng của nó; kiểm tra CUDA/strict mode trong bản vá tập trung vào luồng Web `audio/audio_service.py`.
+
+## Đầu ra và thao tác truyện
+
+```text
+models/translation/                  model dịch tải về
+models/voices/                       model giọng .onnx + .onnx.json
+output_text/<tên truyện>/
+  chuong_0001.txt
+  toan_bo_truyen.txt                  cập nhật ở cuối tác vụ
+output_audio/<tên truyện>/
+  chuong_0001.mp3
+  audio_gop/chuong_0001_0050.mp3
+```
+
+- Tên thư mục mặc định là tên file; có thể nhập tên tiếng Việt bằng **Tên truyện / thư mục đầu ra**. Đổi tên chuyển cả hai nhánh output.
+- Nạp truyện mới không xóa output truyện cũ. Database chỉ quản lý **truyện hiện tại**, không phải thư viện nhiều truyện.
+- Chọn dải chương chỉ xử lý dải đó; nhóm cuối thiếu số chương vẫn có thể gộp. Nhóm thiếu chương ở giữa không nhảy cóc.
+- Thay model/backend/glossary hoặc thiết lập nội dung cần reset/dịch lại để tránh trộn checkpoint cũ.
+- Khi job đang chạy/đang chờ audio hoàn tất, không reset/xóa/đổi tên/tạo audio thủ công đồng thời.
+- Gộp audio hiện có bằng nút gộp thủ công; fingerprint nguồn giữ các nhóm không đổi để tránh mã hóa lặp.
+- Cấu hình Google Drive có thể chứa token; không đưa `data/`, `.env` vào nơi công khai.
+
+## Di chuyển dữ liệu cũ
+
+Dừng ứng dụng và sao lưu trước; giải nén bản mới vào thư mục riêng, không chép đè dữ liệu đang chạy.
 
 ```sh
-python telegram/bot.py
+python scripts/migrate_layout.py --source /duong/dan/ban_cu
+# Kiểm tra kế hoạch rồi mới thêm --apply.
 ```
 
-Không dùng `python -m telegram.bot`: thư mục launcher `telegram/` cố ý không có `__init__.py` để không che thư viện **python-telegram-bot**. Bot giữ staging/checkpoint theo từng tác vụ trong `data/telegram/`; các nhánh `output_text/<tên>/` và `output_audio/<tên>/` của runner nằm riêng trong tác vụ để không lẫn dữ liệu giữa người dùng. File gửi Telegram vẫn được chia theo giới hạn dung lượng.
+Công cụ chỉ sao chép, không xóa nguồn và từ chối ghi đè tệp có nội dung khác. Hỗ trợ `translator/models`, `tts/voice`, `translator/data`, output theo thư mục truyện. Chỉ dùng `--flat-output` nếu output cũ dạng phẳng chắc chắn thuộc truyện SQLite hiện tại.
 
-Bot từ chối khởi động nếu chưa đặt danh sách người dùng được phép. Không công khai TTS nội bộ hoặc Web local ra Internet nếu chưa bổ sung xác thực.
-
-## Docker
-
-Tạo `.env` từ `.env.example`, điền thông tin bot trên máy của bạn. Model giọng đặt ở `models/voices/`.
+## Kiểm thử và đo tốc độ
 
 ```sh
-docker compose up --build -d tts bot
-docker compose --profile web up --build -d web
+pip install -r requirements.txt -r requirements-dev.txt
+HF_HUB_OFFLINE=1 python -m pytest tests -q
+node --check web/static/app.js
 ```
 
-Web chỉ mở trên `127.0.0.1:8000`, TTS không publish cổng. Trên Linux, user trong container có UID/GID **10001**: chuẩn bị quyền ghi phù hợp cho bind mount `models/translation`, `output_text`, `output_audio`; không dùng chmod 777. Model giọng chỉ cần quyền đọc. Docker Desktop có thể xử lý quyền bind mount khác Linux.
-
-## Chuyển từ thư mục cũ
-
-**Dừng app/bot cũ và sao lưu trước. Giải nén bản mới vào thư mục riêng; không chép đè lên cây cũ.**
-
-Xem trước kế hoạch, không thay đổi file:
-
-```bat
-.venv\Scripts\python.exe scripts\migrate_layout.py --source "D:\tool_cu"
-```
-
-Nếu output cũ ở dạng phẳng và bạn chắc chắn chúng thuộc truyện hiện tại, thêm `--flat-output` để chuyển vào tên truyện đọc từ SQLite:
-
-```bat
-.venv\Scripts\python.exe scripts\migrate_layout.py --source "D:\tool_cu" --flat-output
-```
-
-Xác nhận kế hoạch đúng rồi thêm `--apply`:
-
-```bat
-.venv\Scripts\python.exe scripts\migrate_layout.py --source "D:\tool_cu" --flat-output --apply
-```
-
-Công cụ chỉ sao chép, không xóa nguồn; từ chối ghi đè file đích có nội dung khác. Model dịch → `models/translation/`, giọng → `models/voices/`, dữ liệu Web → `data/`, dữ liệu bot → `data/telegram/`. Không bật `--flat-output` nếu thư mục cũ trộn nhiều truyện chưa phân loại. Chuyển dữ liệu trước khi chạy bản mới; nếu bản mới đã tạo database, dùng thư mục đích sạch hoặc sao lưu và xử lý xung đột thủ công.
-
-Không mang database, token Google Drive hoặc `.env` lên nơi công khai.
-
-## Kiểm thử
+Trên Colab, không cài lại requirements CPU sau setup GPU chỉ để chạy test.
 
 ```sh
-pip install pytest httpx
-python -m pytest tests -q
+# Chạy trên runtime T4 đã cài đúng thư viện; có thể tải model/giọng:
+python scripts/check_gpu.py --model HachimiMT-60-QT --voice ngochuyennew
+
+# Chỉ đo core dịch; dừng Web trước khi chạy để tránh tranh GPU:
+python -m translation.core.benchmark_sweep /content/mau.txt \
+  --model HachimiMT-60-QT --backend ct2 --single-gpu \
+  --beams 1,2 --batches 64,96 --windows 16
 ```
 
-Cần FFmpeg/ffprobe. Bộ test giả lập model dịch và giọng đọc; có ghép/chuyển audio bằng FFmpeg thật. Xem `docs/QA_CURRENT.md` để biết phạm vi xác minh và giới hạn.
+Core benchmark không bao gồm checkpoint Web, TTS hay MP3. Log Web có `TIMING translation` và `TIMING audio` theo chương. Xem `docs/QA_T4_WEB.md` để biết phạm vi kiểm thử thực tế và giới hạn chưa xác nhận.

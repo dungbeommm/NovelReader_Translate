@@ -15,7 +15,7 @@ async def lifespan(app):
     yield
     if runtime.job.active:
         runtime.job.stop_flag.set();runtime.job.gate.set()
-        await asyncio.to_thread(runtime.job.thread.join,3)
+        await asyncio.to_thread(runtime.job.thread.join,120)
 
 
 async def local_guard(request:Request,call_next):

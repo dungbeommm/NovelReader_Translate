@@ -223,6 +223,13 @@
           </div>
         </label>
         
+        <label class="toggle-row">
+          <input id="opt-audio-pipeline" type="checkbox" checked>
+          <div class="toggle-info">
+            <strong>Pipeline dịch + audio (hàng đợi giới hạn)</strong>
+            <span class="subtext">Dịch chương tiếp trong khi tạo audio. Tắt để so sánh chế độ tuần tự trên cùng GPU.</span>
+          </div>
+        </label>
         <div class="audio-cfg-grid">
           <div class="audio-cfg-row">
             <span>Giọng đọc:</span>
@@ -263,11 +270,11 @@
           </div>
 
           <label class="toggle-row auto-group-row" style="grid-column: 1 / -1; margin-top:8px; border-top:1px dashed #28372d; padding-top:8px;">
-            <input id="opt-auto-group" type="checkbox" checked>
+            <input id="opt-auto-group" type="checkbox">
             <div class="toggle-info">
               <strong>Tự động gộp audio thành file lớn</strong>
               <span class="subtext" style="display:block; font-size:11px; color:#8ba091; margin-top:2px;">
-                Cứ đủ <input type="number" id="opt-group-size" value="50" min="2" max="500" style="width:48px; padding:1px 4px; text-align:center; background:#121714; border:1px solid #334438; border-radius:4px; color:#4ade80; font-weight:bold;"> chương sẽ gộp thành 1 file audio lớn
+                Cuối tác vụ, chia nhóm <input type="number" id="opt-group-size" value="50" min="2" max="500" style="width:48px; padding:1px 4px; text-align:center; background:#121714; border:1px solid #334438; border-radius:4px; color:#4ade80; font-weight:bold;"> chương thành 1 file audio lớn (không gộp lại sau mỗi chương)
               </span>
             </div>
           </label>
@@ -310,7 +317,7 @@
 
       <div class="batch-row">
         <label for="batch">Batch size:</label>
-        <input id="batch" type="number" min="1" max="64" value="8">
+        <input id="batch" type="number" min="1" max="64" placeholder="Tự động theo phần cứng">
         <span>segment / lượt</span>
       </div>
 

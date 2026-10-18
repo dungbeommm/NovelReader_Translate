@@ -182,6 +182,7 @@ class LocalEngine(TranslatorEngine):
         self.target = None
         self.model = None
         self.to_simplified = None
+        self._fallback_batch_size = max(1, int(os.getenv('HACHIMIMT_BATCH_SIZE', '8')))
 
     def load(self):
         try:
@@ -190,6 +191,8 @@ class LocalEngine(TranslatorEngine):
             self.translator = HachimiTranslator()
             target_backend = Backend.TRANSFORMERS if self.backend in ('transformers', 'pytorch', 'torch') else Backend.CT2
             self.translator.load(self.model_key, target_backend)
+            if target_backend == Backend.CT2 and os.getenv('HACHIMIMT_FORCE_CT2_CUDA') == '1' and self.translator.device != 'cuda':
+                raise RuntimeError('CT2 core không dùng CUDA trong khi FORCE_CT2_CUDA=1')
             log.info("Loaded official HachimiTranslator core for %s with backend %s", self.model_key, target_backend.value)
             return
         except Exception as exc:
@@ -227,8 +230,10 @@ class LocalEngine(TranslatorEngine):
             except Exception:
                 has_cuda = False
 
+        if os.getenv('HACHIMIMT_FORCE_CT2_CUDA') == '1' and not has_cuda:
+            raise RuntimeError('CT2 chưa dùng được CUDA. Kiểm tra runtime T4 và thư viện CUDA; không chuyển âm thầm sang CPU.')
         device = 'cuda' if has_cuda else 'cpu'
-        compute_type = 'int8_float16' if has_cuda else 'int8'
+        compute_type = os.getenv('HACHIMIMT_COMPUTE_TYPE') or ('int8_float16' if has_cuda else 'int8')
 
         self.model = ctranslate2.Translator(
             str(model_dir / 'ct2-int8_float32'),
@@ -239,6 +244,16 @@ class LocalEngine(TranslatorEngine):
         )
         from opencc import OpenCC
         self.to_simplified = OpenCC('t2s')
+
+    def reduce_batch_size(self):
+        """Halve the inference budget after OOM, without dropping any segments."""
+        if self.translator is not None:
+            old = self.translator._batch_size
+            self.translator._batch_size = max(1, old // 2)
+            return self.translator._batch_size < old
+        old = self._fallback_batch_size
+        self._fallback_batch_size = max(1, old // 2)
+        return self._fallback_batch_size < old
 
     def translate_raw(self, texts: list[str], beam_size: int | None = None, chunk_mode: str = 'sentence', normalize_mode: str = 'auto') -> list[str]:
         if not texts:
@@ -314,7 +329,7 @@ class LocalEngine(TranslatorEngine):
         results = self.model.translate_batch(
             jobs,
             beam_size=beam,
-            max_batch_size=8,
+            max_batch_size=self._fallback_batch_size,
             max_decoding_length=300,
             repetition_penalty=repetition_penalty
         )
