@@ -188,8 +188,9 @@ def tts_runtime_status():
         available, version = [], None
     with _voice_lock:
         loaded = {key: voice.session.get_providers() for key, voice in _voice_instances.items()}
+        devices = {key: getattr(voice, 'device_indices', [0]) for key, voice in _voice_instances.items()}
     return {'ort_version': version, 'available_providers': available,
-            'loaded_voices': loaded, 'requested_device': os.getenv('PIPER_DEVICE', 'auto'),
+            'loaded_voices': loaded, 'voice_gpu_indices': devices, 'requested_device': os.getenv('PIPER_DEVICE', 'auto'),
             'require_cuda': os.getenv('PIPER_REQUIRE_CUDA', '0') == '1'}
 
 
@@ -234,17 +235,34 @@ def get_voice(voice_id: str = "ngochuyennew"):
         inst = None
         if use_cuda:
             try:
-                inst = PiperVoice.load(
-                    str(model_path),
-                    config_path=str(config_path) if config_path.is_file() else None,
-                    use_cuda=True)
+                from translation.gpu_balance import enabled, selected_devices
+                if enabled():
+                    from translation.ct2_safe_import import import_ctranslate2
+                    indices = selected_devices(import_ctranslate2().get_cuda_device_count(), 'PIPER_GPU_INDICES')
+                    if not indices:
+                        raise RuntimeError('Không có GPU cho Piper')
+                else:
+                    indices = [0]
                 from tts.cuda_session import configure_cuda_session
-                configure_cuda_session(inst.session)
-                providers = inst.session.get_providers()
-                if 'CUDAExecutionProvider' not in providers:
-                    raise RuntimeError(f'Piper session không dùng CUDA: {providers}')
+                replicas = []
+                for device_index in indices:
+                    replica = PiperVoice.load(
+                        str(model_path),
+                        config_path=str(config_path) if config_path.is_file() else None,
+                        use_cuda=True)
+                    configure_cuda_session(replica.session, device_id=device_index)
+                    providers = replica.session.get_providers()
+                    if 'CUDAExecutionProvider' not in providers:
+                        raise RuntimeError(f'Piper GPU {device_index} không dùng CUDA: {providers}')
+                    replicas.append(replica)
+                if len(replicas) > 1:
+                    from tts.replicas import VoiceReplicas
+                    inst = VoiceReplicas(replicas, indices)
+                    log.info('BALANCE Piper: GPUs=%s, one replica/device', indices)
+                else:
+                    inst = replicas[0]
             except Exception as exc:
-                if require_cuda:
+                if require_cuda or os.getenv('NOVEL_BALANCE_GPUS') == '1':
                     raise RuntimeError('Piper khởi tạo CUDA thất bại; không chuyển sang CPU. Kiểm tra lib CUDA/cuDNN và log ORT.') from exc
                 log.warning('Piper CUDA thất bại (%s), dùng CPU; đặt PIPER_REQUIRE_CUDA=1 để dừng thay vì fallback.', exc)
                 inst = None
@@ -327,6 +345,30 @@ def synth_text_to_wav(
 
     from tts.synthesis import synthesize_wav
     settings = dict(length_scale=length_scale, noise_scale=noise_scale, noise_w_scale=noise_w_scale)
+
+    replicas = getattr(voice, 'replicas', None)
+    if replicas and len(replicas) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        from translation.gpu_balance import balanced_indices
+        # A short chapter may originally fit one chunk: split it so both devices
+        # have work when there are at least two characters. Each WAV is separate.
+        if len(chunks) < len(replicas) and len(text) > 1:
+            chunks = split_text_for_tts(text, max_chars=max(1, (len(text)+len(replicas)-1)//len(replicas)))
+        groups = balanced_indices([len(chunk) for chunk in chunks], len(replicas))
+        part_paths = [work_dir / f"chunk_{i:04d}.wav" for i in range(len(chunks))]
+
+        def synth_group(worker):
+            with voice.locks[worker]:
+                for index in groups[worker]:
+                    with wave.open(str(part_paths[index]), 'wb') as wav:
+                        synthesize_wav(replicas[worker], chunks[index], wav, **settings)
+
+        with ThreadPoolExecutor(max_workers=len(replicas), thread_name_prefix='piper-gpu') as pool:
+            list(pool.map(synth_group, range(len(replicas))))
+        concat_wavs(part_paths, out_wav)
+        log.info('BALANCE Piper: %s', {device: {'chunks': len(group), 'chars': sum(len(chunks[i]) for i in group)}
+                 for device, group in zip(voice.device_indices, groups)})
+        return
 
     if len(chunks) == 1:
         with _voice_lock:

@@ -1,3 +1,3 @@
 # Kiểm thử hiện tại
 
-Xem [GITHUB_DRIVE_V4.md](GITHUB_DRIVE_V4.md). Các báo cáo khác là theo từng phiên bản, không phải xác nhận đã chạy T4/Google Drive thật.
+Xem [TWO_GPU_V5.md](TWO_GPU_V5.md) cho bản hai GPU. Các báo cáo v4/v4.2 là lịch sử. Kiểm thử CPU và thiết bị/Drive giả lập, chưa xác minh trên hai GPU thật.

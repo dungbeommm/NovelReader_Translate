@@ -185,6 +185,9 @@ class LocalEngine(TranslatorEngine):
         self._fallback_batch_size = max(1, int(os.getenv('HACHIMIMT_BATCH_SIZE', '8')))
 
     def load(self):
+        from translation.gpu_balance import enabled
+        if enabled() and self.backend in ('transformers', 'pytorch', 'torch') and ',' in os.getenv('HACHIMIMT_GPU_INDICES', ''):
+            raise ValueError('Chế độ chia 2 GPU hiện hỗ trợ CTranslate2; chọn engine CTranslate2 thay vì PyTorch.')
         try:
             import sys
             from translation.core.translator import HachimiTranslator, Backend
@@ -196,6 +199,7 @@ class LocalEngine(TranslatorEngine):
             log.info("Loaded official HachimiTranslator core for %s with backend %s", self.model_key, target_backend.value)
             return
         except Exception as exc:
+            self.translator = None  # never use a half-loaded core after fallback
             log.warning("HachimiTranslator core load failed (%s), using fallback CT2 loader: %s", self.model_key, exc)
 
         from .ct2_safe_import import import_ctranslate2
@@ -235,13 +239,16 @@ class LocalEngine(TranslatorEngine):
         device = 'cuda' if has_cuda else 'cpu'
         compute_type = os.getenv('HACHIMIMT_COMPUTE_TYPE') or ('int8_float16' if has_cuda else 'int8')
 
-        self.model = ctranslate2.Translator(
-            str(model_dir / 'ct2-int8_float32'),
-            device=device,
-            compute_type=compute_type,
-            inter_threads=1,
-            intra_threads=intra_threads
-        )
+        from translation.gpu_balance import BalancedTranslator, enabled, selected_devices
+        indices = selected_devices(ctranslate2.get_cuda_device_count()) if device == 'cuda' and enabled() else [0]
+        kwargs = dict(device=device, compute_type=compute_type, inter_threads=1,
+                      intra_threads=max(1, intra_threads // max(1, len(indices))))
+        if device == 'cuda' and enabled() and len(indices) > 1:
+            self.model = BalancedTranslator(str(model_dir / 'ct2-int8_float32'), ctranslate2.Translator,
+                                           device_index=indices, **kwargs)
+        else:
+            self.model = ctranslate2.Translator(str(model_dir / 'ct2-int8_float32'),
+                                               device_index=indices[0] if indices else 0, **kwargs)
         from opencc import OpenCC
         self.to_simplified = OpenCC('t2s')
 

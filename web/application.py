@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from storage.files import MAX_FILE
 from web import runtime
-from web.access import protect_request
+from web.access import protect_request, handle_login
 from web.routes import books, translation, audio, gdrive, system, progress, drive_exports
 
 @asynccontextmanager
@@ -20,6 +20,8 @@ async def lifespan(app):
 
 
 async def local_guard(request:Request,call_next):
+    if request.url.path == '/auth/login':
+        return await handle_login(request)
     access = protect_request(request)
     if access is not None:
         return access

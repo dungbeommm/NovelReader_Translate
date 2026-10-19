@@ -2,13 +2,13 @@
 
 Bản Web/Colab từ mã nguồn đính kèm, tối ưu luồng CTranslate2 + Piper. Không kèm trọng số model, tài khoản, token hay dữ liệu truyện cá nhân. Không có thành phần bot.
 
-## Chạy trên Colab T4 — phiên bản 4
+## Chạy trên Colab T4 — phiên bản 5 — cân bằng 2 GPU
 
-1. Mở `NovelReader_Colab_GitHub_Drive_v4.ipynb` bằng Colab, hoặc `NovelReader_Colab.ipynb` trong gói này.
-2. Chọn **Runtime → Change runtime type → T4 GPU**.
-3. Chạy bước 1: tự tải từ `https://raw.githubusercontent.com/dungbeommm/NovelReader_Translate/main/NovelReader_GPU_notebook.zip`. **Không cần tự tải/chọn ZIP**. Notebook có lớp cập nhật nguồn v4 nên vẫn hoạt động nếu ZIP trên GitHub còn là v3; không tự đẩy thay đổi lên GitHub.
+1. Mở `NovelReader_Colab_GitHub_Drive_v5_2GPU.ipynb` bằng Colab, hoặc `NovelReader_Colab.ipynb` trong gói này.
+2. Chọn **Runtime → Change runtime type → GPU**. Notebook dùng tối đa hai GPU CUDA được runtime cấp; chỉ có một GPU thì chạy đơn. Không thể yêu cầu thêm GPU bằng mã nguồn.
+3. Chạy bước 1: tự tải từ `https://raw.githubusercontent.com/dungbeommm/NovelReader_Translate/main/NovelReader_GPU_notebook.zip`. **Không cần tự tải/chọn ZIP**. Notebook có lớp cập nhật nguồn v5 nên vẫn hoạt động nếu ZIP trên GitHub còn là v3; không tự đẩy thay đổi lên GitHub.
 4. Chạy bước 2–4: cài CT2 4.6.0 / ORT-GPU 1.23.2 / cuDNN 9.10.2.21 và kiểm tra inference GPU. Nếu lỗi, xử lý trước khi mở Web.
-5. Mở **link riêng theo phiên** được in ở bước 5; lần đầu đổi secret trong URL sang cookie HttpOnly và xóa query khỏi địa chỉ. Không chia sẻ link đó. Cell 5 phải tiếp tục chạy để nhận yêu cầu quyền Drive.
+5. Nếu link không tự đăng nhập, mở địa chỉ Web và dán **Mã truy cập** được in ngay dưới nút mở Web trong Colab vào biểu mẫu đăng nhập. Mở Web trong tab riêng và cho phép cookie của trang. Mở **link riêng theo phiên** được in ở bước 5; lần đầu đổi secret trong URL sang cookie HttpOnly và xóa query khỏi địa chỉ. Không chia sẻ link đó. Cell 5 phải tiếp tục chạy để nhận yêu cầu quyền Drive.
 6. Trong Web, **Lưu: Google Drive** là mặc định trên notebook mới. Bấm **Xuất TXT / EPUB / Audio**. Nếu chưa kết nối Drive, **quay về tab Colab** để cấp quyền khi được hỏi; không cần nhập Client ID/Secret/token vào Web.
 7. Kết quả được sao chép vào `MyDrive/NovelReader_Exports/<tên truyện>/`. Tên có timestamp + mã ngắn, không ghi đè bản trước. Audio được đóng thành ZIP trên ổ cục bộ trước khi chép. Bản gốc vẫn giữ tại Colab.
 8. Chọn **Lưu: Tải về máy** nếu không muốn cấp quyền Drive. Đợi thông báo hoàn tất trước khi Stop server hoặc ngắt runtime.
@@ -19,20 +19,31 @@ Nếu đã import ONNX Runtime/Piper/CT2 vào kernel rồi mới cài lại thư
 
 Lưu ý: file ZIP đính kèm có thể đổi tên thành `NovelReader_GPU_notebook.zip` để bạn chủ động cập nhật vào repository. Notebook tải từ GitHub, không phụ thuộc file ZIP trong máy người dùng. Chưa thực hiện upload hoặc commit GitHub thay bạn.
 
+### Chia tải hai GPU
+
+- Bước 3 tự dò CUDA trong tiến trình con, chọn GPU logic `0,1` nếu có hai GPU; in thiết bị đã chọn. Có một GPU thì chọn `0`; không có GPU thì dừng, không giả lập thiết bị.
+- **CTranslate2:** mỗi GPU một model, chia số đoạn con chênh lệch tối đa một, cân bằng thêm theo số token và chạy song song. Ví dụ 96 đoạn con → 48/48. Kết quả ghép lại đúng vị trí, không xen lẫn chương.
+- **Piper audio trong Web:** mỗi GPU một ONNX session; chia các đoạn audio theo số lượng và độ dài, tạo WAV riêng, nối đúng thứ tự rồi mã hóa một lần. Có khóa riêng từng session, không khóa toàn bộ hai GPU trong lúc inference.
+- Hai GPU không cộng VRAM thành một vùng nhớ chung. Batch 96 là tổng, không tự nhân thành 192. Chỉ một đoạn quá ngắn có thể không có đủ việc cho cả hai GPU.
+- Một GPU lỗi sẽ báo lỗi tác vụ; không âm thầm giảm từ hai xuống một hay chuyển audio sang CPU. OOM dịch vẫn giảm batch và thử lại cùng nội dung. File audio hoàn chỉnh chỉ được công bố sau khi tất cả đoạn thành công.
+- Web hiển thị **2 GPU cân bằng** khi cấu hình hợp lệ; log `BALANCE CT2` / `BALANCE Piper` ghi số đoạn và lượng token/ký tự trên từng GPU.
+- Chế độ phân tải này áp dụng **CT2 và Piper của Web**, không phải PyTorch DataParallel hay chế độ chia audio của dịch vụ TTS độc lập. Khi có hai GPU mà chọn PyTorch, báo chọn CT2.
+- Không cam kết cả hai GPU luôn 100%, 50/50 VRAM hay tăng tốc gấp đôi: token sinh, phonemization, mã hóa audio, tốc độ từng GPU và độ dài chương ảnh hưởng thời gian.
+
 ### Cấu hình khởi đầu
 
 | Thiết lập | Notebook T4 |
 | --- | --- |
 | Backend | CT2 |
 | Model tải khi kiểm tra | HachimiMT-60-QT |
-| Batch Web (số đoạn đưa vào engine mỗi lượt) | 96 (cho phép 1–256) |
+| Batch Web (số đoạn đưa vào engine mỗi lượt) | 96 tổng (cho phép 1–256); chia hai GPU theo đoạn con |
 | Batch CT2 nội bộ | 96 |
 | CT2 batch type / window | tokens / 16 |
 | Compute type | int8_float16 |
 | Beam Web | 2; thử 1 nếu chấp nhận đánh đổi chất lượng |
 | Pipeline audio | Bật, một worker, tối đa 2 chương đợi |
 | Tự gộp audio | Mặc định tắt; khi bật chỉ gộp ở cuối tác vụ |
-| Piper | Bắt buộc CUDA, báo lỗi thay vì chuyển CPU âm thầm |
+| Piper | Bắt buộc CUDA; một session/GPU, tối đa hai GPU; piper-tts 1.8.0 |
 
 Batch Web và batch nội bộ **khác nhau**. Thay biến môi trường cần khởi động lại backend để nạp lại model. UI lấy batch đề xuất phần cứng rồi giới hạn tối đa 256; cấu hình đã lưu của truyện vẫn được giữ.
 

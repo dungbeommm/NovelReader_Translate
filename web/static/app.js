@@ -167,7 +167,7 @@ async function loadHardware() {
   try {
     currentHardware = await api('/api/hardware');
     if (currentHardware) {
-      const dev = currentHardware.is_gpu ? 'GPU' : (currentHardware.has_discrete_gpu ? 'GPU rời' : 'CPU');
+      const dev = currentHardware.two_gpu_balance ? '2 GPU cân bằng' : currentHardware.is_gpu ? 'GPU' : (currentHardware.has_discrete_gpu ? 'GPU rời' : 'CPU');
       const devName = currentHardware.gpu_name ? ` (${currentHardware.gpu_name})` : '';
       $('hw-pill').textContent = `⚡ ${dev}: ${currentHardware.cpu_count} luồng${devName}`;
       $('hw-pill').title = currentHardware.summary || '';

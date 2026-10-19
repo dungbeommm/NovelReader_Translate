@@ -35,6 +35,8 @@ def download_model(payload: ModelDownloadInput):
 
 @router.get('/api/hardware')
 def hardware():
+    from translation.gpu_balance import gpu_status
+    gpu_info = gpu_status()
     profile = detect_hardware_profile()
     from translation.core.hardware import PHYSICAL_NVIDIA_GPU, PHYSICAL_GPU_NAME, PHYSICAL_GPU_VRAM_GB
 
@@ -58,6 +60,7 @@ def hardware():
 
     if profile:
         return {
+            **gpu_info,
             'cpu_count': profile.cpu_logical,
             'intra_threads': profile.ct2_threads,
             'is_gpu': has_cuda,
@@ -69,6 +72,7 @@ def hardware():
             'summary': profile.summary,
         }
     return {
+        **gpu_info,
         'cpu_count': os.cpu_count() or 2,
         'intra_threads': max(1, min(8, (os.cpu_count() or 2) - 1)),
         'is_gpu': has_cuda,
