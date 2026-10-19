@@ -18,7 +18,6 @@ from typing import Callable, Iterator
 import sentencepiece as spm
 from huggingface_hub import snapshot_download
 
-from translation.gpu_balance import BalancedTranslator, enabled as gpu_balance_enabled, selected_devices
 from translation.core.chunker import split_chunks
 from translation.core.hardware import (
     HardwareProfile,
@@ -381,7 +380,7 @@ def default_ct2_compute_type(device: str) -> str:
 
 def _ct2_gpu_index_attempts(gpu_indices: list[int]) -> list[list[int]]:
     """Try all requested GPUs first, then one GPU before giving up to CPU."""
-    if gpu_balance_enabled() or len(gpu_indices) <= 1:
+    if len(gpu_indices) <= 1:
         return [list(gpu_indices)]
     return [list(gpu_indices), [gpu_indices[0]]]
 
@@ -1109,22 +1108,18 @@ class HachimiTranslator:
                 cuda_count = ctranslate2.get_cuda_device_count()
             except Exception:
                 cuda_count = 0
-            if gpu_balance_enabled():
-                gpu_indices = selected_devices(cuda_count)
-            else:
-                gpu_indices = resolve_gpu_indices(
-                    cuda_count,
-                    os.environ.get("HACHIMIMT_GPU_INDICES"),
-                    auto_all=auto_all_gpus_by_default(),
-                )
+            gpu_indices = resolve_gpu_indices(
+                cuda_count,
+                os.environ.get("HACHIMIMT_GPU_INDICES"),
+                auto_all=auto_all_gpus_by_default(),
+            )
             compute_types = [default_ct2_compute_type("cuda")]
             if not env_compute_type and "int8_float32" not in compute_types:
                 compute_types.append("int8_float32")
             for compute_type in compute_types:
                 for candidate_indices in _ct2_gpu_index_attempts(gpu_indices):
                     attempts.append(("cuda", compute_type, candidate_indices))
-            if not gpu_balance_enabled():
-                attempts.append(("cpu", "int8_float32", None))
+            attempts.append(("cpu", "int8_float32", None))
         else:
             cpu_compute_type = default_ct2_compute_type("cpu")
             attempts.append(("cpu", cpu_compute_type, None))
@@ -1142,10 +1137,9 @@ class HachimiTranslator:
                     inter_threads=self._ct2_inter_threads,
                     gpu_indices=gpu_indices,
                 )
-                if device == 'cuda' and gpu_balance_enabled() and len(gpu_indices or []) > 1:
-                    translator = BalancedTranslator(str(model_path / config.ct2_subdir), ctranslate2.Translator, **kwargs)
-                else:
-                    translator = ctranslate2.Translator(str(model_path / config.ct2_subdir), **kwargs)
+                translator = ctranslate2.Translator(
+                    str(model_path / config.ct2_subdir), **kwargs
+                )
                 self._ct2_compute_type = compute_type
                 self._ct2_actual_intra_threads = int(kwargs["intra_threads"])
                 self._ct2_actual_inter_threads = int(kwargs["inter_threads"])

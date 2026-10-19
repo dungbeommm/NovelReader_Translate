@@ -122,12 +122,69 @@ $('tab-reader').onclick = () => {
   workspace.classList.add('show-reader');
 };
 
+async function driveSafe(fn) {
+  try { await fn(); } catch(e) { $('drive-api-message').textContent = e.message; }
+}
+let driveBackend = 'disabled';
+let driveDialogResolve = null;
+function openDriveDialog() {
+  const dialog = $('drive-api-dialog');
+  if (dialog.open) return Promise.resolve(false);
+  $('drive-api-message').textContent = '';
+  dialog.showModal();
+  return new Promise(resolve => { driveDialogResolve = resolve; });
+}
+function closeDriveDialog(connected = false) {
+  $('drive-api-dialog').close();
+  const resolve = driveDialogResolve; driveDialogResolve = null;
+  if (resolve) resolve(connected);
+}
+$('drive-api-dialog').addEventListener('cancel', () => closeDriveDialog(false));
+$('drive-api-close').onclick = () => closeDriveDialog(false);
+$('drive-api-open').onclick = () => { openDriveDialog(); };
+$('drive-api-begin').onclick = () => driveSafe(async () => {
+  const file = $('drive-api-client').files[0];
+  if (!file || file.size > 32768) throw new Error('Chọn JSON OAuth Desktop app, tối đa 32 KB.');
+  const result = await api('/api/drive-api/begin', {client_json: await file.text()}, 'POST');
+  const url = new URL(result.auth_url);
+  if (url.protocol !== 'https:' || url.hostname !== 'accounts.google.com') throw new Error('Link OAuth không hợp lệ.');
+  const link = $('drive-api-auth-link'); link.href = result.auth_url; link.hidden = false;
+  $('drive-api-return').value = '';
+  $('drive-api-message').textContent = 'Bấm “Mở Google để cấp quyền”, rồi dán URL trả về. Link hết hạn sau 10 phút.';
+});
+$('drive-api-finish').onclick = () => driveSafe(async () => {
+  const button = $('drive-api-finish'); button.disabled = true;
+  try {
+    $('drive-api-message').textContent = 'Đang đổi quyền kết nối…';
+    await api('/api/drive-api/finish', {return_url: $('drive-api-return').value}, 'POST');
+    $('drive-api-return').value = ''; $('drive-api-client').value = '';
+    $('drive-api-auth-link').removeAttribute('href'); $('drive-api-auth-link').hidden = true;
+    $('drive-api-open').textContent = 'Drive đã kết nối';
+    closeDriveDialog(true);
+    notice('Đã kết nối Google Drive API. Có thể xuất TXT, EPUB và audio.');
+  } finally { button.disabled = false; }
+});
+$('drive-api-disconnect').onclick = () => driveSafe(async () => {
+  await api('/api/drive-api/disconnect', {}, 'POST');
+  $('drive-api-open').textContent = 'Kết nối Drive';
+  $('drive-api-return').value = ''; $('drive-api-client').value = '';
+  $('drive-api-auth-link').removeAttribute('href'); $('drive-api-auth-link').hidden = true;
+  closeDriveDialog(false); notice('Đã xóa quyền kết nối khỏi runtime. Có thể thu hồi quyền tại tài khoản Google.');
+});
+async function ensureDriveApiConnection() {
+  if (driveBackend !== 'api') return true;
+  const state = await api('/api/drive-api/status');
+  return state.connected || await openDriveDialog();
+}
+
 // Export buttons retain their download links; Drive is an explicit destination.
 async function loadExportDestination() {
   const select = $('export-destination');
   if (!select) return;
   try {
     const capability = await api('/api/export/drive/capabilities');
+    driveBackend = capability.backend || (capability.colab_drive ? 'colab' : 'disabled');
+    $('drive-api-open').hidden = driveBackend !== 'api';
     select.querySelector('[value="gdrive"]').disabled = !capability.colab_drive;
     const saved = localStorage.getItem('novel_export_destination');
     select.value = capability.colab_drive ? (saved || 'gdrive') : 'download';
@@ -144,12 +201,13 @@ for (const [id, format] of [['export-txt', 'txt'], ['export-epub', 'epub'], ['ex
     safe(async () => {
       driveExportBusy = true;
       try {
+        if (!await ensureDriveApiConnection()) return;
         const task = await api('/api/export/drive/' + format, {}, 'POST');
-        notice('Đang chuẩn bị. Nếu được hỏi, quay lại tab Colab để cấp quyền Google Drive.');
+        notice(driveBackend === 'api' ? 'Đang xuất qua Drive API…' : 'Đang chuẩn bị. Nếu được hỏi, quay lại tab Colab để cấp quyền Google Drive.');
         for (let i = 0; i < 3600; i++) {
           const result = await api('/api/export/drive/status/' + task.id);
           if (result.status === 'done') {
-            notice('✓ Đã lưu trong My Drive/' + result.drive_path + '. Bản gốc vẫn giữ tại Colab.');
+            notice('✓ Đã lưu trong My Drive/' + result.drive_path + (format === 'audio' ? ` (${result.uploaded_files || result.total_files} file audio, không ZIP).` : '.') + ' Bản gốc vẫn giữ tại máy chạy.');
             return;
           }
           if (result.status === 'error' || result.status === 'auth_error') throw new Error(result.message);
@@ -167,7 +225,7 @@ async function loadHardware() {
   try {
     currentHardware = await api('/api/hardware');
     if (currentHardware) {
-      const dev = currentHardware.two_gpu_balance ? '2 GPU cân bằng' : currentHardware.is_gpu ? 'GPU' : (currentHardware.has_discrete_gpu ? 'GPU rời' : 'CPU');
+      const dev = currentHardware.is_gpu ? 'GPU' : (currentHardware.has_discrete_gpu ? 'GPU rời' : 'CPU');
       const devName = currentHardware.gpu_name ? ` (${currentHardware.gpu_name})` : '';
       $('hw-pill').textContent = `⚡ ${dev}: ${currentHardware.cpu_count} luồng${devName}`;
       $('hw-pill').title = currentHardware.summary || '';

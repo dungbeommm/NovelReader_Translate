@@ -36,10 +36,11 @@
         <option value="download">Tải về máy</option>
         <option value="gdrive">Google Drive</option>
       </select>
+<button id="drive-api-open" type="button" hidden>Kết nối Drive</button>
     </label>
     <a class="button export" id="export-txt" href="/api/export/txt" title="Tải về file TXT bản dịch">↓ <span>Xuất TXT</span></a>
     <a class="button export" id="export-epub" href="/api/export/epub" title="Tải về file EPUB đầy đủ">↓ <span>Xuất EPUB</span></a>
-    <a class="button export" id="export-audio" href="/api/export/audio" title="Tải về file ZIP chứa toàn bộ audio MP3 đã tạo">🎧 <span>Xuất Audio</span></a>
+    <a class="button export" id="export-audio" href="/api/export/audio" title="Google Drive: lưu từng file audio; Tải về máy: nhận ZIP audio">🎧 <span>Xuất Audio</span></a>
     <button type="button" class="button btn-settings" id="btn-open-settings" title="Cài đặt nâng cao (Giọng đọc, Cảm xúc, Google Drive, Gộp nhóm)">⚙ <span>Cài đặt</span></button>
   </div>
 </header>
@@ -625,6 +626,26 @@
     </div>
   </div>
 </div>
+
+<dialog id="drive-api-dialog" style="width:min(560px,calc(100vw - 32px));max-height:88vh;box-sizing:border-box;overflow:auto;background:#141e17;color:#e5f0e8;border:1px solid #375140;border-radius:12px;padding:22px;">
+  <h2 style="margin-top:0;">Kết nối Google Drive trên Kaggle</h2>
+  <p>Kaggle không hỗ trợ mount Drive của Colab. Kết nối này dùng Drive API, chỉ xin quyền với tệp do ứng dụng tạo.</p>
+  <p><b>1.</b> Trong Google Cloud, bật Google Drive API, cấu hình OAuth consent và thêm tài khoản của bạn làm Test user nếu app đang Testing. Tạo OAuth client loại <b>Desktop app</b>, tải JSON về.</p>
+  <label for="drive-api-client">Chọn JSON Desktop OAuth (không chia sẻ file này)</label>
+  <input id="drive-api-client" type="file" accept="application/json,.json" style="display:block;max-width:100%;margin:12px 0;">
+  <button id="drive-api-begin" type="button">2. Tạo link đăng nhập Google</button>
+  <p><a id="drive-api-auth-link" target="_blank" rel="noopener noreferrer" hidden>Mở Google để cấp quyền</a></p>
+  <p><b>3.</b> Sau khi đồng ý, Google chuyển về <code>127.0.0.1:8765</code> trên máy bạn. Trang có thể báo không kết nối được — đây là bước chuyển mã, không phải lỗi Kaggle. Sao chép <b>toàn bộ URL trên thanh địa chỉ</b> và dán bên dưới, không gửi vào chat.</p>
+  <label for="drive-api-return">URL trả về từ Google</label>
+  <input id="drive-api-return" type="password" autocomplete="off" placeholder="http://127.0.0.1:8765/?state=…&amp;code=…" style="box-sizing:border-box;width:100%;margin:10px 0;padding:10px;">
+  <p id="drive-api-message" role="status" style="overflow-wrap:anywhere;"></p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <button id="drive-api-finish" type="button">Hoàn tất kết nối</button>
+    <button id="drive-api-disconnect" type="button">Ngắt kết nối</button>
+    <button id="drive-api-close" type="button">Đóng</button>
+  </div>
+  <p style="font-size:12px;">Giữ notebook và link Web riêng tư. Quyền kết nối được giữ tạm ngoài thư mục output và mất khi runtime bị xóa. Nếu không muốn cấu hình OAuth, chọn Lưu: Tải về máy.</p>
+</dialog>
 
 <script src="/static/app.js" defer></script>
 </body>

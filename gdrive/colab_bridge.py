@@ -2,7 +2,7 @@
 import json
 import os
 from pathlib import Path
-from gdrive.export_service import read_task, write_task
+from gdrive.export_service import read_task, write_task, drive_backend
 
 
 def process_drive_requests(directory, mount_drive, mountpoint='/content/drive'):
@@ -11,6 +11,8 @@ def process_drive_requests(directory, mount_drive, mountpoint='/content/drive'):
     mount_drive is google.colab.drive.mount, injectable for CPU-only tests.
     Consent is requested only after an explicit export click.
     """
+    if drive_backend() != 'colab':
+        return 0
     directory = Path(directory)
     if not directory.is_dir():
         return 0

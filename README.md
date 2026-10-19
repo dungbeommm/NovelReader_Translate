@@ -2,15 +2,39 @@
 
 Bản Web/Colab từ mã nguồn đính kèm, tối ưu luồng CTranslate2 + Piper. Không kèm trọng số model, tài khoản, token hay dữ liệu truyện cá nhân. Không có thành phần bot.
 
-## Chạy trên Colab T4 — phiên bản 5 — cân bằng 2 GPU
+## Drive: audio lưu từng file, không tạo ZIP
 
-1. Mở `NovelReader_Colab_GitHub_Drive_v5_2GPU.ipynb` bằng Colab, hoặc `NovelReader_Colab.ipynb` trong gói này.
-2. Chọn **Runtime → Change runtime type → GPU**. Notebook dùng tối đa hai GPU CUDA được runtime cấp; chỉ có một GPU thì chạy đơn. Không thể yêu cầu thêm GPU bằng mã nguồn.
-3. Chạy bước 1: tự tải từ `https://raw.githubusercontent.com/dungbeommm/NovelReader_Translate/main/NovelReader_GPU_notebook.zip`. **Không cần tự tải/chọn ZIP**. Notebook có lớp cập nhật nguồn v5 nên vẫn hoạt động nếu ZIP trên GitHub còn là v3; không tự đẩy thay đổi lên GitHub.
+Khi chọn **Lưu: Google Drive → Xuất Audio**, ứng dụng tải trực tiếp từng file MP3/WAV/M4A/M4B/OPUS/AAC/OGG vào `NovelReader_Exports/<truyện>/audio/<thời gian_mã lượt xuất>/`. Giữ nguyên tên file và các thư mục con, không tạo ZIP audio ở bước chuẩn bị hoặc trên Drive. Có snapshot tệp rời tạm ở runtime để tránh nội dung thay đổi trong lúc upload; snapshot được dọn sau tác vụ.
+
+TXT và EPUB vẫn lưu đúng định dạng gốc. **Tải về máy** và **sao lưu bước 6** giữ ZIP như trước. Nếu lỗi giữa chừng, các file đã lên Drive và file gốc vẫn giữ; trạng thái báo số file hoàn tất. Bấm xuất lại tạo lượt/thư mục mới, không tự tiếp tục lượt lỗi và không ghi đè lượt cũ.
+
+GPU 0, batch 96 và mã dịch/TTS không thay đổi, không thêm chia tải hai GPU. Xem `docs/DRIVE_AUDIO_DIRECT.md`.
+
+## Bản v4.2 — chỉ sửa Google Drive
+
+Bản này dựa đúng trên ZIP/notebook v4.2 được gửi lại. **Không thêm chia tải hai GPU.** Mã dịch, TTS/audio, workflow, storage, script cài GPU và cấu hình GPU 0 giữ nguyên theo từng byte. Batch 96 và các sửa đăng nhập trước đó giữ nguyên.
+
+Mở `NovelReader_v4_2_DriveDirect_Kaggle_Colab.ipynb` hoặc `NovelReader_Colab.ipynb` trong gói. Kaggle: bật Internet và GPU, chạy bước 1–5. Notebook tự tải ZIP GitHub và áp dụng bản vá Drive; không cần sửa code. Colab vẫn dùng mount native trong notebook. Kaggle không gọi `google.colab.drive.mount()` nữa.
+
+### Drive trên Kaggle
+1. Trong Google Cloud, bật **Google Drive API**, cấu hình OAuth consent/Test users nếu app ở Testing. Tạo OAuth client loại **Desktop app**, tải JSON về máy.
+2. Trong Web bấm **Kết nối Drive**, chọn JSON rồi **Tạo link đăng nhập Google**. Mở link và cấp quyền. Chỉ xin scope `drive.file` cho tệp do ứng dụng tạo.
+3. Google chuyển về `http://127.0.0.1:8765/?state=...&code=...` trên máy bạn. Trang có thể báo không kết nối được: sao chép **toàn bộ URL trên thanh địa chỉ**, dán vào ô trong Web rồi bấm **Hoàn tất kết nối**. Không gửi URL hoặc JSON vào chat.
+4. Chọn **Lưu: Google Drive**, xuất TXT/EPUB/audio. Bản gốc vẫn giữ trong runtime. Nếu không muốn tạo OAuth client, chọn **Lưu: Tải về máy** rồi tự đưa lên Drive.
+
+Quyền API lưu `/tmp/novelreader-drive` (ngoài Output và ZIP sao lưu), mất khi runtime bị xóa. Giữ notebook/link Web/mã truy cập và JSON riêng tư; không publish output còn chứa mã hiệu lực. Nút Ngắt kết nối xóa quyền khỏi runtime; quản lý quyền ứng dụng tại Google để thu hồi phía Google. Không có OAuth client chung hoặc token dựng sẵn trong gói.
+
+Bước 1 ưu tiên giữ checkpoint cũ nếu từng dùng notebook Colab trên Kaggle. Sao lưu bước 6 trước khi kết thúc vì dữ liệu runtime có thể bị xóa. Kiểm thử CPU/mock, chưa xác minh Google OAuth/Kaggle/GPU thật; xem `docs/DRIVE_FIX_V4_2.md`.
+
+## Chạy trên Colab T4 — phiên bản 4.2
+
+1. Mở `NovelReader_v4_2_DriveDirect_Kaggle_Colab.ipynb` bằng Colab, hoặc `NovelReader_Colab.ipynb` trong gói này.
+2. Chọn **Runtime → Change runtime type → T4 GPU**.
+3. Chạy bước 1: tự tải từ `https://raw.githubusercontent.com/dungbeommm/NovelReader_Translate/main/NovelReader_GPU_notebook.zip`. **Không cần tự tải/chọn ZIP**. Notebook có lớp cập nhật nguồn v4 nên vẫn hoạt động nếu ZIP trên GitHub còn là v3; không tự đẩy thay đổi lên GitHub.
 4. Chạy bước 2–4: cài CT2 4.6.0 / ORT-GPU 1.23.2 / cuDNN 9.10.2.21 và kiểm tra inference GPU. Nếu lỗi, xử lý trước khi mở Web.
 5. Nếu link không tự đăng nhập, mở địa chỉ Web và dán **Mã truy cập** được in ngay dưới nút mở Web trong Colab vào biểu mẫu đăng nhập. Mở Web trong tab riêng và cho phép cookie của trang. Mở **link riêng theo phiên** được in ở bước 5; lần đầu đổi secret trong URL sang cookie HttpOnly và xóa query khỏi địa chỉ. Không chia sẻ link đó. Cell 5 phải tiếp tục chạy để nhận yêu cầu quyền Drive.
 6. Trong Web, **Lưu: Google Drive** là mặc định trên notebook mới. Bấm **Xuất TXT / EPUB / Audio**. Nếu chưa kết nối Drive, **quay về tab Colab** để cấp quyền khi được hỏi; không cần nhập Client ID/Secret/token vào Web.
-7. Kết quả được sao chép vào `MyDrive/NovelReader_Exports/<tên truyện>/`. Tên có timestamp + mã ngắn, không ghi đè bản trước. Audio được đóng thành ZIP trên ổ cục bộ trước khi chép. Bản gốc vẫn giữ tại Colab.
+7. Kết quả được sao chép vào `MyDrive/NovelReader_Exports/<tên truyện>/`. Tên có timestamp + mã ngắn, không ghi đè bản trước. Audio được tải từng file gốc vào thư mục audio của lượt xuất, không tạo ZIP khi lưu Drive. Bản gốc vẫn giữ tại Colab.
 8. Chọn **Lưu: Tải về máy** nếu không muốn cấp quyền Drive. Đợi thông báo hoàn tất trước khi Stop server hoặc ngắt runtime.
 
 Drive mount do Colab thực hiện trong tab notebook, không giả lập popup Google trong tab Cloudflare. Google có thể không hỏi lại nếu đã cấp quyền/mount. Quyền mount có thể cho runtime truy cập rộng hơn thư mục xuất; chỉ chạy mã nguồn tin cậy và không chia sẻ link Web.
@@ -19,31 +43,20 @@ Nếu đã import ONNX Runtime/Piper/CT2 vào kernel rồi mới cài lại thư
 
 Lưu ý: file ZIP đính kèm có thể đổi tên thành `NovelReader_GPU_notebook.zip` để bạn chủ động cập nhật vào repository. Notebook tải từ GitHub, không phụ thuộc file ZIP trong máy người dùng. Chưa thực hiện upload hoặc commit GitHub thay bạn.
 
-### Chia tải hai GPU
-
-- Bước 3 tự dò CUDA trong tiến trình con, chọn GPU logic `0,1` nếu có hai GPU; in thiết bị đã chọn. Có một GPU thì chọn `0`; không có GPU thì dừng, không giả lập thiết bị.
-- **CTranslate2:** mỗi GPU một model, chia số đoạn con chênh lệch tối đa một, cân bằng thêm theo số token và chạy song song. Ví dụ 96 đoạn con → 48/48. Kết quả ghép lại đúng vị trí, không xen lẫn chương.
-- **Piper audio trong Web:** mỗi GPU một ONNX session; chia các đoạn audio theo số lượng và độ dài, tạo WAV riêng, nối đúng thứ tự rồi mã hóa một lần. Có khóa riêng từng session, không khóa toàn bộ hai GPU trong lúc inference.
-- Hai GPU không cộng VRAM thành một vùng nhớ chung. Batch 96 là tổng, không tự nhân thành 192. Chỉ một đoạn quá ngắn có thể không có đủ việc cho cả hai GPU.
-- Một GPU lỗi sẽ báo lỗi tác vụ; không âm thầm giảm từ hai xuống một hay chuyển audio sang CPU. OOM dịch vẫn giảm batch và thử lại cùng nội dung. File audio hoàn chỉnh chỉ được công bố sau khi tất cả đoạn thành công.
-- Web hiển thị **2 GPU cân bằng** khi cấu hình hợp lệ; log `BALANCE CT2` / `BALANCE Piper` ghi số đoạn và lượng token/ký tự trên từng GPU.
-- Chế độ phân tải này áp dụng **CT2 và Piper của Web**, không phải PyTorch DataParallel hay chế độ chia audio của dịch vụ TTS độc lập. Khi có hai GPU mà chọn PyTorch, báo chọn CT2.
-- Không cam kết cả hai GPU luôn 100%, 50/50 VRAM hay tăng tốc gấp đôi: token sinh, phonemization, mã hóa audio, tốc độ từng GPU và độ dài chương ảnh hưởng thời gian.
-
 ### Cấu hình khởi đầu
 
 | Thiết lập | Notebook T4 |
 | --- | --- |
 | Backend | CT2 |
 | Model tải khi kiểm tra | HachimiMT-60-QT |
-| Batch Web (số đoạn đưa vào engine mỗi lượt) | 96 tổng (cho phép 1–256); chia hai GPU theo đoạn con |
+| Batch Web (số đoạn đưa vào engine mỗi lượt) | 96 (cho phép 1–256) |
 | Batch CT2 nội bộ | 96 |
 | CT2 batch type / window | tokens / 16 |
 | Compute type | int8_float16 |
 | Beam Web | 2; thử 1 nếu chấp nhận đánh đổi chất lượng |
 | Pipeline audio | Bật, một worker, tối đa 2 chương đợi |
 | Tự gộp audio | Mặc định tắt; khi bật chỉ gộp ở cuối tác vụ |
-| Piper | Bắt buộc CUDA; một session/GPU, tối đa hai GPU; piper-tts 1.8.0 |
+| Piper | Bắt buộc CUDA, báo lỗi thay vì chuyển CPU âm thầm |
 
 Batch Web và batch nội bộ **khác nhau**. Thay biến môi trường cần khởi động lại backend để nạp lại model. UI lấy batch đề xuất phần cứng rồi giới hạn tối đa 256; cấu hình đã lưu của truyện vẫn được giữ.
 

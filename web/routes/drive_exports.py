@@ -7,8 +7,10 @@ router = APIRouter()
 
 @router.get('/api/export/drive/capabilities')
 def capabilities():
-    return {'colab_drive': export_service.bridge_enabled(),
-            'permission_location': 'colab_notebook', 'default_destination': 'gdrive' if export_service.bridge_enabled() else 'download'}
+    backend = export_service.drive_backend()
+    return {'backend':backend, 'drive_enabled':export_service.bridge_enabled(),
+            'colab_drive': export_service.bridge_enabled(),
+            'permission_location': 'web_oauth' if backend=='api' else 'colab_notebook', 'default_destination': 'gdrive' if export_service.bridge_enabled() else 'download'}
 
 
 @router.post('/api/export/drive/{format}', status_code=202)

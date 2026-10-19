@@ -52,7 +52,7 @@ def test_export_translation_to_drive_after_permission(export_env, kind):
         assert zipfile.is_zipfile(output)
 
 
-def test_audio_zip_excludes_partial_tts_files(export_env):
+def test_audio_direct_files_exclude_partial_tts_files(export_env):
     store, mount = export_env
     (store.audio_dir/'chuong_0001.mp3').write_bytes(b'finished audio')
     private = store.audio_dir/'.audio-123'
@@ -61,9 +61,11 @@ def test_audio_zip_excludes_partial_tts_files(export_env):
     task = service.start_export('audio', store, threading.RLock())
     result = finish(task['id'], mount)
     assert result['status'] == 'done'
-    with zipfile.ZipFile(mount/'MyDrive'/result['drive_path']) as z:
-        assert z.namelist() == ['chuong_0001.mp3']
-        assert z.read('chuong_0001.mp3') == b'finished audio'
+    dest = mount/'MyDrive'/result['drive_path']
+    assert sorted(p.name for p in dest.iterdir()) == ['chuong_0001.mp3']
+    assert (dest/'chuong_0001.mp3').read_bytes() == b'finished audio'
+    assert result['uploaded_files'] == 1
+    assert not list(mount.rglob('*.zip'))
     assert (store.audio_dir/'chuong_0001.mp3').read_bytes() == b'finished audio'
 
 
