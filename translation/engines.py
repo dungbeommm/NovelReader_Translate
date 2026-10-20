@@ -196,6 +196,7 @@ class LocalEngine(TranslatorEngine):
             log.info("Loaded official HachimiTranslator core for %s with backend %s", self.model_key, target_backend.value)
             return
         except Exception as exc:
+            self.translator = None
             log.warning("HachimiTranslator core load failed (%s), using fallback CT2 loader: %s", self.model_key, exc)
 
         from .ct2_safe_import import import_ctranslate2

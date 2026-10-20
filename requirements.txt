@@ -11,9 +11,11 @@ ctranslate2>=4.5,<5
 sentencepiece>=0.2,<1
 gradio-client>=1.10,<3
 opencc-python-reimplemented>=0.1.7,<1
-# Local Piper synthesis used by the Web UI (Python 3.11 recommended).
+# Piper TTS & ONNX Runtime with GPU support
 piper-tts>=1.3,<2
-onnxruntime>=1.20,<2
+onnxruntime-gpu>=1.20,<2
+nvidia-cudnn-cu12
+nvidia-cublas-cu12
 # PyTorch backend dependencies
 transformers>=4.40.0
 sacremoses>=0.1.1
