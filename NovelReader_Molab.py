@@ -200,8 +200,8 @@ def step1_source_setup(Path, os, shutil, subprocess, sys, urllib, zipfile):
         zip_dest = base_dir / "repo_main.zip"
         try:
             req = urllib.request.Request(zip_url, headers={"User-Agent": "NovelReader-Molab"})
-            with urllib.request.urlopen(req, timeout=60) as resp, open(zip_dest, "wb") as out:
-                shutil.copyfileobj(resp, out)
+            with urllib.request.urlopen(req, timeout=60) as resp, open(zip_dest, "wb") as _zip_out:
+                shutil.copyfileobj(resp, _zip_out)
             with zipfile.ZipFile(zip_dest, "r") as z:
                 for member in z.infolist():
                     parts = Path(member.filename).parts
@@ -877,8 +877,8 @@ def step7_backup_process(base_dir, create_backup_btn, datetime, mo, os, shutil, 
                 headers={"Content-Type": "application/json", "X-App-Request": "novel-translator",
                          "X-Novel-Access": os.environ.get("NOVEL_WEB_ACCESS_TOKEN", "")},
             )
-            with urllib.request.urlopen(backup_request, timeout=1800) as source, backup_path.open("wb") as out:
-                shutil.copyfileobj(source, out, 1024 * 1024)
+            with urllib.request.urlopen(backup_request, timeout=1800) as source, backup_path.open("wb") as _backup_out:
+                shutil.copyfileobj(source, _backup_out, 1024 * 1024)
             size_mb = backup_path.stat().st_size / (1024 * 1024)
             backup_result_display = mo.vstack([
                 mo.md(f"✅ **Checkpoint:** `{backup_filename}` ({size_mb:.1f} MB). Giữ file để khôi phục runtime mới."),
