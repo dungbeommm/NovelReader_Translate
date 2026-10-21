@@ -717,10 +717,14 @@ def step5_launch_server(
 # Cell 6: Bảng điều khiển Server & Xem nhật ký trực tiếp (Logs)
 # ────────────────────────────────────────────────────────────────────────────
 @app.cell
-def step6_logs_and_controls(log_server, log_tunnel, mo, server_active, subprocess):
+def step6_controls_ui(mo):
     refresh_logs_btn = mo.ui.run_button(label="🔄 Làm mới nhật ký Server")
     stop_server_btn = mo.ui.run_button(label="🛑 Dừng toàn bộ Server", kind="danger")
+    return refresh_logs_btn, stop_server_btn
 
+
+@app.cell
+def step6_logs_view(log_server, log_tunnel, mo, refresh_logs_btn, server_active, stop_server_btn, subprocess):
     if stop_server_btn.value:
         subprocess.run(["pkill", "-f", "uvicorn.*main:app"], check=False)
         subprocess.run(["pkill", "-f", "cloudflared"], check=False)
@@ -728,7 +732,9 @@ def step6_logs_and_controls(log_server, log_tunnel, mo, server_active, subproces
     else:
         action_msg = mo.md("")
 
-    # Đọc 35 dòng log gần nhất
+    # Nhấn refresh_logs_btn sẽ tự động kích hoạt cell này chạy lại để nạp log mới nhất
+    _ = refresh_logs_btn.value
+
     recent_logs = ""
     if log_server.is_file():
         all_lines = log_server.read_text(errors="replace").splitlines()
@@ -755,16 +761,28 @@ def step6_logs_and_controls(log_server, log_tunnel, mo, server_active, subproces
         })
     ])
 
-    return action_msg, control_card, refresh_logs_btn, stop_server_btn
+    return action_msg, control_card, recent_logs, tunnel_logs
 
 
 # ────────────────────────────────────────────────────────────────────────────
 # Cell 7: Sao lưu dữ liệu & Tải file ZIP trực tiếp về máy tính
 # ────────────────────────────────────────────────────────────────────────────
 @app.cell
-def step7_backup_and_download(
+def step7_backup_ui(mo):
+    create_backup_btn = mo.ui.run_button(label="📦 Tạo bản sao lưu toàn bộ (ZIP)", kind="success")
+    backup_ui_panel = mo.vstack([
+        mo.md("## 💾 Sao lưu & Xuất dữ liệu"),
+        mo.md("Bấm nút bên dưới để đóng gói toàn bộ bản dịch (output_text), file âm thanh (output_audio) và cơ sở dữ liệu truyện:"),
+        create_backup_btn,
+    ])
+    return backup_ui_panel, create_backup_btn
+
+
+@app.cell
+def step7_backup_process(
     Path,
     base_dir,
+    create_backup_btn,
     datetime,
     mo,
     repo_dir,
@@ -772,12 +790,9 @@ def step7_backup_and_download(
     tempfile,
     zipfile,
 ):
-    create_backup_btn = mo.ui.run_button(label="📦 Tạo bản sao lưu toàn bộ (ZIP)", kind="success")
-
-    backup_download_widget = None
-    backup_status = mo.md("Bấm nút bên dưới để nén văn bản dịch, file âm thanh và cơ sở dữ liệu truyện.")
-
-    if create_backup_btn.value:
+    if not create_backup_btn.value:
+        backup_result_display = mo.md("")
+    else:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_filename = f"NovelReader_Backup_{timestamp}.zip"
         backup_path = base_dir / backup_filename
@@ -804,21 +819,16 @@ def step7_backup_and_download(
         size_mb = backup_path.stat().st_size / (1024 * 1024)
         backup_data = backup_path.read_bytes()
 
-        backup_status = mo.md(f"✅ **Đã tạo xong bản sao lưu:** `{backup_filename}` ({size_mb:.1f} MB)")
-        backup_download_widget = mo.download(
-            data=backup_data,
-            filename=backup_filename,
-            label=f"⬇️ Bấm vào đây để tải {backup_filename} về máy tính"
-        )
+        backup_result_display = mo.vstack([
+            mo.md(f"✅ **Đã tạo xong bản sao lưu:** `{backup_filename}` ({size_mb:.1f} MB)"),
+            mo.download(
+                data=backup_data,
+                filename=backup_filename,
+                label=f"⬇️ Bấm vào đây để tải {backup_filename} về máy tính"
+            )
+        ])
 
-    backup_view = mo.vstack([
-        mo.md("## 💾 Sao lưu & Xuất dữ liệu"),
-        backup_status,
-        create_backup_btn,
-        backup_download_widget if backup_download_widget else mo.md(""),
-    ])
-
-    return backup_download_widget, backup_status, backup_view, create_backup_btn
+    return (backup_result_display,)
 
 
 # ────────────────────────────────────────────────────────────────────────────
