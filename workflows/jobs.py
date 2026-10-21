@@ -292,10 +292,13 @@ class Job:
                     self.message = ''
             self.emit('status')
             if config.get('generate_audio', True) and config.get('audio_pipeline', True):
+                default_workers = 2 if (os.getenv('COLAB_GPU') or os.getenv('KAGGLE_KERNEL_RUN_TYPE')) else 1
+                audio_workers = max(1, min(4, int(config.get('audio_workers', os.getenv('AUDIO_WORKERS', default_workers)))))
                 audio_queue = AudioQueue(
                     lambda item: self._generate_audio(item, config), self.checkpoint,
                     lambda item: self.store.update(item[0], audio_status='none'),
-                    maxsize=max(1, min(4, int(config.get('audio_queue_size', 2)))))
+                    maxsize=max(1, min(8, int(config.get('audio_queue_size', 4 if default_workers > 1 else 2)))),
+                    workers=audio_workers)
 
             def queue_audio(item):
                 if audio_queue is not None:

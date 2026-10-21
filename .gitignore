@@ -7,3 +7,4 @@ models/
 output_text/
 output_audio/
 .venv/
+__marimo__/

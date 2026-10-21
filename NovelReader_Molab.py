@@ -317,10 +317,12 @@ def step3_configure_env(Path, gpu_detected, os, repo_dir, site):
         "HACHIMIMT_GPU_INDICES": "0",
         "HACHIMIMT_AUTO_ALL_GPUS": "0",
         "HACHIMIMT_TOKENIZE_WORKERS": str(min(os.cpu_count() or 2, 4)),
-        # Piper TTS CUDA
+        # Piper TTS CUDA & Hi-Performance Audio
         "PIPER_DEVICE": "cuda" if gpu_detected else "cpu",
         "PIPER_REQUIRE_CUDA": "1" if gpu_detected else "0",
         "PIPER_CUDNN_ALGO": "DEFAULT",
+        "AUDIO_WORKERS": "2" if gpu_detected else "1",
+        "TTS_CHUNK_MAX_CHARS": "4000" if gpu_detected else "2500",
         # Server & Tunnel
         "ALLOWED_HOSTS": "*",
         "ALLOW_TUNNEL": "1",

@@ -261,7 +261,7 @@ def get_voice(voice_id: str = "ngochuyennew"):
         return inst
 
 
-def split_text_for_tts(text: str, max_chars: int = 1500) -> list[str]:
+def split_text_for_tts(text: str, max_chars: int = 4000) -> list[str]:
     """Chia nhỏ văn bản tránh tràn bộ nhớ khi đọc chương dài."""
     if not text:
         return []
@@ -317,7 +317,9 @@ def synth_text_to_wav(
     noise_w_scale: float = 0.8
 ):
     """Tổng hợp văn bản ra WAV với đầy đủ tham số cảm xúc và ngắt nghỉ."""
-    chunks = split_text_for_tts(text, max_chars=1500)
+    default_chunk = 4000 if is_cuda_available_for_piper() else 2500
+    chunk_limit = int(os.getenv('TTS_CHUNK_MAX_CHARS', default_chunk))
+    chunks = split_text_for_tts(text, max_chars=chunk_limit)
     if not chunks:
         with wave.open(str(out_wav), "wb") as w:
             w.setnchannels(1)
@@ -328,39 +330,28 @@ def synth_text_to_wav(
     from tts.synthesis import synthesize_wav
     settings = dict(length_scale=length_scale, noise_scale=noise_scale, noise_w_scale=noise_w_scale)
 
-    if len(chunks) == 1:
-        with _voice_lock:
-            with wave.open(str(out_wav), "wb") as w:
-                synthesize_wav(voice, chunks[0], w, **settings)
-        return
-
-    part_paths = []
-    for i, chunk in enumerate(chunks):
-        p = work_dir / f"chunk_{i:04d}.wav"
-        with _voice_lock:
-            with wave.open(str(p), "wb") as w:
-                synthesize_wav(voice, chunk, w, **settings)
-        part_paths.append(p)
-
-    concat_wavs(part_paths, out_wav)
+    with _voice_lock:
+        with wave.open(str(out_wav), "wb") as w:
+            for i, chunk in enumerate(chunks):
+                synthesize_wav(voice, chunk, w, set_wav_format=(i == 0), **settings)
 
 
 def convert_wav(in_wav: Path, out_file: Path, fmt: str = "mp3", bitrate: str = "96k"):
-    """Chuyển đổi WAV sang các định dạng mp3, m4b, m4a, opus, wav bằng ffmpeg."""
+    """Chuyển đổi WAV sang các định dạng mp3, m4b, m4a, opus, wav bằng ffmpeg đa luồng."""
     fmt = fmt.lower().strip()
-    cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(in_wav)]
+    cmd = ["ffmpeg", "-v", "error", "-y", "-threads", "0", "-i", str(in_wav)]
 
     if fmt == "mp3":
-        cmd.extend(["-c:a", "libmp3lame", "-b:a", bitrate, str(out_file)])
+        cmd.extend(["-c:a", "libmp3lame", "-threads", "0", "-b:a", bitrate, str(out_file)])
     elif fmt in ("m4b", "m4a", "aac"):
-        cmd.extend(["-c:a", "aac", "-b:a", bitrate, str(out_file)])
+        cmd.extend(["-c:a", "aac", "-threads", "0", "-b:a", bitrate, str(out_file)])
     elif fmt in ("opus", "ogg"):
-        cmd.extend(["-c:a", "libopus", "-b:a", bitrate, str(out_file)])
+        cmd.extend(["-c:a", "libopus", "-threads", "0", "-b:a", bitrate, str(out_file)])
     elif fmt == "wav":
         cmd.extend(["-c:a", "pcm_s16le", str(out_file)])
     else:
         # Mặc định mp3
-        cmd.extend(["-c:a", "libmp3lame", "-b:a", bitrate, str(out_file)])
+        cmd.extend(["-c:a", "libmp3lame", "-threads", "0", "-b:a", bitrate, str(out_file)])
 
     subprocess.run(cmd, check=True, timeout=600)
 

@@ -1,27 +1,35 @@
-"""One audio consumer, bounded backlog, and deterministic shutdown.
+"""Audio consumer queue, bounded backlog, multi-worker support, and deterministic shutdown.
 
 Only the translation producer mutates the book scope. The job stays active until
-close() joins the consumer, so reset/delete/rename cannot race audio output.
+close() joins the consumer workers, so reset/delete/rename cannot race audio output.
 """
 import queue
 import threading
 
 
 class AudioQueue:
-    def __init__(self, consume, checkpoint, cancel, maxsize=2):
+    def __init__(self, consume, checkpoint, cancel, maxsize=2, workers=1):
         self.consume = consume
         self.checkpoint = checkpoint
         self.cancel = cancel
         self.queue = queue.Queue(maxsize=maxsize)
         self.error = None
         self.closed = False
-        self.worker = threading.Thread(target=self._run, name='chapter-audio', daemon=True)
-        self.worker.start()
+        self.workers = []
+        for i in range(max(1, int(workers))):
+            t = threading.Thread(target=self._run, name=f'chapter-audio-{i}', daemon=True)
+            t.start()
+            self.workers.append(t)
+
+    @property
+    def worker(self):
+        """Backward compatibility for checks like `q.worker.is_alive()`."""
+        return self.workers[0] if self.workers else None
 
     def submit(self, item):
         if self.closed:
             raise RuntimeError('Audio queue is closed')
-        while self.worker.is_alive():
+        while any(w.is_alive() for w in self.workers):
             if self.error:
                 raise RuntimeError('Audio worker failed') from self.error
             if not self.checkpoint():
@@ -53,7 +61,9 @@ class AudioQueue:
     def close(self):
         if not self.closed:
             self.closed = True
-            self.queue.put(None)
-            self.worker.join()
+            for _ in self.workers:
+                self.queue.put(None)
+            for w in self.workers:
+                w.join()
         if self.error:
             raise RuntimeError('Audio worker failed') from self.error

@@ -177,7 +177,50 @@ async function ensureDriveApiConnection() {
   return state.connected || await openDriveDialog();
 }
 
-// Export buttons retain their download links; Drive is an explicit destination.
+// Export buttons retain their download links; Drive and Pixeldrain are explicit destinations.
+let pixeldrainExportBusy = false;
+
+function showPixeldrainModal(res) {
+  const dialog = $('pixeldrain-result-dialog');
+  if (!dialog) return;
+  const filenameEl = $('pd-dialog-filename');
+  const urlInput = $('pd-dialog-url');
+  const openLink = $('pd-dialog-open-link');
+  if (filenameEl) filenameEl.textContent = `Tệp: ${res.filename} (${res.size_mb || (res.size_bytes / (1024 * 1024)).toFixed(1)} MB)`;
+  if (urlInput) urlInput.value = res.url;
+  if (openLink) openLink.href = res.url;
+  dialog.showModal();
+}
+
+async function exportToPixeldrain(format) {
+  if (pixeldrainExportBusy) {
+    notice('Đang tải lên Pixeldrain. Vui lòng đợi...');
+    return;
+  }
+  const apiKey = localStorage.getItem('pixeldrain_api_key') || '';
+  pixeldrainExportBusy = true;
+  notice(`Đang xuất và tải ${format.toUpperCase()} lên Pixeldrain...`);
+  try {
+    const res = await api('/api/export/pixeldrain/' + format, { api_key: apiKey }, 'POST');
+    if (res.ok) {
+      notice(`✓ Đã tải lên Pixeldrain: ${res.url}`);
+      showPixeldrainModal(res);
+    } else {
+      throw new Error(res.message || 'Lỗi không xác định khi upload Pixeldrain.');
+    }
+  } catch (err) {
+    const msg = err.message || String(err);
+    if (msg.includes('API Key') || msg.includes('401')) {
+      notice('Pixeldrain yêu cầu API Key. Vui lòng mở Cài đặt để nhập Key.');
+      openSettingsModal('tab-cloud');
+    } else {
+      notice(`Lỗi Pixeldrain: ${msg}`);
+    }
+  } finally {
+    pixeldrainExportBusy = false;
+  }
+}
+
 async function loadExportDestination() {
   const select = $('export-destination');
   if (!select) return;
@@ -187,15 +230,30 @@ async function loadExportDestination() {
     $('drive-api-open').hidden = driveBackend !== 'api';
     select.querySelector('[value="gdrive"]').disabled = !capability.colab_drive;
     const saved = localStorage.getItem('novel_export_destination');
-    select.value = capability.colab_drive ? (saved || 'gdrive') : 'download';
-  } catch { select.value = 'download'; }
+    if (saved === 'pixeldrain') {
+      select.value = 'pixeldrain';
+    } else if (saved === 'download') {
+      select.value = 'download';
+    } else {
+      select.value = capability.colab_drive ? (saved || 'gdrive') : 'download';
+    }
+  } catch {
+    const saved = localStorage.getItem('novel_export_destination');
+    select.value = saved || 'download';
+  }
   select.onchange = () => localStorage.setItem('novel_export_destination', select.value);
 }
 
 let driveExportBusy = false;
 for (const [id, format] of [['export-txt', 'txt'], ['export-epub', 'epub'], ['export-audio', 'audio']]) {
   $(id).addEventListener('click', event => {
-    if ($('export-destination')?.value !== 'gdrive') return;
+    const dest = $('export-destination')?.value;
+    if (dest === 'pixeldrain') {
+      event.preventDefault();
+      exportToPixeldrain(format);
+      return;
+    }
+    if (dest !== 'gdrive') return;
     event.preventDefault();
     if (driveExportBusy) { notice('Đang xuất lên Drive. Vui lòng đợi.'); return; }
     safe(async () => {
@@ -536,6 +594,7 @@ function openSettingsModal(tabId = 'tab-tts') {
   if ($('settings-modal')) $('settings-modal').hidden = false;
   switchSettingsTab(tabId);
   loadGdriveSettings();
+  loadPixeldrainSettings();
   loadMergedGroups();
 }
 
@@ -576,6 +635,66 @@ if ($('settings-modal')) {
 document.querySelectorAll('.modal-tab').forEach(tab => {
   tab.onclick = () => switchSettingsTab(tab.dataset.tab);
 });
+
+// ----------------- PIXELDRAIN SETTINGS -----------------
+async function loadPixeldrainSettings() {
+  const input = $('modal-pixeldrain-key');
+  const status = $('pixeldrain-key-status');
+  const savedKey = localStorage.getItem('pixeldrain_api_key') || '';
+  if (input && !input.value) input.value = savedKey;
+
+  try {
+    const serverStat = await api('/api/export/pixeldrain/status');
+    if (serverStat.has_env_key) {
+      if (status) {
+        status.textContent = `✓ Biến môi trường (${serverStat.env_key_masked})`;
+        status.style.color = '#4ade80';
+      }
+    } else if (savedKey) {
+      if (status) {
+        status.textContent = '✓ Đã lưu trên trình duyệt';
+        status.style.color = '#4ade80';
+      }
+    } else {
+      if (status) {
+        status.textContent = 'Chưa cài đặt (Cần nhập key)';
+        status.style.color = '#f87171';
+      }
+    }
+  } catch {}
+}
+
+if ($('btn-save-pixeldrain-key')) {
+  $('btn-save-pixeldrain-key').onclick = () => {
+    const val = ($('modal-pixeldrain-key')?.value || '').trim();
+    const status = $('pixeldrain-key-status');
+    if (val) {
+      localStorage.setItem('pixeldrain_api_key', val);
+      if (status) {
+        status.textContent = '✓ Đã lưu trên trình duyệt';
+        status.style.color = '#4ade80';
+      }
+      notice('✓ Đã lưu Pixeldrain API Key thành công!');
+    } else {
+      localStorage.removeItem('pixeldrain_api_key');
+      if (status) {
+        status.textContent = 'Chưa cài đặt';
+        status.style.color = '#f87171';
+      }
+      notice('Đã xóa Pixeldrain API Key.');
+    }
+  };
+}
+
+if ($('pd-dialog-close')) $('pd-dialog-close').onclick = () => $('pixeldrain-result-dialog')?.close();
+if ($('pd-btn-copy')) {
+  $('pd-btn-copy').onclick = () => {
+    const url = $('pd-dialog-url')?.value;
+    if (url) {
+      navigator.clipboard.writeText(url).then(() => notice('✓ Đã sao chép link Pixeldrain vào clipboard!'));
+    }
+  };
+}
 
 // ----------------- GOOGLE DRIVE SETTINGS -----------------
 document.querySelectorAll('input[name="gdrive_mode"]').forEach(r => {
@@ -862,13 +981,46 @@ async function loadMergedGroups() {
       const sizeText = g.size_mb !== undefined ? `${g.size_mb} MB` : `${((g.size || 0) / (1024 * 1024)).toFixed(1)} MB`;
       info.innerHTML = `<strong>${g.filename}</strong> <span style="font-size:12px; color:#888;">(${sizeText})</span>`;
 
+      const actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.gap = '6px';
+      actions.style.alignItems = 'center';
+
       const downloadLink = document.createElement('a');
       downloadLink.href = g.url || g.download_url;
       downloadLink.download = g.filename;
       downloadLink.className = 'btn-tool';
       downloadLink.textContent = '⬇ Tải file';
 
-      row.append(info, downloadLink);
+      const pdBtn = document.createElement('button');
+      pdBtn.type = 'button';
+      pdBtn.className = 'btn-tool';
+      pdBtn.textContent = '☁ Pixeldrain';
+      pdBtn.title = 'Tải file này lên Pixeldrain và lấy link chia sẻ';
+      pdBtn.onclick = async () => {
+        const apiKey = localStorage.getItem('pixeldrain_api_key') || '';
+        notice(`Đang tải ${g.filename} lên Pixeldrain...`);
+        try {
+          const res = await api('/api/export/pixeldrain/file/' + encodeURIComponent(g.filename), { api_key: apiKey }, 'POST');
+          if (res.ok) {
+            notice(`✓ Đã tải lên Pixeldrain: ${res.url}`);
+            showPixeldrainModal(res);
+          } else {
+            throw new Error(res.message || 'Lỗi khi upload Pixeldrain.');
+          }
+        } catch (err) {
+          const msg = err.message || String(err);
+          if (msg.includes('API Key') || msg.includes('401')) {
+            notice('Pixeldrain yêu cầu API Key. Vui lòng mở Cài đặt để nhập Key.');
+            openSettingsModal('tab-cloud');
+          } else {
+            notice(`Lỗi Pixeldrain: ${msg}`);
+          }
+        }
+      };
+
+      actions.append(downloadLink, pdBtn);
+      row.append(info, actions);
       list.append(row);
     });
     container.append(list);

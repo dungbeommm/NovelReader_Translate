@@ -35,6 +35,7 @@
       <select id="export-destination" aria-label="Nơi lưu bản xuất">
         <option value="download">Tải về máy</option>
         <option value="gdrive">Google Drive</option>
+        <option value="pixeldrain">Pixeldrain</option>
       </select>
 <button id="drive-api-open" type="button" hidden>Kết nối Drive</button>
     </label>
@@ -500,6 +501,7 @@
     
     <div class="modal-tabs">
       <button type="button" class="modal-tab active" data-tab="tab-tts">Giọng đọc &amp; Cảm xúc</button>
+      <button type="button" class="modal-tab" data-tab="tab-cloud">Lưu trữ Đám mây &amp; Pixeldrain</button>
       <button type="button" class="modal-tab" data-tab="tab-clean">Xử lý Mục lục &amp; Rác</button>
       <button type="button" class="modal-tab" data-tab="tab-cache">Xóa Cache &amp; Data</button>
     </div>
@@ -553,6 +555,39 @@
               <option value="192k">192 kbps (Chất lượng cao)</option>
             </select>
           </div>
+        </div>
+      </div>
+
+      <!-- TAB: Lưu trữ Đám mây & Pixeldrain -->
+      <div class="tab-pane" id="pane-tab-cloud" style="display:none;">
+        <div class="form-group">
+          <label for="modal-pixeldrain-key" style="font-weight:600; display:block; margin-bottom:6px;">Pixeldrain API Key:</label>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <input type="password" id="modal-pixeldrain-key" class="form-input" placeholder="Nhập API Key Pixeldrain của bạn..." style="flex:1; padding:8px 12px; background:#1a231d; border:1px solid #2d4033; color:#e2e8f0; border-radius:6px;">
+            <button type="button" id="btn-save-pixeldrain-key" class="button primary" style="white-space:nowrap; padding:8px 16px;">Lưu Key</button>
+          </div>
+          <small class="form-hint" style="display:block; margin-top:8px; color:#888; font-size:12px; line-height:1.5;">
+            Pixeldrain cho phép tải lên và chia sẻ file TXT, EPUB và Audio tốc độ cao miễn phí.
+            <br>
+            👉 Lấy API key miễn phí tại: <a href="https://pixeldrain.com/user/api_keys" target="_blank" rel="noopener noreferrer" style="color:var(--accent,#4ade80); text-decoration:underline; font-weight:600;">pixeldrain.com/user/api_keys</a>
+          </small>
+        </div>
+
+        <div id="pixeldrain-status-box" style="margin-top:16px; padding:12px; background:#131a15; border:1px solid #28372d; border-radius:6px; font-size:13px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span>Trạng thái Pixeldrain:</span>
+            <span id="pixeldrain-key-status" class="chip">Đang kiểm tra...</span>
+          </div>
+        </div>
+
+        <div style="margin-top:20px; border-top:1px solid rgba(255,255,255,0.1); padding-top:14px;">
+          <h4 style="margin:0 0 8px 0; font-size:14px; color:#cbd5e1;">Cách sử dụng:</h4>
+          <ol style="margin:0; padding-left:20px; font-size:12px; color:#aaa; line-height:1.6;">
+            <li>Nhập API Key và bấm <strong>Lưu Key</strong>.</li>
+            <li>Tại thanh tiêu đề, chọn menu <strong>Lưu: Pixeldrain</strong>.</li>
+            <li>Bấm <strong>Xuất TXT</strong>, <strong>Xuất EPUB</strong>, hoặc <strong>Xuất Audio</strong> để tải lên và nhận link chia sẻ trực tiếp.</li>
+            <li>Bạn cũng có thể tải riêng từng file audiobook đã gộp lên Pixeldrain trong mục Quản lý Audio.</li>
+          </ol>
         </div>
       </div>
 
@@ -648,5 +683,20 @@
 </dialog>
 
 <script src="/static/app.js" defer></script>
+<dialog id="pixeldrain-result-dialog" style="width:min(520px,calc(100vw - 32px));background:#141e17;color:#e5f0e8;border:1px solid #375140;border-radius:12px;padding:22px;">
+  <h2 style="margin-top:0;display:flex;align-items:center;gap:8px;">☁ Tải lên Pixeldrain thành công!</h2>
+  <p id="pd-dialog-filename" style="font-size:13px;color:#cbd5e1;"></p>
+  <div style="margin:16px 0;background:#0d1410;padding:12px;border-radius:8px;border:1px solid #24382a;">
+    <label style="font-size:12px;color:#888;display:block;margin-bottom:6px;">Link xem &amp; tải tệp:</label>
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="pd-dialog-url" readonly style="flex:1;background:#18261e;border:1px solid #324c3a;color:#4ade80;padding:8px 10px;border-radius:6px;font-family:monospace;font-size:13px;">
+      <button type="button" id="pd-btn-copy" class="button" style="white-space:nowrap;">📋 Sao chép</button>
+    </div>
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;">
+    <a id="pd-dialog-open-link" href="#" target="_blank" rel="noopener noreferrer" class="button primary" style="text-decoration:none;">Mở trang Pixeldrain ↗</a>
+    <button type="button" id="pd-dialog-close" class="button btn-ghost">Đóng</button>
+  </div>
+</dialog>
 </body>
 </html>
