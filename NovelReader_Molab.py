@@ -233,7 +233,7 @@ def step1_source_setup(Path, os, shutil, subprocess, sys, urllib, zipfile):
     # Đảm bảo các thư mục dữ liệu cần thiết tồn tại
     for folder_name in (
         "data/logs", "models/translation", "models/voices",
-        "output_text", "output_audio"
+        "output_text", "output_audio", "web/static", "web/templates"
     ):
         (repo_dir / folder_name).mkdir(parents=True, exist_ok=True)
 
@@ -489,6 +489,7 @@ def step4_models_and_smoke_test(
 @app.cell
 def step5_launch_server(
     step4_ready,
+    Path,
     base_dir,
     mo,
     os,
@@ -518,6 +519,16 @@ def step5_launch_server(
     ]:
         subprocess.run(old_cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.0)
+
+    # Đảm bảo SSH key tồn tại để Pinggy và Localhost.run kết nối trơn tru không hỏi mật khẩu
+    try:
+        ssh_dir = Path.home() / ".ssh"
+        ssh_key = ssh_dir / "id_ed25519"
+        if not ssh_key.is_file():
+            ssh_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            subprocess.run(["ssh-keygen", "-t", "ed25519", "-N", "", "-f", str(ssh_key)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
 
     # 2. Sinh mã token truy cập bảo mật và biến môi trường tunnel
     token_str = secrets.token_urlsafe(32)

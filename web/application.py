@@ -69,5 +69,7 @@ def create_app():
     # Static /api/export/audio must precede /api/export/{format}.
     for module in (audio, gdrive, translation, system, progress, drive_exports, drive_api, pixeldrain_routes, checkpoints, books):
         app.include_router(module.router)
-    app.mount('/static', StaticFiles(directory=runtime.ROOT / 'web/static'), name='static')
+    static_dir = runtime.ROOT / 'web/static'
+    static_dir.mkdir(parents=True, exist_ok=True)
+    app.mount('/static', StaticFiles(directory=static_dir), name='static')
     return app
