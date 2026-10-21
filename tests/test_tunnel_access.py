@@ -36,6 +36,11 @@ def test_extract_pinggy_url_standard():
     assert extract_pinggy_url(line) == "https://rnajk-12-34-56-78.a.free.pinggy.link"
 
 
+def test_extract_pinggy_url_run_pinggy_free():
+    line = "https://bhqkf-166-19-116-206.run.pinggy-free.link"
+    assert extract_pinggy_url(line) == "https://bhqkf-166-19-116-206.run.pinggy-free.link"
+
+
 def test_extract_pinggy_url_with_ansi_and_trailing():
     line = "\x1b[1;32mhttps://mycustom.pinggy.link/\x1b[0m"
     assert extract_pinggy_url(line) == "https://mycustom.pinggy.link"
