@@ -27,6 +27,7 @@
 #     "nvidia-cudnn-cu12",
 #     "nvidia-cuda-runtime-cu12>=12,<13",
 #     "pathvalidate>=3.3,<4",
+#     "psutil>=5.9,<8",
 # ]
 # ///
 
@@ -558,34 +559,38 @@ def step5_launch_server(
     lhr_url = None
 
     # 5a. Pinggy HTTPS Tunnel (SSH Port 443 - Tuyệt đối không bị lỗi Cloudflare 1033)
-    try:
-        print("🌐 Đang kết nối Pinggy HTTPS Tunnel (Port 443)...")
-        pinggy_proc = subprocess.Popen(
-            [
-                "ssh", "-p", "443", "-o", "StrictHostKeyChecking=no",
-                "-o", "ServerAliveInterval=30",
-                "-R", "0:localhost:8000", "a.pinggy.io"
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env={**os.environ, "TERM": "dumb"}
-        )
-        p_start = time.time()
-        while time.time() - p_start < 25:
-            p_line = pinggy_proc.stdout.readline()
-            if not p_line:
-                break
-            p_match = re.search(r"(https://[a-zA-Z0-9.-]+\.pinggy[a-zA-Z0-9.-]*\.link)", p_line)
-            if p_match:
-                pinggy_url = p_match.group(1)
-                print(f"   ✅ Pinggy Tunnel sẵn sàng: {pinggy_url}")
-                break
-    except Exception as pinggy_err:
-        print(f"   ⚠️ Lỗi kết nối Pinggy: {pinggy_err}")
+    tunnel_mode = getattr(tunnel_selector, "value", "auto") or "auto"
+    if tunnel_mode in ("auto", "pinggy"):
+        try:
+            print("🌐 Đang kết nối Pinggy HTTPS Tunnel (Port 443)...")
+            pinggy_proc = subprocess.Popen(
+                [
+                    "ssh", "-p", "443", "-o", "StrictHostKeyChecking=no",
+                    "-o", "ServerAliveInterval=30",
+                    "-R", "0:localhost:8000", "a.pinggy.io"
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env={**os.environ, "TERM": "dumb"}
+            )
+            p_start = time.time()
+            while time.time() - p_start < 25:
+                p_line = pinggy_proc.stdout.readline()
+                if not p_line:
+                    break
+                p_match = re.search(r"(https://[a-zA-Z0-9.-]+\.pinggy[a-zA-Z0-9.-]*\.link)", p_line)
+                if p_match:
+                    pinggy_url = p_match.group(1)
+                    print(f"   ✅ Pinggy Tunnel sẵn sàng: {pinggy_url}")
+                    break
+        except Exception as pinggy_err:
+            print(f"   ⚠️ Lỗi kết nối Pinggy: {pinggy_err}")
 
     # 5b. Cloudflare Tunnel (HTTP/2 - Port 443)
     cf_executable = base_dir / "cloudflared"
+    if tunnel_mode not in ("auto", "cloudflare"):
+        cf_executable = None
     if sys.platform.startswith("linux") and not cf_executable.is_file():
         try:
             urllib.request.urlretrieve(
@@ -700,6 +705,7 @@ def step5_launch_server(
             kind="danger"
         )
 
+    mo.output.replace(status_view)
     server_active = True
     return log_server, log_tunnel
 
@@ -755,6 +761,7 @@ def step6_logs_view(
             ),
         })
     ])
+    mo.output.replace(control_card)
     return
 
 
@@ -766,6 +773,7 @@ def step7_backup_ui(mo):
         mo.md("Dừng job dịch trước (giữ máy chủ Web đang chạy). Nút này tạo checkpoint chuẩn có audio, khôi phục được trong tab Cloud. Muốn lưu Pixeldrain hoặc bỏ audio, dùng Cài đặt → Lưu trữ Đám mây trên Web:"),
         create_backup_btn,
     ])
+    mo.output.replace(backup_ui_panel)
     return (create_backup_btn,)
 
 
@@ -795,6 +803,7 @@ def step7_backup_process(base_dir, create_backup_btn, datetime, mo, os, shutil, 
         except Exception as backup_error:
             backup_path.unlink(missing_ok=True)
             backup_result_display = mo.md(f"⚠️ Chưa tạo được checkpoint: {backup_error}. Hãy dừng job nhưng giữ server chạy và thử lại.")
+    mo.output.replace(backup_result_display)
     return
 
 
