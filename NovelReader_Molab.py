@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
-#     "marimo",
+#     "marimo>=0.23.3",
 #     "fastapi>=0.115,<1",
 #     "uvicorn>=0.30,<1",
 #     "websockets>=13,<16",
@@ -32,13 +32,13 @@
 
 import marimo
 
-__generated_with = "0.25.2"
-app = marimo.App(width="full", app_title="NovelReader AI — Molab Marimo Edition")
+__generated_with = "0.25.1"
+app = marimo.App(
+    width="full",
+    app_title="NovelReader AI — Molab Marimo Edition",
+)
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Cell: Shared Imports (Được quản lý tập trung theo chuẩn Marimo DAG)
-# ────────────────────────────────────────────────────────────────────────────
 @app.cell
 def shared_imports():
     import datetime
@@ -65,18 +65,14 @@ def shared_imports():
     return (
         Path,
         datetime,
-        hashlib,
         importlib,
-        json,
         mo,
         os,
         re,
         secrets,
         shutil,
         site,
-        socket,
         sqlite3,
-        stat,
         subprocess,
         sys,
         tempfile,
@@ -86,9 +82,6 @@ def shared_imports():
     )
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Cell 0: Giao diện giới thiệu & Tuỳ chọn cấu hình
-# ────────────────────────────────────────────────────────────────────────────
 @app.cell
 def intro_ui(mo):
     model_selector = mo.ui.dropdown(
@@ -145,14 +138,11 @@ def intro_ui(mo):
     ])
 
     intro_view = mo.vstack([intro_markdown, settings_panel])
-    return intro_markdown, intro_view, model_selector, settings_panel, tunnel_selector, voice_selector
+    return model_selector, tunnel_selector, voice_selector
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Cell 1: Tải & Giải nén mã nguồn + Kiểm tra GPU
-# ────────────────────────────────────────────────────────────────────────────
 @app.cell
-def step1_source_setup(Path, hashlib, mo, os, shutil, stat, subprocess, sys, urllib, zipfile):
+def step1_source_setup(Path, os, shutil, subprocess, sys, urllib, zipfile):
     print("=" * 65)
     print("📥 BƯỚC 1: KHỞI TẠO MÔI TRƯỜNG & MÃ NGUỒN NOVELREADER")
     print("=" * 65)
@@ -230,14 +220,17 @@ def step1_source_setup(Path, hashlib, mo, os, shutil, stat, subprocess, sys, url
         print("⚠️ Không thể gọi nvidia-smi.")
 
     step1_ready = True
-    return base_dir, gpu_detected, gpu_label, repo_dir, step1_ready, vram_display
+    return base_dir, gpu_detected, repo_dir
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Cell 2: Cài đặt thư viện + ORT GPU + NVIDIA cuDNN 12
-# ────────────────────────────────────────────────────────────────────────────
 @app.cell
-def step2_install_libraries(gpu_detected, importlib, repo_dir, step1_ready, subprocess, sys):
+def step2_install_libraries(
+    gpu_detected,
+    importlib,
+    repo_dir,
+    subprocess,
+    sys,
+):
     print("=" * 65)
     print("📦 BƯỚC 2: CÀI ĐẶT THƯ VIỆN & CẤU HÌNH PIPER CUDA")
     print("=" * 65)
@@ -303,14 +296,11 @@ def step2_install_libraries(gpu_detected, importlib, repo_dir, step1_ready, subp
             print(f"   ⚠️ apt-get bỏ qua: {exc}")
 
     step2_ready = True
-    return (step2_ready,)
+    return
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Cell 3: Cấu hình tham số GPU tối ưu & LD_LIBRARY_PATH
-# ────────────────────────────────────────────────────────────────────────────
 @app.cell
-def step3_configure_env(Path, gpu_detected, os, repo_dir, site, step2_ready):
+def step3_configure_env(Path, gpu_detected, os, repo_dir, site):
     print("=" * 65)
     print("⚙️ BƯỚC 3: THIẾT LẬP BIẾN MÔI TRƯỜNG & LIÊN KẾT CUDA")
     print("=" * 65)
@@ -368,21 +358,16 @@ def step3_configure_env(Path, gpu_detected, os, repo_dir, site, step2_ready):
     print("✅ Cấu hình môi trường GPU hoàn tất.")
 
     step3_ready = True
-    return (step3_ready,)
+    return
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Cell 4: Tải model giọng đọc & Smoke Test tăng tốc CUDA
-# ────────────────────────────────────────────────────────────────────────────
 @app.cell
 def step4_models_and_smoke_test(
-    Path,
     gpu_detected,
     model_selector,
     os,
     repo_dir,
     shutil,
-    step3_ready,
     subprocess,
     sys,
     urllib,
@@ -488,12 +473,9 @@ def step4_models_and_smoke_test(
         print("ℹ️ Đang chạy chế độ CPU, bỏ qua kiểm tra CUDA.")
 
     step4_ready = True
-    return chosen_model, chosen_voice, cuda_provider_confirmed, step4_ready
+    return
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Cell 5: Khởi chạy Máy chủ Web & Kết nối Tunnel Đa Tầng (HTTP/2)
-# ────────────────────────────────────────────────────────────────────────────
 @app.cell
 def step5_launch_server(
     base_dir,
@@ -502,8 +484,6 @@ def step5_launch_server(
     re,
     repo_dir,
     secrets,
-    socket,
-    step4_ready,
     subprocess,
     sys,
     time,
@@ -528,28 +508,30 @@ def step5_launch_server(
     log_server = repo_dir / "data/logs/colab-server.log"
     log_tunnel = repo_dir / "data/logs/colab-tunnel.log"
 
+    # Mở file log bền vững (không đóng theo with block để tránh lỗi broken pipe gây crash tiến trình nền)
+    server_out = open(str(log_server), "a", buffering=1, encoding="utf-8", errors="replace")
+
     # 3. Khởi động Uvicorn Server ở chế độ nền
     print("🚀 Đang khởi động máy chủ Uvicorn trên 127.0.0.1:8000...")
-    with log_server.open("w") as server_out:
-        server_process = subprocess.Popen(
-            [
-                sys.executable, "-m", "uvicorn", "main:app",
-                "--host", "127.0.0.1", "--port", "8000",
-                "--workers", "1", "--no-access-log",
-                "--timeout-graceful-shutdown", "120"
-            ],
-            cwd=str(repo_dir),
-            stdout=server_out,
-            stderr=subprocess.STDOUT,
-            env=dict(os.environ)
-        )
+    server_process = subprocess.Popen(
+        [
+            sys.executable, "-m", "uvicorn", "main:app",
+            "--host", "127.0.0.1", "--port", "8000",
+            "--workers", "1", "--no-access-log",
+            "--timeout-graceful-shutdown", "120"
+        ],
+        cwd=str(repo_dir),
+        stdout=server_out,
+        stderr=subprocess.STDOUT,
+        env=dict(os.environ)
+    )
 
     # 4. Chờ máy chủ phản hồi trạng thái sẵn sàng
     server_ready = False
     for attempt in range(120):
         if server_process.poll() is not None:
             print("❌ Máy chủ đã dừng bất thường!")
-            print(log_server.read_text()[-1000:])
+            print(log_server.read_text(errors="replace")[-1000:])
             break
         try:
             req_check = urllib.request.Request(
@@ -568,75 +550,79 @@ def step5_launch_server(
     else:
         print("   ⚠️ Hết thời gian chờ phản hồi từ 127.0.0.1:8000.")
 
-    # 5. Khởi tạo Tunnel đa tầng
-    tunnel_mode = tunnel_selector.value
-    public_web_url = None
-    tunnel_provider_name = ""
+    # 5. Khởi tạo Tunnel đa tầng (Pinggy HTTPS + Cloudflare HTTP/2)
+    pinggy_url = None
+    cloudflare_url = None
+    lhr_url = None
 
-    # Thử Cloudflare với giao thức HTTP/2 qua port 443 TCP (vượt tường lửa chặn UDP 7844)
-    if tunnel_mode in ("auto", "cloudflare"):
-        print("🌐 Đang kết nối Cloudflare HTTPS Tunnel (HTTP/2 - Port 443)...")
-        cf_executable = base_dir / "cloudflared"
-        if sys.platform.startswith("linux") and not cf_executable.is_file():
-            try:
-                urllib.request.urlretrieve(
-                    "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
-                    cf_executable
-                )
-                cf_executable.chmod(0o755)
-            except Exception as cf_dl_err:
-                print(f"   ⚠️ Không tải được cloudflared: {cf_dl_err}")
+    # 5a. Pinggy HTTPS Tunnel (SSH Port 443 - Tuyệt đối không bị lỗi Cloudflare 1033)
+    try:
+        print("🌐 Đang kết nối Pinggy HTTPS Tunnel (Port 443)...")
+        pinggy_proc = subprocess.Popen(
+            [
+                "ssh", "-p", "443", "-o", "StrictHostKeyChecking=no",
+                "-o", "ServerAliveInterval=30",
+                "-R", "0:localhost:8000", "a.pinggy.io"
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env={**os.environ, "TERM": "dumb"}
+        )
+        p_start = time.time()
+        while time.time() - p_start < 25:
+            p_line = pinggy_proc.stdout.readline()
+            if not p_line:
+                break
+            p_match = re.search(r"(https://[a-zA-Z0-9.-]+\.pinggy[a-zA-Z0-9.-]*\.link)", p_line)
+            if p_match:
+                pinggy_url = p_match.group(1)
+                print(f"   ✅ Pinggy Tunnel sẵn sàng: {pinggy_url}")
+                break
+    except Exception as pinggy_err:
+        print(f"   ⚠️ Lỗi kết nối Pinggy: {pinggy_err}")
 
-        if cf_executable.is_file():
-            with log_tunnel.open("w") as tunnel_out:
-                tunnel_process = subprocess.Popen(
-                    [str(cf_executable), "tunnel", "--protocol", "http2", "--url", "http://127.0.0.1:8000"],
-                    stdout=tunnel_out,
-                    stderr=subprocess.STDOUT
-                )
-            for _ in range(35):
-                if tunnel_process.poll() is not None:
-                    break
-                if log_tunnel.is_file():
-                    log_text = log_tunnel.read_text()
-                    cf_match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", log_text)
-                    if cf_match:
-                        public_web_url = cf_match.group(0)
-                        tunnel_provider_name = "Cloudflare Tunnel (HTTP/2)"
-                        break
-                time.sleep(1)
-
-    # Thử Pinggy HTTPS Tunnel qua port 443 SSH
-    if not public_web_url and tunnel_mode in ("auto", "pinggy"):
-        print("🌐 Đang kết nối qua Pinggy HTTPS Tunnel (SSH Port 443)...")
+    # 5b. Cloudflare Tunnel (HTTP/2 - Port 443)
+    cf_executable = base_dir / "cloudflared"
+    if sys.platform.startswith("linux") and not cf_executable.is_file():
         try:
-            pinggy_proc = subprocess.Popen(
-                [
-                    "ssh", "-p", "443", "-o", "StrictHostKeyChecking=no",
-                    "-o", "ServerAliveInterval=30",
-                    "-R", "0:localhost:8000", "a.pinggy.io"
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env={**os.environ, "TERM": "dumb"}
+            urllib.request.urlretrieve(
+                "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
+                cf_executable
             )
-            p_start = time.time()
-            while time.time() - p_start < 25:
-                p_line = pinggy_proc.stdout.readline()
-                if not p_line:
-                    break
-                p_match = re.search(r"(https://[a-zA-Z0-9.-]+\.pinggy[a-zA-Z0-9.-]*\.link)", p_line)
-                if p_match:
-                    public_web_url = p_match.group(1)
-                    tunnel_provider_name = "Pinggy HTTPS (Port 443)"
-                    break
-        except Exception as pinggy_err:
-            print(f"   ⚠️ Lỗi kết nối Pinggy: {pinggy_err}")
+            cf_executable.chmod(0o755)
+        except Exception as cf_dl_err:
+            print(f"   ⚠️ Không tải được cloudflared: {cf_dl_err}")
 
-    # Thử Localhost.run SSH Tunnel
-    if not public_web_url and tunnel_mode in ("auto", "localhost_run"):
-        print("🌐 Đang kết nối qua Localhost.run Tunnel...")
+    if cf_executable.is_file():
+        print("🌐 Đang kết nối Cloudflare Tunnel (HTTP/2)...")
+        # Sử dụng cờ --logfile độc lập để cloudflared ghi log trực tiếp, tránh đóng luồng gây Error 1033
+        cf_proc = subprocess.Popen(
+            [
+                str(cf_executable), "tunnel",
+                "--protocol", "http2",
+                "--url", "http://127.0.0.1:8000",
+                "--logfile", str(log_tunnel),
+                "--loglevel", "info"
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        for _ in range(35):
+            if cf_proc.poll() is not None:
+                break
+            if log_tunnel.is_file():
+                log_text = log_tunnel.read_text(errors="replace")
+                cf_match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", log_text)
+                if cf_match:
+                    cloudflare_url = cf_match.group(0)
+                    print(f"   ✅ Cloudflare Tunnel sẵn sàng: {cloudflare_url}")
+                    break
+            time.sleep(1)
+
+    # 5c. Localhost.run (Dự phòng nếu hai cổng trên đều không mở được)
+    if not pinggy_url and not cloudflare_url:
+        print("🌐 Đang kết nối Localhost.run...")
         try:
             lhr_proc = subprocess.Popen(
                 [
@@ -656,30 +642,42 @@ def step5_launch_server(
                     break
                 l_match = re.search(r"(https://[a-zA-Z0-9.-]+\.lhr\.life)", l_line)
                 if l_match:
-                    public_web_url = l_match.group(1)
-                    tunnel_provider_name = "Localhost.run"
+                    lhr_url = l_match.group(1)
+                    print(f"   ✅ Localhost.run sẵn sàng: {lhr_url}")
                     break
         except Exception as lhr_err:
             print(f"   ⚠️ Lỗi kết nối Localhost.run: {lhr_err}")
 
     # 6. Hiển thị bảng điều khiển kết quả
-    if public_web_url and server_ready:
-        full_direct_link = f"{public_web_url}/?access_token={token_str}"
+    active_links = []
+    if pinggy_url:
+        active_links.append(("Pinggy HTTPS (Khuyên dùng - 100% không lỗi 1033)", f"{pinggy_url}/?access_token={token_str}"))
+    if cloudflare_url:
+        active_links.append(("Cloudflare Tunnel", f"{cloudflare_url}/?access_token={token_str}"))
+    if lhr_url:
+        active_links.append(("Localhost.run", f"{lhr_url}/?access_token={token_str}"))
+
+    if active_links and server_ready:
+        primary_title, primary_link = active_links[0]
         print(f"\n🎉 NOVELREADER ĐÃ KHỞI CHẠY THÀNH CÔNG!")
-        print(f"🌐 Link Web: {full_direct_link}")
+        for title, link in active_links:
+            print(f"🌐 {title}: {link}")
         print(f"🔑 Token: {token_str}\n")
+
+        other_links_md = ""
+        if len(active_links) > 1:
+            other_lines = [f"- **{t}:** [{lnk}]({lnk})" for t, lnk in active_links]
+            other_links_md = "#### 🌐 Danh sách các cổng kết nối:\n" + "\n".join(other_lines) + "\n\n*(Nếu Cloudflare báo lỗi Error 1033 do nghẽn DNS, bạn chỉ cần bấm vào link **Pinggy** phía trên để vào ngay)*\n\n"
 
         status_view = mo.callout(
             mo.vstack([
                 mo.md(f"### 🎉 NovelReader Đang Hoạt Động!"),
                 mo.md(
-                    f"**🔗 Kênh Tunnel:** `{tunnel_provider_name}`  \n"
-                    f"**🚀 Trạng thái:** Sẵn sàng phục vụ dịch truyện & tạo audio  \n\n"
-                    f"👉 **[BẤM VÀO ĐÂY ĐỂ MỞ NOVELREADER]({full_direct_link})**  \n\n"
-                    f"*Link đầy đủ:* `{full_direct_link}`"
+                    f"👉 **[BẤM VÀO ĐÂY ĐỂ MỞ ỨNG DỤNG ({primary_title})]({primary_link})**  \n\n"
+                    f"{other_links_md}"
+                    f"**🔑 Mã Access Token bảo mật:** `{token_str}`  \n"
+                    f"> ⚠️ **Lưu ý:** Giữ tab trình duyệt Molab này mở trong suốt quá trình dịch truyện."
                 ),
-                mo.md(f"**🔑 Mã Access Token bảo mật:** `{token_str}`"),
-                mo.md("> ⚠️ **Lưu ý:** Giữ tab trình duyệt Molab này mở trong suốt quá trình dịch truyện."),
             ]),
             kind="success"
         )
@@ -701,21 +699,9 @@ def step5_launch_server(
         )
 
     server_active = True
-    return (
-        full_direct_link if public_web_url and server_ready else None,
-        log_server,
-        log_tunnel,
-        public_web_url,
-        server_active,
-        status_view,
-        token_str,
-        tunnel_provider_name,
-    )
+    return log_server, log_tunnel
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Cell 6: Bảng điều khiển Server & Xem nhật ký trực tiếp (Logs)
-# ────────────────────────────────────────────────────────────────────────────
 @app.cell
 def step6_controls_ui(mo):
     refresh_logs_btn = mo.ui.run_button(label="🔄 Làm mới nhật ký Server")
@@ -724,7 +710,14 @@ def step6_controls_ui(mo):
 
 
 @app.cell
-def step6_logs_view(log_server, log_tunnel, mo, refresh_logs_btn, server_active, stop_server_btn, subprocess):
+def step6_logs_view(
+    log_server,
+    log_tunnel,
+    mo,
+    refresh_logs_btn,
+    stop_server_btn,
+    subprocess,
+):
     if stop_server_btn.value:
         subprocess.run(["pkill", "-f", "uvicorn.*main:app"], check=False)
         subprocess.run(["pkill", "-f", "cloudflared"], check=False)
@@ -760,13 +753,9 @@ def step6_logs_view(log_server, log_tunnel, mo, refresh_logs_btn, server_active,
             ),
         })
     ])
+    return
 
-    return action_msg, control_card, recent_logs, tunnel_logs
 
-
-# ────────────────────────────────────────────────────────────────────────────
-# Cell 7: Sao lưu dữ liệu & Tải file ZIP trực tiếp về máy tính
-# ────────────────────────────────────────────────────────────────────────────
 @app.cell
 def step7_backup_ui(mo):
     create_backup_btn = mo.ui.run_button(label="📦 Tạo bản sao lưu toàn bộ (ZIP)", kind="success")
@@ -775,7 +764,7 @@ def step7_backup_ui(mo):
         mo.md("Bấm nút bên dưới để đóng gói toàn bộ bản dịch (output_text), file âm thanh (output_audio) và cơ sở dữ liệu truyện:"),
         create_backup_btn,
     ])
-    return backup_ui_panel, create_backup_btn
+    return (create_backup_btn,)
 
 
 @app.cell
@@ -827,12 +816,8 @@ def step7_backup_process(
                 label=f"⬇️ Bấm vào đây để tải {backup_filename} về máy tính"
             )
         ])
+    return
 
-    return (backup_result_display,)
 
-
-# ────────────────────────────────────────────────────────────────────────────
-# Entry point chạy ứng dụng
-# ────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app.run()
