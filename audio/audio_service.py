@@ -1,4 +1,4 @@
-"""Piper TTS audio synthesis module: multi-voice, emotion control, format conversion, and chapter grouping."""
+"""Piper TTS audio synthesis module: Piper/VieNeu, sampling control, format conversion, and chapter grouping."""
 import io
 import json
 import logging
@@ -10,6 +10,8 @@ import tempfile
 import threading
 import wave
 from pathlib import Path
+
+from monitoring.tasks import audio_report, characters
 
 log = logging.getLogger(__name__)
 
@@ -325,7 +327,7 @@ def synth_text_to_wav(
     noise_scale: float = 0.667,
     noise_w_scale: float = 0.8
 ):
-    """Tổng hợp văn bản ra WAV với đầy đủ tham số cảm xúc và ngắt nghỉ."""
+    """Tổng hợp văn bản ra WAV với tham số biến thiên và thời lượng."""
     default_chunk = 4000 if is_cuda_available_for_piper() else 2500
     chunk_limit = int(os.getenv('TTS_CHUNK_MAX_CHARS', default_chunk))
     chunks = split_text_for_tts(text, max_chars=chunk_limit)
@@ -339,16 +341,42 @@ def synth_text_to_wav(
     from tts.synthesis import synthesize_wav
     settings = dict(length_scale=length_scale, noise_scale=noise_scale, noise_w_scale=noise_w_scale)
 
+    total=sum(characters(chunk) for chunk in chunks);completed=0
+    audio_report(total=total,completed=0,stage='synthesizing')
     with wave.open(str(out_wav), "wb") as w:
         for i, chunk in enumerate(chunks):
             synthesize_wav(voice, chunk, w, set_wav_format=(i == 0), **settings)
+            completed+=characters(chunk)
+            audio_report(completed=completed,audio_seconds=w.tell()/w.getframerate(),stage='synthesizing')
 
 
-def convert_wav(in_wav: Path, out_file: Path, fmt: str = "mp3", bitrate: str = "96k"):
+def convert_wav(in_wav: Path, out_file: Path, fmt: str = "mp3", bitrate: str = "96k", sample_rate: int = 0, speed: float = 1.0):
     """Chuyển đổi WAV sang các định dạng mp3, m4b, m4a, opus, wav bằng ffmpeg đa luồng."""
     fmt = fmt.lower().strip()
     cmd = ["ffmpeg", "-v", "error", "-y", "-threads", "0", "-i", str(in_wav)]
 
+    if not 0.4 <= speed <= 2.5 or sample_rate not in (0, 22050, 24000, 44100, 48000):
+        raise ValueError('Tốc độ/tần số xuất không hợp lệ.')
+    if speed != 1.0:
+        # Keep each atempo stage within 0.5–2 for older FFmpeg builds.
+        filters = []
+        remaining = speed
+        while remaining < 0.5:
+            filters.append('atempo=0.5'); remaining /= 0.5
+        while remaining > 2:
+            filters.append('atempo=2'); remaining /= 2
+        filters.append(f'atempo={remaining:.6f}')
+        cmd.extend(['-af', ','.join(filters)])
+    if fmt == 'mp3' and bitrate == '192k':
+        effective_rate=sample_rate
+        if not effective_rate:
+            with wave.open(str(in_wav),'rb') as source: effective_rate=source.getframerate()
+        if effective_rate<=24000:
+            raise ValueError('MP3 192 kbps cần 44.1 hoặc 48 kHz. Chọn 128 kbps hoặc đổi tần số xuất để tránh hạ âm thầm xuống 160 kbps.')
+    if fmt in ('opus', 'ogg'):
+        sample_rate = 48000  # Opus decoder clock; never imply 22.05 kHz Opus.
+    if sample_rate:
+        cmd.extend(['-ar', str(sample_rate)])
     if fmt == "mp3":
         cmd.extend(["-c:a", "libmp3lame", "-threads", "0", "-b:a", bitrate, str(out_file)])
     elif fmt in ("m4b", "m4a", "aac"):
@@ -375,9 +403,14 @@ def generate_chapter_audio(
     noise_scale: float = 0.667,
     noise_w_scale: float = 0.8,
     fmt: str = "mp3",
-    bitrate: str = "96k"
+    bitrate: str = "96k",
+    tts_engine: str = "piper",
+    sample_rate: int = 0,
+    vieneu_temperature: float = 0.8,
+    vieneu_top_p: float = 0.95,
+    vieneu_batch_size: int = 8,
 ) -> Path:
-    """Tạo file audio cho một chương truyện với giọng đọc và cảm xúc tùy chọn."""
+    """Tạo file audio cho một chương truyện với engine và tham số lấy mẫu tùy chọn."""
     audio_dir.mkdir(parents=True, exist_ok=True)
     out_file = audio_dir / f"chuong_{position:04d}.{fmt}"
 
@@ -388,24 +421,40 @@ def generate_chapter_audio(
     if not full_text.strip():
         raise ValueError("Chương không có nội dung chữ để tạo audio.")
 
-    voice = get_voice(voice_id)
+    if tts_engine not in ('piper', 'vieneu'):
+        raise ValueError('Engine TTS không được hỗ trợ.')
+    audio_report(total=characters(full_text),completed=0,stage='loading')
+    voice = get_voice(voice_id) if tts_engine == 'piper' else None
     length_scale = 1.0 / max(0.4, min(2.5, speed))
 
     # Same filesystem for atomic publication; partial MP3s are never visible.
     with tempfile.TemporaryDirectory(prefix=".audio-", dir=audio_dir) as tmp_dir:
         tmp_path = Path(tmp_dir)
         raw_wav = tmp_path / "chapter.wav"
-        synth_text_to_wav(
-            voice, full_text, raw_wav, tmp_path,
-            length_scale=length_scale,
-            noise_scale=noise_scale,
-            noise_w_scale=noise_w_scale
-        )
-
+        if tts_engine == 'piper':
+            synth_text_to_wav(voice, full_text, raw_wav, tmp_path,
+                              length_scale=length_scale, noise_scale=noise_scale, noise_w_scale=noise_w_scale)
+        else:
+            from audio.vieneu_service import synthesize_to_wav
+            synthesize_to_wav(full_text, voice_id, raw_wav, temperature=vieneu_temperature,
+                              top_p=vieneu_top_p, batch_size=vieneu_batch_size)
+        with wave.open(str(raw_wav),'rb') as wav:
+            audio_seconds=wav.getnframes()/wav.getframerate()
+        if tts_engine=='vieneu':audio_seconds/=speed
+        audio_report(stage='encoding',audio_seconds=audio_seconds)
         temp_target = tmp_path / f"converted.{fmt}"
-        convert_wav(raw_wav, temp_target, fmt=fmt, bitrate=bitrate)
+        convert_options = {'fmt': fmt, 'bitrate': bitrate}
+        if sample_rate:
+            convert_options['sample_rate'] = sample_rate
+        if tts_engine == 'vieneu' and speed != 1:
+            convert_options['speed'] = speed
+        convert_wav(raw_wav, temp_target, **convert_options)
 
         os.replace(temp_target, out_file)
+        # Remove stale alternatives only after successful atomic publication.
+        for ext in ('mp3','m4b','m4a','opus','wav'):
+            for old in (audio_dir/f'chuong_{position:04d}.{ext}',audio_dir/f'chapter_{chapter_id}.{ext}',audio_dir/f'chuong_{position}.{ext}'):
+                if old!=out_file: old.unlink(missing_ok=True)
 
     log.info("Tạo audio chương %d thành công [%s, %s]: %s (%d bytes)",
              position, voice_id, fmt, out_file.name, out_file.stat().st_size)
@@ -436,3 +485,26 @@ def release_worker_voices():
         for key in list(_voice_instances):
             if '@chapter-audio-' in key:
                 del _voice_instances[key]
+
+
+AUDIO_CONFIG_KEYS = ('tts_engine','voice_id','audio_speed','noise_scale','noise_w_scale',
+                     'audio_format','audio_bitrate','audio_sample_rate','vieneu_temperature',
+                     'vieneu_top_p','vieneu_batch_size')
+
+
+def generation_kwargs(config):
+    """The ONE settings mapper used by both job and single-chapter routes."""
+    return dict(voice_id=config.get('voice_id', 'ngochuyennew'), speed=config.get('audio_speed', 1.0),
+                noise_scale=config.get('noise_scale', 0.667), noise_w_scale=config.get('noise_w_scale', 0.8),
+                fmt=config.get('audio_format', 'mp3'), bitrate=config.get('audio_bitrate', '96k'),
+                tts_engine=config.get('tts_engine','piper'), sample_rate=config.get('audio_sample_rate',0),
+                vieneu_temperature=config.get('vieneu_temperature',0.8), vieneu_top_p=config.get('vieneu_top_p',0.95),
+                vieneu_batch_size=config.get('vieneu_batch_size',8))
+
+
+def exportable_audio_files(directory):
+    """Only completed public audio paths; exclude temporary synthesis workdirs."""
+    return [p for p in sorted(directory.rglob('*')) if p.is_file() and not p.is_symlink()
+            and p.suffix.lower() in {'.mp3','.m4b','.m4a','.wav','.opus','.aac','.ogg'}
+            and not any(part.startswith('.') for part in p.relative_to(directory).parts)
+            and not any(parent.is_symlink() for parent in p.parents if parent.is_relative_to(directory))]

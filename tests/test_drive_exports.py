@@ -154,7 +154,7 @@ def test_old_session_does_not_trigger_drive_consent(export_env, monkeypatch):
     assert service.read_task(task['id'])['status'] == 'waiting_permission'
 
 
-def test_notebook_bootstrap_downloads_without_upload_and_applies_overlay(tmp_path, monkeypatch):
+def test_notebook_bootstrap_embedded_source_without_network_or_upload(tmp_path, monkeypatch):
     import io
     import os
     import sys
@@ -191,7 +191,7 @@ def test_notebook_bootstrap_downloads_without_upload_and_applies_overlay(tmp_pat
     finally:
         os.chdir(original_cwd)
         sys.path[:] = original_path
-    assert calls == ['https://raw.githubusercontent.com/dungbeommm/NovelReader_Translate/main/NovelReader_GPU_notebook.zip']
+    assert calls == []  # Source is embedded; no stale remote bootstrap ZIP required.
     project = tmp_path/'NovelReader_T4_Web'
     assert (project/'web/routes/drive_exports.py').is_file()
     assert 'protect_request' in (project/'web/application.py').read_text()

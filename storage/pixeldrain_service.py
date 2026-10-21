@@ -176,11 +176,8 @@ def export_book_to_pixeldrain(store, kind: str, api_key: str | None = None) -> d
 
     elif kind == "audio":
         import zipfile
-        audio_files = [
-            f for f in sorted(store.audio_dir.rglob("*.*"))
-            if f.is_file() and not f.name.startswith(".")
-            and f.suffix.lower() in {".mp3", ".m4b", ".m4a", ".opus", ".wav", ".aac", ".ogg"}
-        ]
+        from audio.audio_service import exportable_audio_files
+        audio_files = exportable_audio_files(store.audio_dir)
         if not audio_files:
             raise ValueError("Chưa có file audio nào để xuất.")
 

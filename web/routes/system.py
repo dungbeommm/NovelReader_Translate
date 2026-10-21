@@ -35,3 +35,12 @@ def classic_index():
 def favicon_ico():
     return Response(status_code=204)
 
+
+
+@router.get('/api/monitor')
+def monitor_snapshot(response: Response):
+    response.headers['Cache-Control']='no-store'
+    book=runtime.store.book()
+    runtime.job.telemetry.book((book.get('output_folder') or book['filename']) if book else None)
+    return {'resources':runtime.resources.snapshot(),'tasks':runtime.job.telemetry.snapshot(),
+            'job':runtime.job.summary()}

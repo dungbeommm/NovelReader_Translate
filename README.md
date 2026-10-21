@@ -1,5 +1,21 @@
 # NovelReader T4 Web — Dịch truyện và tạo audio
 
+## Bản cập nhật v4.7 — Giám sát tài nguyên và tiến trình
+
+Thanh dưới bên trái có vòng CPU/GPU/VRAM/RAM/Đĩa; bên phải mở bảng tốc độ dịch (ký tự/s), % tạo audio từng chương, tốc độ thời gian thực và thời gian hoàn tất. Số đo lấy từ máy chạy tool, không từ máy mở Web. Thiếu GPU/mất kết nối hiển thị “—”. [Hướng dẫn, cách tính và giới hạn](docs/UPDATE_V4_7_VI.md).
+
+Dùng `NovelReader_Molab.py` / `NovelReader_Colab.ipynb` trong gói này (nguồn v4.7 tích hợp). Cài lại requirements để có psutil. Lịch sử đo audio tối đa 200 chương trong phiên server; chưa lưu vào checkpoint. Kiểm thử CPU/mock, chưa benchmark GPU/model thật.
+
+## Bản cập nhật v4.6 — Dịch thuật và giao diện gọn hơn
+
+Sửa công tắc Phồn–Giản, chia đoạn ở bộ dịch dự phòng và xử lý lỗi bỏ tham số. Gộp xuất TXT/EPUB/Audio vào một nút **Xuất** có bảng chọn định dạng, nơi lưu và thông tin kiểm tra. Cài đặt chia năm mục rõ ràng; tham số ít dùng nằm trong Nâng cao. Bố cục khung đọc giữ nguyên.
+
+**Chạy bản mới:** dùng `NovelReader_Molab.py` hoặc `NovelReader_Colab.ipynb` trong gói này. Cả hai tích hợp nguồn v4.6, không phụ thuộc ZIP cũ trên GitHub; các hướng dẫn phiên bản cũ bên dưới chỉ để tham khảo lịch sử. Xem [thay đổi, cách chạy và đề xuất tính năng](docs/UPDATE_V4_6_VI.md). Kiểm thử CPU/mock; chưa xác minh model/GPU và cloud thật.
+
+## Bản cập nhật v4.5 — Piper + VieNeu
+
+Tự cài/tải JSON và model theo bộ đọc trên Molab/Colab; thêm 25 reference giọng Vbook, sửa tùy chọn audio từng chương và lưu cấu hình. Giữ bố cục cũ. **Không chạy GGUF**: VieNeu dùng backbone ONNX/PyTorch và codec chính thức tải riêng; chưa xác minh inference GPU thực. Xem [hướng dẫn và giới hạn v4.5](docs/UPDATE_V4_5_VI.md).
+
 ## Bản cập nhật v4.4
 
 Batch Web/API **1–1024**, chọn **1–8 chương audio đồng thời**, Molab tải đủ JSON giọng đọc, checkpoint/bảng tạm và khôi phục qua Pixeldrain. Giữ bố cục giao diện cũ. Xem [hướng dẫn cập nhật, kiểm thử và giới hạn xác minh](docs/UPDATE_V4_4_VI.md). Không cam kết GPU đầy 100%; cần đo trên GPU thực tế.

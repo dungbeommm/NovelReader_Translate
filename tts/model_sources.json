@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "piper": {
+    "catalog": "tts/voices_catalog.json",
+    "download_script": "scripts/download_voices.py"
+  },
+  "vieneu": {
+    "id": "vieneu-v3-turbo",
+    "sdk_version": "3.8.3",
+    "sdk_mode": "v3turbo",
+    "backbone_repo": "pnnbao-ump/VieNeu-TTS-v3-Turbo",
+    "model_subfolder": "update",
+    "onnx_subfolder": "onnx_update",
+    "moss_tokenizer": "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano",
+    "archive_url": "https://github.com/Darkrai9x/vbook-settings/releases/download/ai-tts/vieneu-v3-turbo.zip",
+    "sha256": "cf29fcf43ceea672a9078c1eee21497fd1bd14e552bac866a88216ff2c9c578c",
+    "archive_size": 187993859,
+    "reference_source": "Darkrai9x/vbook-settings",
+    "gguf_inference_supported": false,
+    "note": "Import 25 speaker embeddings/ref codes from the GGUF package. Inference uses official ONNX/PyTorch weights, downloaded separately, NOT the GGUF backbone."
+  }
+}

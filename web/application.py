@@ -13,7 +13,9 @@ from web.routes import books, translation, audio, gdrive, system, progress, driv
 @asynccontextmanager
 async def lifespan(app):
     runtime.job.loop=asyncio.get_running_loop()
+    runtime.resources.start()
     yield
+    runtime.resources.close()
     if runtime.job.active:
         runtime.job.stop_flag.set();runtime.job.gate.set()
         await asyncio.to_thread(runtime.job.thread.join,120)

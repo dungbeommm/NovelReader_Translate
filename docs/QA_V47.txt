@@ -1,0 +1,12 @@
+v4.7 verification
+
+261 Python tests passed before final embedding.
+Live resource capture: CPU/RAM/filesystem via backend psutil/shutil; no NVIDIA available in test host.
+NVIDIA parser/aggregates: fixtures, including N/A and multi-device. GPU UI is a fixture, not a real benchmark.
+3-chapter browser flow: fake translation engine, fake Piper synthesis writes real WAV frames, real FFmpeg encoding.
+Observed nonzero translation throughput and partial audio counters during execution; all three audio records reached done/100 only after generation returned.
+No JavaScript page errors. Widths: desktop1440x1000, mobile390x844, no page horizontal overflow.
+Visual states inspected individually: dock idle/running, resources with/without NVIDIA, resource method expanded, task empty/live/complete, audio rows, disconnected.
+Repairs after inspection: compact resource rows, clamp long chapter headings to two lines with full title available, reset popup scroll on open, compact dock speed unit.
+Limits: telemetry is one backend process/session (200 latest chapter audio records), not checkpoint history. No neural model/GPU/notebook runtime/cloud testing.
+Preview files with '-mock' show fake-engine timings, not model speed.

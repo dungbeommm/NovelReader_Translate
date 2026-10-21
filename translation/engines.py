@@ -303,14 +303,12 @@ class LocalEngine(TranslatorEngine):
             return outputs
 
         # 2. Fallback path
+        from .text_preprocess import normalize_chinese_text
+        from .core.chunker import split_chunks
         jobs = []
         groups = []
         def encode(text: str):
-            if normalize_mode == 'none':
-                norm_text = text
-            else:
-                norm_text = self.to_simplified.convert(text)
-            ids = self.source.encode(norm_text, out_type=int)
+            ids = self.source.encode(text, out_type=int)
             if len(ids) + 1 > self.config.get('max_tokens', 160) and len(text) > 1:
                 middle = len(text) // 2
                 encode(text[:middle])
@@ -320,7 +318,9 @@ class LocalEngine(TranslatorEngine):
 
         for text in texts:
             first = len(jobs)
-            encode(text)
+            normalized = normalize_chinese_text(text, normalize_mode)
+            for chunk in split_chunks(normalized, mode=mode):
+                encode(chunk)
             groups.append((first, len(jobs)))
 
         if not jobs:

@@ -3,8 +3,10 @@ import threading
 import json
 import time
 import logging
+import inspect
 import os
 from workflows.audio_queue import AudioQueue
+from monitoring.tasks import TaskTelemetry, characters
 from translation.engines import create_engine, invert_opener_spacing
 from translation.text import make_plan, assemble, postprocess
 from translation.glossary import parse_glossary
@@ -15,6 +17,17 @@ from translation.text_preprocess import normalize_chinese_text
 from audio import audio_service, merge_service
 
 log = logging.getLogger(__name__)
+
+def translate_with_options(engine, texts, glossary, **options):
+    """Inspect compatibility BEFORE calling; never hide TypeError from engine code."""
+    parameters=inspect.signature(engine.translate).parameters
+    variadic=any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values())
+    accepted=options if variadic else {k:v for k,v in options.items() if k in parameters}
+    ignored=set(options)-set(accepted)
+    if ignored:
+        log.warning('Engine %s không hỗ trợ tùy chọn: %s',type(engine).__name__,', '.join(sorted(ignored)))
+    return engine.translate(texts,glossary,**accepted)
+
 
 def apply_postprocess(title, paras, source_title, source_paras, config):
     """Full postprocessing pipeline: quotes spacing, honorific normalization, and V9 pronoun harmonizer."""
@@ -78,6 +91,7 @@ class Job:
         self.lock = threading.RLock()
         self.target_chapter_ids = None
         self.scope_label = ''
+        self.telemetry = TaskTelemetry()
 
     @property
     def active(self):
@@ -131,6 +145,7 @@ class Job:
             book = self.store.book()
             if not book:
                 raise ValueError('Hãy nạp truyện trước.')
+            self.telemetry.book(book.get('output_folder') or book['filename'])
             glossary = parse_glossary(config['glossary'])
             old = json.loads(book['config']) if book.get('config') else {}
             changed = old and any(
@@ -200,6 +215,11 @@ class Job:
                     log.info("Cấu hình thay đổi trên dải mục tiêu.")
                 self.store.configure(config, reset=False)
 
+            audio_changed = old and any(old.get(k) != config.get(k) for k in audio_service.AUDIO_CONFIG_KEYS)
+            if audio_changed and config.get('generate_audio', True):
+                for chapter in target_chapters:
+                    self.store.update(chapter['id'], audio_status='none')
+                self.store._invalidate_groups([c['position'] for c in target_chapters])
             self.stop_flag.clear()
             self.gate.set()
             self.status = 'loading'
@@ -243,20 +263,17 @@ class Job:
     def _generate_audio(self, item, config):
         cid, position, title, paras = item
         if not self.checkpoint():
+            self.telemetry.cancel_queued(cid)
             self.store.update(cid, audio_status='none')
             return
         try:
             self.store.update(cid, audio_status='generating')
             self.emit('chapter_audio_started', chapter_id=cid)
             started = time.perf_counter()
-            audio_path = audio_service.generate_chapter_audio(
-                cid, position, title, paras, self.store.audio_dir,
-                voice_id=config.get('voice_id', 'ngochuyennew'),
-                speed=float(config.get('audio_speed', 1.0)),
-                noise_scale=float(config.get('noise_scale', 0.667)),
-                noise_w_scale=float(config.get('noise_w_scale', 0.8)),
-                fmt=config.get('audio_format', 'mp3'),
-                bitrate=config.get('audio_bitrate', '96k'))
+            with self.telemetry.audio_task(cid, position, title):
+                audio_path = audio_service.generate_chapter_audio(
+                    cid, position, title, paras, self.store.audio_dir,
+                    **audio_service.generation_kwargs(config))
             self.store.update(cid, audio_status='done')
             log.info('TIMING audio chapter=%s seconds=%.3f', position, time.perf_counter() - started)
             self.emit('chapter_audio_done', chapter_id=cid, audio_url=f'/api/chapters/{cid}/audio')
@@ -294,13 +311,16 @@ class Job:
             if config.get('generate_audio', True) and config.get('audio_pipeline', True):
                 default_workers = 2 if (os.getenv('COLAB_GPU') or os.getenv('KAGGLE_KERNEL_RUN_TYPE')) else 1
                 audio_workers = max(1, min(8, int(config.get('audio_workers', os.getenv('AUDIO_WORKERS', default_workers)))))
+                if config.get('tts_engine') == 'vieneu':
+                    audio_workers = 1  # shared SDK; GPU batching is inside each long infer()
                 audio_queue = AudioQueue(
                     lambda item: self._generate_audio(item, config), self.checkpoint,
-                    lambda item: self.store.update(item[0], audio_status='none'),
+                    lambda item: (self.store.update(item[0], audio_status='none'), self.telemetry.cancel_queued(item[0])),
                     maxsize=max(1, min(32, int(config.get('audio_queue_size', 4 if default_workers > 1 else 2)))),
                     workers=audio_workers)
 
             def queue_audio(item):
+                self.telemetry.queued(item[0], item[1], item[2])
                 if audio_queue is not None:
                     self.store.update(item[0], audio_status='queued')
                     audio_queue.submit(item)
@@ -324,11 +344,12 @@ class Job:
                 chapter = self.store.get(current)
                 chunk_mode = config.get('chunk_mode', 'sentence')
                 beam_size = config.get('beam_size', 2)
-                normalize_mode = config.get('normalize_mode', 'auto')
+                normalize_mode = config.get('normalize_mode', 'auto' if config.get('normalize_t2s', True) else 'none')
 
                 plan = chapter['plan'] or make_plan(chapter['title'], chapter['source'], glossary, chunk_mode=chunk_mode)
                 values = chapter['outputs'] or [None] * len(plan)
                 self.store.update(current, status='translating', plan=plan, outputs=values, error='')
+                self.telemetry.translation_start(current, chapter['position'], chapter['title'], plan, values)
                 self.emit('chapter_started', chapter_id=current)
                 chapter_started = time.perf_counter()
                 for attempt in range(3):
@@ -341,13 +362,11 @@ class Job:
                                 return
                             ids = pending[offset:offset + batch_size]
                             try:
-                                try:
-                                    translated = engine.translate(
-                                        [plan[i][1] for i in ids], glossary,
-                                        beam_size=beam_size, chunk_mode=chunk_mode,
-                                        normalize_mode=normalize_mode)
-                                except TypeError:
-                                    translated = engine.translate([plan[i][1] for i in ids], glossary)
+                                batch_started=time.perf_counter()
+                                translated = translate_with_options(
+                                    engine, [plan[i][1] for i in ids], glossary,
+                                    beam_size=beam_size, chunk_mode=chunk_mode,
+                                    normalize_mode=normalize_mode)
                             except RuntimeError as exc:
                                 oom = any(word in str(exc).lower() for word in ('out of memory', 'cuda_error_out_of_memory', 'cudaerrormemoryallocation', 'cublas_status_alloc_failed'))
                                 reduced = False
@@ -366,6 +385,7 @@ class Job:
                                 raise RuntimeError('Sai số lượng segment')
                             if self.stop_flag.is_set():
                                 return
+                            self.telemetry.translation_batch(sum(characters(plan[i][1]) for i in ids), time.perf_counter()-batch_started)
                             offset += len(ids)
                             for i, text in zip(ids, translated):
                                 values[i] = text
@@ -385,6 +405,7 @@ class Job:
                         except Exception as e:
                             log.error("Lỗi xuất file text chương %d: %s", chapter['position'], e)
                         log.info('TIMING translation chapter=%s seconds=%.3f', chapter['position'], time.perf_counter() - chapter_started)
+                        self.telemetry.translation_end('done')
                         self.emit('chapter_done', chapter_id=current)
 
                         if config.get('generate_audio', True) and not self.stop_flag.is_set():
@@ -396,6 +417,7 @@ class Job:
                         if self.stop_flag.is_set():
                             return
                         if attempt == 2:
+                            self.telemetry.translation_end('error')
                             self.store.update(current, status='error', error=str(exc)[:500])
                             self.emit('error', chapter_id=current, message=str(exc)[:500])
                         elif self.stop_flag.wait(2 ** attempt):
@@ -435,6 +457,7 @@ class Job:
                     log.exception('Lỗi dừng audio worker')
                     self.status = 'error'
                     self.message = str(exc)[:500]
+            self.telemetry.translation_end('stopped' if self.stop_flag.is_set() else 'error')
             audio_service.release_worker_voices()
             if export_dirty:
                 try:

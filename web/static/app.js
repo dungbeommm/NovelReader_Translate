@@ -463,12 +463,13 @@ let availableVoices = [];
 
 async function loadVoices() {
   try {
-    availableVoices = await api('/api/voices');
+    availableVoices = await api('/api/voices?tts_engine=' + encodeURIComponent($('tts-engine')?.value || 'piper'));
     const select1 = $('voice-select');
     const select2 = $('modal-voice');
     if (!select1 && !select2) return;
 
-    const curVal = (select1 ? select1.value : '') || (select2 ? select2.value : '') || 'ngochuyennew';
+    const curVal = (select1 ? select1.value : '') || (select2 ? select2.value : '') || '';
+    const defaultVoice = availableVoices.find(v => v.is_default)?.id || availableVoices[0]?.id;
 
     const buildOptions = (targetSelect) => {
       if (!targetSelect) return;
@@ -500,13 +501,13 @@ async function loadVoices() {
 
       if (availableVoices.some(v => v.id === curVal)) {
         targetSelect.value = curVal;
-      }
+      } else { targetSelect.value = defaultVoice; }
     };
 
     buildOptions(select1);
     buildOptions(select2);
   } catch (e) {
-    console.error('Error loading voices:', e);
+    console.error('Error loading voices:', e); throw e;
   }
 }
 
@@ -520,6 +521,34 @@ if ($('modal-voice')) {
     if ($('voice-select')) $('voice-select').value = $('modal-voice').value;
   };
 }
+
+
+function buildAudioPayload() {
+ return {tts_engine:$('tts-engine').value,voice_id:$('voice-select').value,audio_speed:Number($('audio-speed').value),noise_scale:Number($('modal-noise-scale').value),noise_w_scale:Number($('modal-noise-w').value),audio_format:$('audio-format').value,audio_bitrate:$('modal-audio-bitrate').value,audio_sample_rate:Number($('audio-sample-rate').value),vieneu_temperature:Number($('vieneu-temperature').value),vieneu_top_p:Number($('vieneu-top-p').value),vieneu_batch_size:Number($('vieneu-batch-size').value)};
+}
+function updateTtsCapabilities() {
+ const vie=$('tts-engine').value==='vieneu', format=$('audio-format').value;
+ $('piper-noise-controls').hidden=vie; $('vieneu-controls').hidden=!vie; $('emotion-preset').closest('.audio-cfg-row').hidden=vie;
+ $('audio-workers').disabled=vie; if(vie)$('audio-workers').value='1';
+ $('audio-concurrency-hint').textContent=vie?'VieNeu dùng một model chung, xử lý từng chương. Tăng Batch đoạn / GPU trong Nâng cao để gộp đoạn trong chương.':'Piper: bật pipeline để chạy nhiều chương. Thử 2–4 trước; mỗi worker nạp một phiên riêng, dùng thêm VRAM.';
+ $('modal-audio-bitrate').disabled=format==='wav'; $('audio-sample-rate').disabled=format==='opus';if(format==='opus')$('audio-sample-rate').value='48000';
+ const low=format==='mp3'&&[22050,24000].includes(Number($('audio-sample-rate').value));
+ $('modal-audio-bitrate').querySelector('option[value="192k"]').disabled=low;
+ if(low&&$('modal-audio-bitrate').value==='192k')$('modal-audio-bitrate').value='128k';
+ $('audio-output-hint').textContent=(vie?'VieNeu gốc: 48 kHz. ':'Piper: tần số gốc tùy model. ')+'Tăng kHz không tạo thêm chi tiết. WAV bỏ qua kbps; Opus luôn 48 kHz. MP3 192 kbps cần 44.1/48 kHz (kể cả khi model gốc thấp hơn).';
+}
+async function applyAudioConfig(c) {
+ $('tts-engine').value=c.tts_engine||'piper';$('modal-tts-engine').value=$('tts-engine').value;await loadVoices();
+ if(c.voice_id&&availableVoices.some(v=>v.id===c.voice_id)){$('voice-select').value=c.voice_id;$('modal-voice').value=c.voice_id;}
+ const speed=Number(c.audio_speed??1);let option=[...$('audio-speed').options].find(o=>Number(o.value)===speed);
+ if(!option){option=new Option(`${speed}x`,String(speed));$('audio-speed').add(option);}$('audio-speed').value=option.value;
+ setEmotion(c.noise_scale??0.667,c.noise_w_scale??0.8);
+ $('audio-format').value=c.audio_format||'mp3';$('modal-audio-format').value=$('audio-format').value;
+ $('modal-audio-bitrate').value=c.audio_bitrate||'96k';$('audio-sample-rate').value=String(c.audio_sample_rate??0);
+ $('vieneu-temperature').value=c.vieneu_temperature??0.8;$('vieneu-top-p').value=c.vieneu_top_p??0.95;$('vieneu-batch-size').value=c.vieneu_batch_size??8;updateTtsCapabilities();
+}
+$('audio-sample-rate').onchange=updateTtsCapabilities;
+for(const id of ['tts-engine','modal-tts-engine'])$(id).onchange=()=>safe(async()=>{$('tts-engine').value=$(id).value;$('modal-tts-engine').value=$(id).value;await loadVoices();updateTtsCapabilities();});
 
 // ----------------- EMOTION PRESETS & SLIDERS -----------------
 function setEmotion(noiseScale, noiseW, presetName) {
@@ -582,35 +611,41 @@ if ($('modal-noise-w')) {
 // Audio format sync
 if ($('audio-format') && $('modal-audio-format')) {
   $('audio-format').onchange = () => {
-    $('modal-audio-format').value = $('audio-format').value;
+    $('modal-audio-format').value = $('audio-format').value; updateTtsCapabilities();
   };
   $('modal-audio-format').onchange = () => {
-    $('audio-format').value = $('modal-audio-format').value;
+    $('audio-format').value = $('modal-audio-format').value; updateTtsCapabilities();
   };
 }
 
 // ----------------- SETTINGS MODAL & TABS -----------------
-function openSettingsModal(tabId = 'tab-tts') {
+let settingsReturnFocus = null;
+function openSettingsModal(tabId = 'tab-translation') {
+  settingsReturnFocus = document.activeElement;
   if ($('settings-modal')) $('settings-modal').hidden = false;
   switchSettingsTab(tabId);
   loadGdriveSettings();
   loadPixeldrainSettings();
   loadMergedGroups();
+  $('settings-modal').querySelector('.modal-tab.active')?.focus({preventScroll:true});
 }
 
 function closeSettingsModal() {
   if ($('settings-modal')) $('settings-modal').hidden = true;
+  settingsReturnFocus?.focus({preventScroll:true});
 }
 
 function switchSettingsTab(tabId) {
   document.querySelectorAll('.modal-tab').forEach(t => {
     t.classList.toggle('active', t.dataset.tab === tabId);
-    if (t.dataset.tab === tabId) t.scrollIntoView({block: 'nearest', inline: 'nearest'});
+    t.setAttribute('aria-selected', String(t.dataset.tab === tabId));
+    t.tabIndex = t.dataset.tab === tabId ? 0 : -1;
   });
   document.querySelectorAll('.tab-pane').forEach(p => {
     p.classList.remove('active');
     p.style.display = 'none';
   });
+  document.querySelector('#settings-modal .modal-body').scrollTop = 0;
   const activePane = $(`pane-${tabId}`);
   if (activePane) {
     activePane.classList.add('active');
@@ -618,7 +653,7 @@ function switchSettingsTab(tabId) {
   }
 }
 
-if ($('btn-open-settings')) $('btn-open-settings').onclick = () => openSettingsModal('tab-tts');
+if ($('btn-open-settings')) $('btn-open-settings').onclick = () => openSettingsModal('tab-translation');
 if ($('link-open-audio-settings')) {
   $('link-open-audio-settings').onclick = (e) => {
     e.preventDefault();
@@ -635,6 +670,13 @@ if ($('settings-modal')) {
 
 document.querySelectorAll('.modal-tab').forEach(tab => {
   tab.onclick = () => switchSettingsTab(tab.dataset.tab);
+  tab.onkeydown = event => {
+    const tabs=[...document.querySelectorAll('.settings-nav .modal-tab')];
+    if (!['ArrowRight','ArrowLeft','ArrowDown','ArrowUp','Home','End'].includes(event.key)) return;
+    event.preventDefault();let i=tabs.indexOf(tab);
+    i=event.key==='Home'?0:event.key==='End'?tabs.length-1:(i+(['ArrowRight','ArrowDown'].includes(event.key)?1:-1)+tabs.length)%tabs.length;
+    tabs[i].click();tabs[i].focus();
+  };
 });
 
 // ----------------- PIXELDRAIN SETTINGS -----------------
@@ -707,7 +749,7 @@ if ($('btn-load-draft')) $('btn-load-draft').onclick = () => checkpointAction(as
   $('opt-honorific').checked = c.honorific_mode !== 'off';
   $('opt-pronoun').checked = c.pronoun_harmonizer;
   $('beam-size').value = c.beam_size; $('beam-val').textContent = c.beam_size;
-  setChunkMode(c.chunk_mode); $('normalize-mode').value = c.normalize_mode;
+  setChunkMode(c.chunk_mode); setNormalizeMode(c.normalize_mode || (c.normalize_t2s === false ? 'none' : 'auto'));
   $('voice-select').value = c.voice_id; $('modal-voice').value = c.voice_id;
   const speedSelect = $('audio-speed');
   let speedOption = Array.from(speedSelect.options).find(o => Number(o.value) === Number(c.audio_speed));
@@ -724,6 +766,7 @@ if ($('btn-load-draft')) $('btn-load-draft').onclick = () => checkpointAction(as
   $('reset').checked = c.reset; $('opt-auto-group').checked = c.auto_group_audio;
   for (const id of ['toc-group-size', 'opt-group-size', 'modal-group-size']) if ($(id)) $(id).value = c.group_size;
   $('trans-range-start').value = c.start_pos ?? ''; $('trans-range-end').value = c.end_pos ?? '';
+  await applyAudioConfig(c);
   $('checkpoint-status').textContent = 'Đã nạp cấu hình bảng tạm. Kiểm tra phạm vi/reset trước khi chạy.';
 });
 if ($('btn-checkpoint-cloud')) $('btn-checkpoint-cloud').onclick = () => checkpointAction(async () => {
@@ -961,6 +1004,7 @@ if ($('btn-save-settings')) {
   $('btn-save-settings').onclick = () => safe(async () => {
     await saveGdriveSettings();
     await api('/api/checkpoints/draft', buildTranslatePayload());
+    await api('/api/settings/audio', buildAudioPayload());
     closeSettingsModal();
     notice('✓ Đã lưu cài đặt nâng cao.');
   });
@@ -1176,13 +1220,32 @@ function setChunkMode(mode) {
   radios.forEach(r => {
     r.checked = (r.value === mode);
   });
+  updateTranslationSummary();
 }
 $('chunk-sentence-label').onclick = () => setChunkMode('sentence');
 $('chunk-paragraph-label').onclick = () => setChunkMode('paragraph');
 
 $('beam-size').oninput = () => {
   $('beam-val').textContent = $('beam-size').value;
+  updateTranslationSummary();
 };
+
+let lastEnabledNormalizeMode = 'auto';
+function setNormalizeMode(mode) {
+  mode = ['auto','t2s','none'].includes(mode) ? mode : 'auto';
+  $('normalize-mode').value=mode; $('opt-t2s').checked=mode!=='none';
+  if(mode!=='none') lastEnabledNormalizeMode=mode;
+  updateTranslationSummary();
+}
+function updateTranslationSummary() {
+  const summary=$('translation-settings-summary');if(!summary)return;
+  const paragraph=document.querySelector('input[name="chunk_mode"]:checked')?.value==='paragraph';
+  summary.textContent=`Beam ${$('beam-size').value} · ${paragraph?'Theo đoạn':'Theo câu'} · ${$('normalize-mode').value==='none'?'Giữ chữ gốc':'Phồn → Giản'}`;
+}
+$('normalize-mode').onchange=()=>setNormalizeMode($('normalize-mode').value);
+$('opt-t2s').onchange=()=>setNormalizeMode($('opt-t2s').checked?lastEnabledNormalizeMode:'none');
+$('btn-translation-settings').onclick=()=>openSettingsModal('tab-translation');
+$('settings-drive-connect').onclick=()=>{closeSettingsModal();if(driveBackend==='api')openDriveDialog();else notice(driveBackend==='colab'?'Chọn Google Drive khi xuất và cấp quyền trong notebook Colab nếu được hỏi.':'Drive chưa khả dụng ở runtime này. Có thể dùng tải về máy hoặc Pixeldrain.');};
 
 // ----------------- GLOSSARY FILE IMPORT -----------------
 $('btn-import-glossary').onclick = () => $('glossary-file').click();
@@ -1237,6 +1300,8 @@ function renderProgress(progress) {
   if ($('backend-ct2-label')) $('backend-ct2-label').style.pointerEvents = (p.active || busy) ? 'none' : 'auto';
   if ($('backend-torch-label')) $('backend-torch-label').style.pointerEvents = (p.active || busy) ? 'none' : 'auto';
 
+  $('btn-save-settings').disabled = p.active || busy;
+  $('btn-open-export').disabled = !state.book;
   $('save-note').textContent = p.message || 'Tiến độ được lưu tự động trên máy của bạn.';
   for (const id of ['export-txt', 'export-epub']) {
     $(id).setAttribute('aria-disabled', String(!state.book));
@@ -1613,10 +1678,10 @@ function buildTranslatePayload(extraConfig = {}) {
     reset: extraConfig.reset !== undefined ? extraConfig.reset : $('reset').checked,
     honorific_mode: $('opt-honorific').checked ? 'safe' : 'off',
     pronoun_harmonizer: $('opt-pronoun').checked,
-    normalize_t2s: $('normalize-mode').value !== 'none',
+    normalize_t2s: $('opt-t2s').checked,
     beam_size: Number($('beam-size').value) || 2,
     chunk_mode: selectedChunkMode,
-    normalize_mode: $('normalize-mode').value || 'auto',
+    normalize_mode: $('opt-t2s').checked ? ($('normalize-mode').value === 'none' ? 'auto' : $('normalize-mode').value) : 'none',
     generate_audio: extraConfig.generate_audio !== undefined
       ? !!extraConfig.generate_audio
       : ($('opt-audio') ? $('opt-audio').checked : true),
@@ -1626,6 +1691,7 @@ function buildTranslatePayload(extraConfig = {}) {
     noise_w_scale: Number.isFinite(parseFloat($('modal-noise-w')?.value)) ? parseFloat($('modal-noise-w').value) : 0.8,
     audio_format: $('audio-format') ? $('audio-format').value : 'mp3',
     audio_bitrate: $('modal-audio-bitrate')?.value || '96k',
+    ...buildAudioPayload(),
     auto_group_audio: ($('opt-audio') && !$('opt-audio').checked) ? false : (extraConfig.auto_group_audio !== undefined ? !!extraConfig.auto_group_audio : autoGroup),
     group_size: groupSize,
     start_pos: startPos,
@@ -1736,21 +1802,7 @@ if ($('btn-regen-audio')) {
     $('audio-status-msg').textContent = '⏳ Đang tạo audio…';
     $('audio-status-msg').className = 'audio-status-msg';
     try {
-      const voiceId = $('voice-select') ? $('voice-select').value : 'ngochuyennew';
-      const noiseScale = Number.isFinite(parseFloat($('modal-noise-scale')?.value)) ? parseFloat($('modal-noise-scale').value) : 0.667;
-      const noiseW = Number.isFinite(parseFloat($('modal-noise-w')?.value)) ? parseFloat($('modal-noise-w').value) : 0.8;
-      const speed = Number.isFinite(parseFloat($('audio-speed')?.value)) ? parseFloat($('audio-speed').value) : 1.0;
-      const format = $('audio-format') ? $('audio-format').value : 'mp3';
-      const bitrate = $('modal-audio-bitrate') ? $('modal-audio-bitrate').value : '96k';
-
-      await api(`/api/chapters/${selected}/audio`, {
-        voice_id: voiceId,
-        noise_scale: noiseScale,
-        noise_w_scale: noiseW,
-        speed: speed,
-        format: format,
-        bitrate: bitrate
-      }, 'POST');
+      await api(`/api/chapters/${selected}/audio`, buildAudioPayload(), 'POST');
       notice('✓ Đã tạo xong audio cho chương!');
       await selectChapter(selected, true);
     } catch (e) {
@@ -1986,6 +2038,7 @@ $('next').onclick = () => safe(() => {
 
 // Keyboard navigation
 window.addEventListener('keydown', e => {
+  if (!$('settings-modal').hidden || document.querySelector('dialog[open]')) return;
   if (['input', 'textarea', 'select'].includes(document.activeElement.tagName.toLowerCase())) return;
   if (e.key === '[' || e.key === 'ArrowLeft') {
     if (!$('prev').disabled) $('prev').click();
@@ -2106,7 +2159,7 @@ safe(async () => {
         setChunkMode(c.chunk_mode);
       }
       if (c.normalize_mode) {
-        $('normalize-mode').value = c.normalize_mode;
+        setNormalizeMode(c.normalize_mode);
       }
       if (c.generate_audio !== undefined && $('opt-audio')) {
         $('opt-audio').checked = !!c.generate_audio;
@@ -2139,13 +2192,16 @@ safe(async () => {
         if ($('opt-auto-group')) $('opt-auto-group').checked = !!c.auto_group_audio;
       }
       if (c.group_size) syncGroupSize(c.group_size);
+      await applyAudioConfig(c);
       updateModelInfo();
 
-    } catch {}
+    } catch (e) { notice(e.message, true); }
     if (chapters.length) {
       await selectChapter(chapters.find(c => c.status !== 'done')?.id || chapters[0].id);
     }
   }
+  if (!s.book) await applyAudioConfig((await api('/api/settings/audio')).settings);
+  setNormalizeMode($('normalize-mode').value);
   connect();
 });
 
@@ -2162,4 +2218,44 @@ if ($('btn-save-book-title')) $('btn-save-book-title').onclick = () => safe(asyn
   const result = await api('/api/book/title', {title});
   updateBook(result.book);
   notice('Đã lưu tên truyện và chuyển output vào thư mục tương ứng.');
+});
+
+// v4.6 export chooser: existing tested export handlers remain the transport layer.
+let exportOptions = null;
+function updateExportReview() {
+ const kind=document.querySelector('input[name="export-kind"]:checked')?.value||'txt';
+ const dest=$('export-destination').value;
+ $('drive-api-open').hidden=dest!=='gdrive'||driveBackend!=='api';
+ const total=exportOptions?.chapters ?? chapters.length, done=exportOptions?.translated ?? chapters.filter(c=>c.status==='done').length;
+ const count=exportOptions?.audio_files ?? 0;
+ $('export-book-name').textContent=exportOptions?.book_title||state.book?.title||'Chưa nạp truyện';
+ $('export-progress-summary').textContent=`${done}/${total} chương đã dịch · ${count} tệp audio`;
+ $('export-result-summary').textContent=kind==='audio'?(dest==='gdrive'?'Từng tệp audio gốc, không ZIP':'Một file ZIP chứa audio đã có'):(kind==='epub'?'Một file EPUB':'Một file TXT UTF-8');
+ $('export-format-hint').textContent=kind==='audio'?'Không tự tạo audio mới, không đổi giọng/bitrate khi xuất. Các tệp audio đã gộp (nếu có) cũng được xuất.': 'Xuất bản dịch hiện có theo thứ tự chương; chương chưa dịch được đánh dấu. Không xuất riêng dải chương ở bước này.';
+ const problem=!state.book?'Nạp truyện trước khi xuất.':!exportOptions?'Chưa kiểm tra được dữ liệu. Đóng và mở lại bảng xuất.':kind==='audio'&&exportOptions.busy?'Dừng job trước khi xuất audio để tránh tệp thay đổi.':kind==='audio'&&!count?'Chưa có audio. Tạo audio trước khi xuất.':driveExportBusy||pixeldrainExportBusy?'Đang xuất dữ liệu, vui lòng đợi.':'';
+ $('export-inline-status').textContent=problem || (dest==='pixeldrain'?'Cần API key trong Cài đặt → Lưu trữ. Ai có link Pixeldrain có thể tải tệp.':dest==='gdrive'?'Có thể cần cấp quyền Drive. Giữ notebook mở trong lúc xuất.':'Bản gốc vẫn được giữ trên máy chạy tool.');
+ $('btn-confirm-export').disabled=!!problem;
+}
+$('btn-open-export').onclick=()=>safe(async()=>{
+ if(!$('export-dialog').open)$('export-dialog').showModal();
+ exportOptions=null;updateExportReview();
+ try {exportOptions=await api('/api/export/options');updateExportReview();}
+ catch(e){$('export-inline-status').textContent=e.message;}
+});
+$('btn-close-export').onclick=$('btn-cancel-export').onclick=()=>$('export-dialog').close();
+$('export-destination').addEventListener('change',updateExportReview);
+document.querySelectorAll('input[name="export-kind"]').forEach(el=>el.onchange=updateExportReview);
+$('btn-confirm-export').onclick=()=>{
+ if($('btn-confirm-export').disabled)return;
+ const kind=document.querySelector('input[name="export-kind"]:checked').value;
+ $('export-dialog').close();$(`export-${kind}`).click();
+};
+$('export-storage-settings').onclick=()=>{$('export-dialog').close();openSettingsModal('tab-cloud');};
+$('settings-modal').addEventListener('keydown',event=>{
+ if(event.key==='Escape'){event.preventDefault();closeSettingsModal();return;}
+ if(event.key!=='Tab')return;
+ const visible=[...$('settings-modal').querySelectorAll('button,input,select,summary,a[href],textarea')].filter(e=>!e.disabled&&e.getClientRects().length&&e.tabIndex!==-1);
+ const first=visible[0],last=visible[visible.length-1];
+ if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
+ else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
 });

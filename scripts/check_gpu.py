@@ -14,6 +14,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', default='HachimiMT-60-QT')
     parser.add_argument('--voice', default='ngochuyennew')
+    parser.add_argument('--tts-engine',choices=['piper','vieneu'],default='piper')
     args = parser.parse_args()
     from translation.core.ct2_safe_import import import_ctranslate2
     ct2 = import_ctranslate2()
@@ -41,6 +42,19 @@ def main():
         raise RuntimeError(f'CT2 đang chạy {device}, không phải CUDA')
     # Release translation model before checking voice to keep smoke-test simple.
     del engine
+    if args.tts_engine=='vieneu':
+        import tempfile,os
+        import soundfile as sf
+        from audio.vieneu_service import synthesize_to_wav,get_runtime,runtime_status
+        os.environ['VIENEU_DEVICE']='cuda';before=time.perf_counter()
+        with tempfile.TemporaryDirectory() as work:
+            path=Path(work)/'smoke.wav'
+            synthesize_to_wav('Xin chào, kiểm tra giọng đọc trên GPU.',args.voice,path)
+            samples,rate=sf.read(path)
+        if get_runtime().backend!='pytorch' or len(samples)==0 or rate!=48000:
+            raise RuntimeError('VieNeu GPU không trả về WAV 48 kHz hợp lệ.')
+        print(json.dumps({'ct2_device':device,'translation_sample':output,'tts':runtime_status(),'audio_seconds':len(samples)/rate,'synthesis_seconds':time.perf_counter()-before},ensure_ascii=False))
+        return
     from audio.audio_service import get_voice, tts_runtime_status
     from tts.synthesis import synthesize_wav
     voice = get_voice(args.voice)

@@ -1,5 +1,6 @@
 import os
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, AliasChoices, ConfigDict, field_validator, model_validator
+import math
 
 class PathInput(BaseModel):path:str=Field(min_length=1,max_length=4096)
 
@@ -25,8 +26,13 @@ class Config(BaseModel):
     audio_queue_size:int=Field(default=4,ge=1,le=32)
     cloud_checkpoint:bool=False
     checkpoint_include_audio:bool=False
+    tts_engine:str=Field(default_factory=lambda: os.getenv('NOVEL_TTS_ENGINE', 'piper'),pattern=r'^(piper|vieneu)$')
+    vieneu_temperature:float=Field(default=0.8,ge=0.1,le=1.5,allow_inf_nan=False)
+    vieneu_top_p:float=Field(default=0.95,ge=0.1,le=1.0,allow_inf_nan=False)
+    vieneu_batch_size:int=Field(default=8,ge=1,le=64)
+    audio_sample_rate:int=Field(default=0)
     audio_speed:float=Field(default=1.0)
-    voice_id:str=Field(default='ngochuyennew',pattern=r'^[A-Za-z0-9_-]{1,100}$')
+    voice_id:str=Field(default_factory=lambda: os.getenv('NOVEL_TTS_VOICE', 'truc_ly' if os.getenv('NOVEL_TTS_ENGINE') == 'vieneu' else 'ngochuyennew'),pattern=r'^[A-Za-z0-9_-]{1,100}$')
     noise_scale:float=Field(default=0.667)
     noise_w_scale:float=Field(default=0.8)
     audio_format:str=Field(default='mp3',pattern=r'^(mp3|m4b|m4a|wav|opus)$')
@@ -38,8 +44,37 @@ class Config(BaseModel):
     chapter_ids:list[int]|None=Field(default=None, min_length=1)
     force_retranslate:bool=Field(default=False)
 
+    @field_validator('audio_sample_rate')
+    @classmethod
+    def valid_sample_rate(cls, value):
+        if value not in (0, 22050, 24000, 44100, 48000):
+            raise ValueError('Tần số xuất phải là Gốc/22050/24000/44100/48000 Hz.')
+        return value
+
+    @model_validator(mode='before')
+    @classmethod
+    def synchronize_normalization(cls, data):
+        if not isinstance(data, dict): return data
+        data=dict(data)
+        # Explicit mode is canonical. Legacy checkbox-only clients remain supported.
+        if 'normalize_mode' in data:
+            data['normalize_t2s']=data['normalize_mode']!='none'
+        elif 'normalize_t2s' in data:
+            data['normalize_mode']='auto' if data['normalize_t2s'] else 'none'
+        return data
+
+    @model_validator(mode='before')
+    @classmethod
+    def engine_default_voice(cls, data):
+        if isinstance(data, dict) and data.get('tts_engine') == 'vieneu' and 'voice_id' not in data:
+            return {**data, 'voice_id': 'truc_ly'}
+        return data
+
     @model_validator(mode='after')
     def validate_scope(self):
+        if self.audio_format == 'opus': self.audio_sample_rate=48000
+        if self.audio_format == 'mp3' and self.audio_bitrate == '192k' and self.audio_sample_rate in (22050,24000):
+            raise ValueError('MP3 192 kbps cần 44.1 hoặc 48 kHz.')
         if self.start_pos is not None and self.end_pos is not None and self.end_pos < self.start_pos:
             raise ValueError('Chương bắt đầu không được lớn hơn chương kết thúc.')
         if self.chapter_ids is not None and (self.start_pos is not None or self.end_pos is not None):
@@ -53,6 +88,7 @@ class Config(BaseModel):
             return 1.0
         try:
             val = float(v)
+            if not math.isfinite(val): raise ValueError("Giá trị phải hữu hạn")
             return max(0.4, min(2.5, val))
         except (ValueError, TypeError):
             return 1.0
@@ -64,6 +100,7 @@ class Config(BaseModel):
             return 0.667
         try:
             val = float(v)
+            if not math.isfinite(val): raise ValueError("Giá trị phải hữu hạn")
             return max(0.1, min(2.0, val))
         except (ValueError, TypeError):
             return 0.667
@@ -75,6 +112,7 @@ class Config(BaseModel):
             return 0.8
         try:
             val = float(v)
+            if not math.isfinite(val): raise ValueError("Giá trị phải hữu hạn")
             return max(0.1, min(2.0, val))
         except (ValueError, TypeError):
             return 0.8
@@ -129,3 +167,26 @@ class BookTitleInput(BaseModel):
 class ModelDownloadInput(BaseModel):
     model_id: str = Field(min_length=1, max_length=100)
     backend: str = Field(default='ct2', pattern=r'^(ct2|transformers|pytorch)$')
+
+
+class AudioSettingsPatch(BaseModel):
+    """Only provided keys override stored settings; aliases support older UI clients."""
+    model_config = ConfigDict(extra='forbid', populate_by_name=True)
+    tts_engine:str|None=Field(default=None,pattern=r'^(piper|vieneu)$')
+    voice_id:str|None=Field(default=None,pattern=r'^[A-Za-z0-9_-]{1,100}$')
+    audio_speed:float|None=Field(default=None,ge=0.4,le=2.5,allow_inf_nan=False,validation_alias=AliasChoices('audio_speed','speed'))
+    noise_scale:float|None=Field(default=None,ge=0.1,le=2.0,allow_inf_nan=False)
+    noise_w_scale:float|None=Field(default=None,ge=0.1,le=2.0,allow_inf_nan=False)
+    audio_format:str|None=Field(default=None,pattern=r'^(mp3|m4b|m4a|wav|opus)$',validation_alias=AliasChoices('audio_format','format'))
+    audio_bitrate:str|None=Field(default=None,pattern=r'^(64k|96k|128k|192k)$',validation_alias=AliasChoices('audio_bitrate','bitrate'))
+    audio_sample_rate:int|None=None
+    vieneu_temperature:float|None=Field(default=None,ge=0.1,le=1.5,allow_inf_nan=False)
+    vieneu_top_p:float|None=Field(default=None,ge=0.1,le=1.0,allow_inf_nan=False)
+    vieneu_batch_size:int|None=Field(default=None,ge=1,le=64)
+
+    @field_validator('audio_sample_rate')
+    @classmethod
+    def rate(cls, value):
+        if value is not None and value not in (0,22050,24000,44100,48000):
+            raise ValueError('Tần số lấy mẫu không hợp lệ.')
+        return value
