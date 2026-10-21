@@ -1,5 +1,10 @@
 # NovelReader T4 Web — Dịch truyện và tạo audio
 
+## Bản cập nhật v4.4
+
+Batch Web/API **1–1024**, chọn **1–8 chương audio đồng thời**, Molab tải đủ JSON giọng đọc, checkpoint/bảng tạm và khôi phục qua Pixeldrain. Giữ bố cục giao diện cũ. Xem [hướng dẫn cập nhật, kiểm thử và giới hạn xác minh](docs/UPDATE_V4_4_VI.md). Không cam kết GPU đầy 100%; cần đo trên GPU thực tế.
+
+
 Bản Web/Colab từ mã nguồn đính kèm, tối ưu luồng CTranslate2 + Piper. Không kèm trọng số model, tài khoản, token hay dữ liệu truyện cá nhân. Không có thành phần bot.
 
 ## Drive: audio lưu từng file, không tạo ZIP
@@ -49,7 +54,7 @@ Lưu ý: file ZIP đính kèm có thể đổi tên thành `NovelReader_GPU_note
 | --- | --- |
 | Backend | CT2 |
 | Model tải khi kiểm tra | HachimiMT-60-QT |
-| Batch Web (số đoạn đưa vào engine mỗi lượt) | 96 (cho phép 1–256) |
+| Batch Web (số đoạn đưa vào engine mỗi lượt) | 96 (cho phép 1–1024) |
 | Batch CT2 nội bộ | 96 |
 | CT2 batch type / window | tokens / 16 |
 | Compute type | int8_float16 |
@@ -58,7 +63,7 @@ Lưu ý: file ZIP đính kèm có thể đổi tên thành `NovelReader_GPU_note
 | Tự gộp audio | Mặc định tắt; khi bật chỉ gộp ở cuối tác vụ |
 | Piper | Bắt buộc CUDA, báo lỗi thay vì chuyển CPU âm thầm |
 
-Batch Web và batch nội bộ **khác nhau**. Thay biến môi trường cần khởi động lại backend để nạp lại model. UI lấy batch đề xuất phần cứng rồi giới hạn tối đa 256; cấu hình đã lưu của truyện vẫn được giữ.
+Batch Web và batch nội bộ **khác nhau**. Thay biến môi trường cần khởi động lại backend để nạp lại model. UI lấy batch đề xuất phần cứng rồi giới hạn tối đa 1024; cấu hình đã lưu của truyện vẫn được giữ.
 
 Thiếu VRAM khi dịch: chương trình giảm batch và thử lại **cùng đoạn**, không bỏ đoạn. Với OOM ở TTS hoặc lỗi không phục hồi được: chương audio được đánh dấu lỗi; hãy giảm tải/đổi sang chạy tuần tự rồi tiếp tục. Khi chỉnh lại notebook có thể giảm batch nội bộ 96 → 64 → 32. Không dùng BF16 trên T4.
 

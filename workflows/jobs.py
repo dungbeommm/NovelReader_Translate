@@ -293,11 +293,11 @@ class Job:
             self.emit('status')
             if config.get('generate_audio', True) and config.get('audio_pipeline', True):
                 default_workers = 2 if (os.getenv('COLAB_GPU') or os.getenv('KAGGLE_KERNEL_RUN_TYPE')) else 1
-                audio_workers = max(1, min(4, int(config.get('audio_workers', os.getenv('AUDIO_WORKERS', default_workers)))))
+                audio_workers = max(1, min(8, int(config.get('audio_workers', os.getenv('AUDIO_WORKERS', default_workers)))))
                 audio_queue = AudioQueue(
                     lambda item: self._generate_audio(item, config), self.checkpoint,
                     lambda item: self.store.update(item[0], audio_status='none'),
-                    maxsize=max(1, min(8, int(config.get('audio_queue_size', 4 if default_workers > 1 else 2)))),
+                    maxsize=max(1, min(32, int(config.get('audio_queue_size', 4 if default_workers > 1 else 2)))),
                     workers=audio_workers)
 
             def queue_audio(item):
@@ -435,6 +435,7 @@ class Job:
                     log.exception('Lỗi dừng audio worker')
                     self.status = 'error'
                     self.message = str(exc)[:500]
+            audio_service.release_worker_voices()
             if export_dirty:
                 try:
                     self.store.export_full_book_text()
@@ -456,4 +457,12 @@ class Job:
                         errors = group_failed or any(c['status'] == 'error' or c.get('audio_status') == 'error' for c in self.store.list())
                     self.status = 'error' if errors and not self.stop_flag.is_set() else 'ready'
                     self.message = 'Có lỗi dịch hoặc audio. Kiểm tra chương lỗi và thông báo audio.' if self.status == 'error' else ''
+            if config.get('cloud_checkpoint'):
+                try:
+                    from storage.checkpoints import upload_checkpoint
+                    result = upload_checkpoint(self.store, include_audio=config.get('checkpoint_include_audio', False))
+                    self.emit('cloud_checkpoint_done', url=result['url'])
+                except Exception as exc:
+                    log.exception('Không lưu được checkpoint Pixeldrain; checkpoint cục bộ vẫn còn')
+                    self.emit('cloud_checkpoint_error', error=str(exc)[:300])
             self.emit('job_finished')

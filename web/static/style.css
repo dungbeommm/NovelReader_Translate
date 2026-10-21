@@ -2254,3 +2254,86 @@ progress::-moz-progress-bar {
 .export-destination { display: flex; align-items: center; gap: 5px; font-size: 11px; white-space: nowrap; }
 .export-destination select { max-width: 140px; padding: 5px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 5px; }
 @media (min-width: 601px) and (max-width: 1200px) { .header-right { flex-wrap: wrap; gap: 5px; } .brand-sub { display: none; } .topbar { height: auto; min-height: 64px; padding-top: 6px; padding-bottom: 6px; } }
+
+/* v4.4 — same header / sidebar / two-pane reader, clearer visual hierarchy. */
+:root {
+  --bg: #101512;
+  --panel: #171e1a;
+  --raised: #222d26;
+  --border: #4e6557;
+  --border-subtle: #2d3b32;
+  --text-muted: #afbeb4;
+}
+body { display: flex; flex-direction: column; height: 100dvh; font-size: 16px; }
+.topbar { flex-shrink: 0; height: auto; min-height: 72px; padding-block: 12px; gap: 16px; border-bottom-color: var(--border-subtle); }
+.brand-title strong { letter-spacing: -.025em; }
+.brand-ver { background: var(--green-soft); color: var(--green); }
+.header-right { flex-wrap: wrap; gap: 8px; }
+.workspace { flex: 1; min-height: 0; height: auto; }
+.sidebar { gap: 28px; padding: 24px 18px; }
+.section-heading { margin-bottom: 16px; }
+.section-heading h2 { font-size: 18px; letter-spacing: -.02em; }
+.panel + .panel { padding-top: 24px; border-top: 1px solid var(--border-subtle); }
+.step { border-radius: 8px; }
+.feature-box { border-radius: 10px; border-color: var(--border-subtle); padding: 16px; }
+.feature-header { font-size: 14px; letter-spacing: .045em; }
+button, a.button, input:not([type=checkbox]):not([type=radio]):not([type=range]), select { min-height: 44px; font-size: 14px; }
+input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea { min-width: 0; border-radius: 8px; }
+button, a.button { border-radius: 8px; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.toggle-info strong, .toggle-info .subtext, .form-group label, .form-hint, .audio-cfg-row, .batch-row, .export-destination, .progress-label, .save-note, .toc-empty { font-size: 14px; }
+.toggle-info .subtext, .form-hint { color: var(--text-muted); line-height: 1.6; }
+.toggle-row { align-items: flex-start; gap: 12px; padding-block: 8px; }
+.toggle-row input[type=checkbox] { flex-shrink: 0; margin-top: 5px; }
+.batch-row { flex-wrap: wrap; gap: 8px; padding: 14px 0; }
+.batch-row input { width: 96px; }
+.performance-controls { margin: 14px 0 16px; padding: 16px 0; border-block: 1px solid var(--border-subtle); }
+.performance-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+.performance-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 12px; }
+.performance-grid label { display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--text-muted); }
+.performance-grid select, .performance-grid input { width: 100%; color: var(--text); background: var(--bg); border: 1px solid var(--border); padding: 8px; }
+.performance-controls p { margin-bottom: 0; }
+.cloud-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; min-width: 0; }
+.cloud-actions input { flex: 1 1 180px; width: 100%; }
+.cloud-actions button { flex: 0 1 auto; }
+.checkpoint-card { margin-top: 24px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
+.checkpoint-card h3 { font-size: 20px; margin: 0 0 10px; letter-spacing: -.02em; }
+.checkpoint-card a { color: var(--green); overflow-wrap: anywhere; }
+.checkpoint-card p { margin-block: 10px; }
+.restore-label { display: block; margin: 18px 0 8px; font-size: 14px; font-weight: 600; }
+#checkpoint-file { max-width: 100%; width: 100%; padding: 8px 0; }
+#checkpoint-id { padding: 8px 12px; background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+#pane-tab-cloud small, #pane-tab-cloud ol, #pixeldrain-status-box { font-size: 14px !important; color: var(--text-muted) !important; }
+#pane-tab-cloud .form-group > div { flex-wrap: wrap; }
+#modal-pixeldrain-key { min-width: min(100%, 180px); }
+.modal-box { border-radius: 12px; }
+.modal-body { padding: 24px; }
+.modal-tab { min-height: 44px; font-size: 14px; }
+.reader-toolbar, .chapter-toolbar { border-color: var(--border-subtle); }
+.reader-empty { color: var(--text-muted); }
+.output-dirs-hint { flex-wrap: wrap; gap: 8px; font-size: 14px !important; overflow-wrap: anywhere; }
+.header-right .button, .header-right .chip, .m-tab { font-size: 14px; }
+@media (max-width: 900px) {
+  .topbar { min-height: 64px; }
+  .workspace { height: auto; }
+  .sidebar { padding: 20px 16px; }
+}
+@media (max-width: 600px) {
+  .topbar { padding: 12px 16px; }
+  .header-right .button, .header-right .chip, .export-destination { font-size: 14px; }
+  .header-right .button { padding: 8px 10px; }
+  .modal-body { padding: 16px; }
+  .checkpoint-card { padding: 16px; }
+  .cloud-actions button { flex: 1 1 140px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+/* Keep tabs/footer out of the scrolling content, even on short mobile screens. */
+.modal-header, .modal-footer { flex-shrink: 0; }
+.modal-tabs { flex-shrink: 0; min-height: 64px; align-items: center; }
+.modal-tab { flex-shrink: 0; }
+.modal-body { min-height: 0; }
+#btn-save-pixeldrain-key { width: auto; }
+@media (max-width: 600px) { #btn-save-pixeldrain-key { width: 100%; } }

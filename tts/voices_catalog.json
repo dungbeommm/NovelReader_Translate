@@ -1,0 +1,222 @@
+[
+  {
+    "id": "ngochuyennew",
+    "name": "Ngọc Huyền (Mới)",
+    "gender": "female",
+    "folder": "low-ngochuyennew",
+    "onnx_file": "ngochuyennew.onnx",
+    "json_file": "ngochuyennew.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/ngochuyennew.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/ngochuyennew.onnx.json"
+  },
+  {
+    "id": "banmai",
+    "name": "Ban Mai",
+    "gender": "female",
+    "folder": "low-banmai",
+    "onnx_file": "banmai.onnx",
+    "json_file": "banmai.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/banmai.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/banmai.onnx.json"
+  },
+  {
+    "id": "calmwoman3688",
+    "name": "Calm Woman",
+    "gender": "female",
+    "folder": "low-calmwoman3688",
+    "onnx_file": "calmwoman3688.onnx",
+    "json_file": "calmwoman3688.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/calmwoman3688.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/calmwoman3688.onnx.json"
+  },
+  {
+    "id": "adam1",
+    "name": "Adam",
+    "gender": "male",
+    "folder": "low-adam1",
+    "onnx_file": "adam1.onnx",
+    "json_file": "adam1.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/adam1.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/adam1.onnx.json"
+  },
+  {
+    "id": "chieuthanh",
+    "name": "Chiêu Thành",
+    "gender": "male",
+    "folder": "low-chieuthanh",
+    "onnx_file": "chieuthanh.onnx",
+    "json_file": "chieuthanh.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/chieuthanh.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/chieuthanh.onnx.json"
+  },
+  {
+    "id": "deepman3909",
+    "name": "Deep Man",
+    "gender": "male",
+    "folder": "low-deepman3909",
+    "onnx_file": "deepman3909.onnx",
+    "json_file": "deepman3909.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/deepman3909.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/deepman3909.onnx.json"
+  },
+  {
+    "id": "kinhphat",
+    "name": "Kinh Phật",
+    "gender": "male",
+    "folder": "low-kinhphat",
+    "onnx_file": "kinhphat.onnx",
+    "json_file": "kinhphat.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/kinhphat.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/kinhphat.onnx.json"
+  },
+  {
+    "id": "duyoryx3175",
+    "name": "Duy Oryx",
+    "gender": "male",
+    "folder": "low-duyoryx3175",
+    "onnx_file": "duyoryx3175.onnx",
+    "json_file": "duyoryx3175.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/duyoryx3175.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/duyoryx3175.onnx.json"
+  },
+  {
+    "id": "lacphi",
+    "name": "Lạc Phi",
+    "gender": "female",
+    "folder": "low-lacphi",
+    "onnx_file": "lacphi.onnx",
+    "json_file": "lacphi.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/lacphi.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/lacphi.onnx.json"
+  },
+  {
+    "id": "maiphuong",
+    "name": "Mai Phương",
+    "gender": "female",
+    "folder": "low-maiphuong",
+    "onnx_file": "maiphuong.onnx",
+    "json_file": "maiphuong.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/maiphuong.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/maiphuong.onnx.json"
+  },
+  {
+    "id": "manhdung",
+    "name": "Mạnh Dũng",
+    "gender": "male",
+    "folder": "low-manhdung",
+    "onnx_file": "manhdung.onnx",
+    "json_file": "manhdung.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/manhdung.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/manhdung.onnx.json"
+  },
+  {
+    "id": "minhquang",
+    "name": "Minh Quang",
+    "gender": "male",
+    "folder": "low-minhquang",
+    "onnx_file": "minhquang.onnx",
+    "json_file": "minhquang.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/minhquang.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/minhquang.onnx.json"
+  },
+  {
+    "id": "minhkhang",
+    "name": "Minh Khang",
+    "gender": "male",
+    "folder": "low-minhkhang",
+    "onnx_file": "minhkhang.onnx",
+    "json_file": "minhkhang.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/minhkhang.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/minhkhang.onnx.json"
+  },
+  {
+    "id": "ngochuyen",
+    "name": "Ngọc Huyền",
+    "gender": "female",
+    "folder": "low-ngochuyen",
+    "onnx_file": "ngochuyen.onnx",
+    "json_file": "ngochuyen.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/ngochuyen.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/ngochuyen.onnx.json"
+  },
+  {
+    "id": "ngocngan3701",
+    "name": "Ngọc Ngân",
+    "gender": "male",
+    "folder": "low-ngocngan3701",
+    "onnx_file": "ngocngan3701.onnx",
+    "json_file": "ngocngan3701.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/ngocngan3701.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/ngocngan3701.onnx.json"
+  },
+  {
+    "id": "taian4",
+    "name": "Tài An",
+    "gender": "male",
+    "folder": "low-taian4",
+    "onnx_file": "taian4.onnx",
+    "json_file": "taian4.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/taian4.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/taian4.onnx.json"
+  },
+  {
+    "id": "phuongtrang",
+    "name": "Phương Trang",
+    "gender": "female",
+    "folder": "low-phuongtrang",
+    "onnx_file": "phuongtrang.onnx",
+    "json_file": "phuongtrang.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/phuongtrang.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/phuongtrang.onnx.json"
+  },
+  {
+    "id": "vais1000medium",
+    "name": "VAIS 1000",
+    "gender": "female",
+    "folder": "low-vais1000medium",
+    "onnx_file": "vais1000medium.onnx",
+    "json_file": "vais1000medium.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/vais1000medium.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/vais1000medium.onnx.json"
+  },
+  {
+    "id": "thanhphuong2",
+    "name": "Thanh Phương",
+    "gender": "female",
+    "folder": "low-thanhphuong2",
+    "onnx_file": "thanhphuong2.onnx",
+    "json_file": "thanhphuong2.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/thanhphuong2.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/thanhphuong2.onnx.json"
+  },
+  {
+    "id": "thientam",
+    "name": "Thiện Tâm",
+    "gender": "male",
+    "folder": "low-thientam",
+    "onnx_file": "thientam.onnx",
+    "json_file": "thientam.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/thientam.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/thientam.onnx.json"
+  },
+  {
+    "id": "vunga",
+    "name": "Vũ Nga",
+    "gender": "female",
+    "folder": "low-vunga",
+    "onnx_file": "vunga.onnx",
+    "json_file": "vunga.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/vunga.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/vunga.onnx.json"
+  },
+  {
+    "id": "vietthao3886",
+    "name": "Việt Thảo",
+    "gender": "male",
+    "folder": "low-vietthao3886",
+    "onnx_file": "vietthao3886.onnx",
+    "json_file": "vietthao3886.onnx.json",
+    "onnxUrl": "https://cdn.ainovelreader.com/tts_model/vietthao3886.onnx",
+    "jsonUrl": "https://cdn.ainovelreader.com/tts_model/vietthao3886.onnx.json"
+  }
+]

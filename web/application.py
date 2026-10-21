@@ -8,7 +8,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from storage.files import MAX_FILE
 from web import runtime
 from web.access import protect_request, handle_login
-from web.routes import books, translation, audio, gdrive, system, progress, drive_exports, drive_api, pixeldrain_routes
+from web.routes import books, translation, audio, gdrive, system, progress, drive_exports, drive_api, pixeldrain_routes, checkpoints
 
 @asynccontextmanager
 async def lifespan(app):
@@ -40,8 +40,9 @@ async def local_guard(request:Request,call_next):
                 return Response('Chỉ cho phép cùng origin.', status_code=403)
     if request.url.path.startswith('/api/') and request.method in ('POST','PUT','DELETE','PATCH') and request.headers.get('x-app-request')!='novel-translator':
         return Response('Thiếu header bảo vệ.',status_code=403)
+    max_request_size = 2 * 1024**3 if request.url.path == '/api/checkpoints/restore' else MAX_FILE
     size=request.headers.get('content-length')
-    if size and (not size.isdigit() or int(size)>MAX_FILE+1024*1024):
+    if size and (not size.isdigit() or int(size)>max_request_size+1024*1024):
         return Response('File quá lớn.',status_code=413)
     response = await call_next(request)
     response.headers['Referrer-Policy'] = 'no-referrer'
@@ -64,7 +65,7 @@ def create_app():
 
     app.middleware('http')(local_guard)
     # Static /api/export/audio must precede /api/export/{format}.
-    for module in (audio, gdrive, translation, system, progress, drive_exports, drive_api, pixeldrain_routes, books):
+    for module in (audio, gdrive, translation, system, progress, drive_exports, drive_api, pixeldrain_routes, checkpoints, books):
         app.include_router(module.router)
     app.mount('/static', StaticFiles(directory=runtime.ROOT / 'web/static'), name='static')
     return app

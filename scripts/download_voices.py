@@ -1,182 +1,158 @@
+"""Full voice catalog/config JSON or all ONNX models. Safe to rerun after failure."""
+import argparse
 import json
 import os
+import re
 import sys
+import tempfile
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
-
-VOICE_DIR = Path(__file__).resolve().parent.parent / 'models' / 'voices'
-VOICE_DIR.mkdir(parents=True, exist_ok=True)
-
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from paths import voice_models
+VOICE_DIR = voice_models()
 GITHUB_API = 'https://api.github.com/repos/dungbeommm/NovelReader_voices/contents/voices/low'
-HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+HEADERS = {'User-Agent': 'NovelReader/4.4'}
+
+
+def valid_config(path):
+    try:
+        data = json.loads(path.read_text('utf-8-sig'))
+        return isinstance(data, dict) and isinstance(data.get('audio'), dict) and isinstance(data.get('phoneme_id_map'), dict)
+    except (OSError, ValueError):
+        return False
+
 
 def download_file(url, out_path, min_size=1024, retries=3):
-    if out_path.is_file() and out_path.stat().st_size >= min_size:
-        return True, f"Da co: {out_path.name}"
-    
-    tmp_path = out_path.with_suffix('.tmp')
-    for attempt in range(1, retries + 1):
+    out_path = Path(out_path)
+    is_config = out_path.name.endswith('.onnx.json')
+    if out_path.is_file() and out_path.stat().st_size >= min_size and (not is_config or valid_config(out_path)):
+        return True, f'Đã có: {out_path.name}'
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    for attempt in range(retries):
+        fd, name = tempfile.mkstemp(dir=out_path.parent, prefix='.voice-')
+        temp = Path(name)
         try:
             req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=30) as resp, open(tmp_path, 'wb') as f:
-                while True:
-                    chunk = resp.read(65536)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-            
-            if tmp_path.stat().st_size < min_size:
-                tmp_path.unlink(missing_ok=True)
-                raise ValueError(f"File qua nho: {tmp_path.stat().st_size} bytes")
-                
-            tmp_path.replace(out_path)
-            return True, f"Tai thanh cong: {out_path.name} ({out_path.stat().st_size // 1024} KB)"
-        except Exception as e:
-            tmp_path.unlink(missing_ok=True)
-            if attempt == retries:
-                return False, f"Loi tai {url}: {e}"
-            time.sleep(1)
-    return False, "That bai"
+            with os.fdopen(fd, 'wb') as out, urllib.request.urlopen(req, timeout=90) as response:
+                while chunk := response.read(1024 * 1024):
+                    out.write(chunk)
+            if temp.stat().st_size < min_size or (is_config and not valid_config(temp)):
+                raise ValueError('File thiếu hoặc JSON không phải cấu hình Piper.')
+            os.replace(temp, out_path)
+            return True, f'Đã tải: {out_path.name}'
+        except Exception as exc:
+            error = str(exc)
+            time.sleep(min(attempt + 1, 3))
+        finally:
+            temp.unlink(missing_ok=True)
+    return False, f'Lỗi {out_path.name}: {error}'
 
-def process_voice(folder_name):
-    # Lay voice_info.json
-    info_url = f'https://raw.githubusercontent.com/dungbeommm/NovelReader_voices/main/voices/low/{folder_name}/voice_info.json'
+
+def write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix='.manifest-')
     try:
-        req = urllib.request.Request(info_url, headers=HEADERS)
-        info_data = urllib.request.urlopen(req, timeout=10).read().decode('utf-8-sig')
-        info = json.loads(info_data)
-    except Exception as e:
-        return {'folder': folder_name, 'status': 'error', 'error': f"Loi info: {e}"}
+        with os.fdopen(fd, 'w', encoding='utf-8') as out:
+            json.dump(data, out, ensure_ascii=False, indent=2)
+        os.replace(name, path)
+    finally:
+        Path(name).unlink(missing_ok=True)
 
-    vid = info.get('original_id', folder_name.replace('low-', ''))
-    display_name = info.get('displayName', vid)
-    
-    onnx_file = VOICE_DIR / f"{vid}.onnx"
-    json_file = VOICE_DIR / f"{vid}.onnx.json"
-    meta_file = VOICE_DIR / f"{vid}.info.json"
-    
-    # Luu meta
-    meta_file.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding='utf-8')
-    
-    # 1. Download json config
-    json_urls = [
-        info.get('jsonUrl'),
-        f'https://raw.githubusercontent.com/dungbeommm/NovelReader_voices/main/voices/low/{folder_name}/{vid}.onnx.json'
-    ]
-    json_ok = False
-    for ju in [u for u in json_urls if u]:
-        ok, msg = download_file(ju, json_file, min_size=50)
-        if ok:
-            json_ok = True
-            break
-            
-    # 2. Download onnx model (~60MB)
-    onnx_urls = [
-        info.get('onnxUrl'),
-        f'https://raw.githubusercontent.com/dungbeommm/NovelReader_voices/main/voices/low/{folder_name}/{vid}.onnx'
-    ]
-    onnx_ok = False
-    for ou in [u for u in onnx_urls if u]:
-        ok, msg = download_file(ou, onnx_file, min_size=10 * 1024 * 1024)
-        if ok:
-            onnx_ok = True
-            break
-            
-    status = 'done' if (onnx_ok and json_ok) else 'failed'
-    return {
-        'id': vid,
-        'folder': folder_name,
-        'name': display_name,
-        'status': status,
-        'onnx_file': str(onnx_file.name),
-        'json_file': str(json_file.name),
-        'size_mb': round(onnx_file.stat().st_size / (1024*1024), 1) if onnx_file.is_file() else 0
-    }
 
-def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="Tải các model giọng đọc Piper TTS tiếng Việt.")
-    parser.add_argument('--default-only', action='store_true', help='Chỉ tải giọng mặc định (ngochuyennew ~60MB).')
-    parser.add_argument('--voice', type=str, default=None, help='Chỉ tải một giọng cụ thể theo ID (ví dụ: banmai, deepman3909).')
-    args = parser.parse_args()
+def load_catalog(refresh=True):
+    bundled = json.loads((ROOT / 'tts/voices_catalog.json').read_text('utf-8'))
+    by_id = {v['id']: dict(v) for v in bundled}
+    if refresh:
+        try:
+            req = urllib.request.Request(GITHUB_API, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=20) as response:
+                folders = json.load(response)
+            for folder in folders:
+                if folder.get('type') != 'dir':
+                    continue
+                vid = folder['name'].removeprefix('low-')
+                if re.fullmatch(r'[A-Za-z0-9_-]{1,100}', vid):
+                    by_id.setdefault(vid, {'id': vid, 'name': vid, 'folder': folder['name']})
+        except Exception as exc:
+            print(f'Không tải được danh mục GitHub; dùng {len(by_id)} giọng tích hợp: {exc}')
+    return list(by_id.values())
 
-    # 1. Tải giọng mặc định ngochuyennew nếu chưa có
-    ngoc_huyen_onnx = VOICE_DIR / "ngochuyennew.onnx"
-    ngoc_huyen_json = VOICE_DIR / "ngochuyennew.onnx.json"
-    if not (ngoc_huyen_onnx.is_file() and ngoc_huyen_onnx.stat().st_size > 10*1024*1024 and ngoc_huyen_json.is_file()):
-        print("Đang tải giọng mặc định: Ngọc Huyền (Mới)...")
-        download_file("https://cdn.ainovelreader.com/tts_model/ngochuyennew.onnx.json", ngoc_huyen_json, min_size=50)
-        download_file("https://cdn.ainovelreader.com/tts_model/ngochuyennew.onnx", ngoc_huyen_onnx, min_size=10*1024*1024)
 
-    if args.default_only:
-        print("Đã tải xong giọng mặc định ngochuyennew.")
-        return
-
-    if args.voice:
-        v_id = args.voice.replace("low-", "")
-        print(f"Đang tải giọng yêu cầu: {v_id}...")
-        download_file(f"https://cdn.ainovelreader.com/tts_model/{v_id}.onnx.json", VOICE_DIR / f"{v_id}.onnx.json", min_size=50)
-        download_file(f"https://cdn.ainovelreader.com/tts_model/{v_id}.onnx", VOICE_DIR / f"{v_id}.onnx", min_size=10*1024*1024)
-        print(f"Hoàn tất tải giọng {v_id}.")
-        return
-
-    print("Đang kết nối để lấy danh sách giọng đọc...")
-    folders = []
+def process_voice(item, config_only=False):
+    item = dict(item)
+    vid = item['id']
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', vid):
+        raise ValueError('ID giọng không hợp lệ')
+    folder = item.get('folder', f'low-{vid}')
+    base = f'https://raw.githubusercontent.com/dungbeommm/NovelReader_voices/main/voices/low/{folder}'
+    # metadata improves display names and includes canonical CDN URLs.
     try:
-        req = urllib.request.Request(GITHUB_API, headers=HEADERS)
-        items = json.loads(urllib.request.urlopen(req, timeout=10).read().decode('utf-8'))
-        folders = [it['name'] for it in items]
-    except Exception as exc:
-        print(f"⚠️ Không kết nối được GitHub API ({exc}), sử dụng available_voices.json nội bộ...")
-        avail_file = VOICE_DIR / "available_voices.json"
-        if avail_file.is_file():
-            try:
-                avail = json.loads(avail_file.read_text(encoding='utf-8'))
-                folders = [it.get('folder', f"low-{it['id']}") for it in avail if it.get('folder') or it.get('id')]
-            except Exception:
-                pass
+        with urllib.request.urlopen(urllib.request.Request(base + '/voice_info.json', headers=HEADERS), timeout=15) as response:
+            meta = json.loads(response.read().decode('utf-8-sig'))
+        item['name'] = meta.get('displayName') or item.get('name', vid)
+        for field in ('onnxUrl', 'jsonUrl', 'gender'):
+            if meta.get(field):
+                item[field] = meta[field]
+        write_json(VOICE_DIR / f'{vid}.info.json', meta)
+    except Exception:
+        pass
+    onnx, cfg = VOICE_DIR / f'{vid}.onnx', VOICE_DIR / f'{vid}.onnx.json'
+    def fetch(suffix, target, min_size):
+        urls = [item.get('jsonUrl' if suffix.endswith('json') else 'onnxUrl'),
+                f'https://cdn.ainovelreader.com/tts_model/{vid}{suffix}', f'{base}/{vid}{suffix}']
+        for url in dict.fromkeys(u for u in urls if u):
+            ok, message = download_file(url, target, min_size, retries=2)
+            if ok:
+                return True
+        print(message)
+        return False
+    json_ok = fetch('.onnx.json', cfg, 50)
+    model_ok = onnx.is_file() and onnx.stat().st_size >= 10 * 1024**2
+    if not config_only:
+        model_ok = fetch('.onnx', onnx, 10 * 1024**2)
+    item.update(onnx_file=onnx.name, json_file=cfg.name, config_downloaded=json_ok,
+                downloaded=bool(model_ok and json_ok),
+                status='done' if json_ok and (config_only or model_ok) else 'failed',
+                size_mb=round(onnx.stat().st_size / 1024**2, 1) if model_ok else 0)
+    return item
 
-    if not folders:
-        # Fallback danh sách cứng 21 folder
-        folders = [
-            "low-banmai", "low-calmwoman3688", "low-adam1", "low-chieuthanh",
-            "low-deepman3909", "low-kinhphat", "low-duyoryx3175", "low-lacphi",
-            "low-maiphuong", "low-manhdung", "low-minhquang", "low-minhkhang",
-            "low-ngochuyen", "low-ngocngan3701", "low-taian4", "low-phuongtrang",
-            "low-vais1000medium", "low-thanhphuong2", "low-thientam", "low-vunga",
-            "low-vietthao3886"
-        ]
 
-    # Bỏ qua low-ngochuyennew nếu có trong folders vì đã xử lý ở trên
-    folders = [f for f in folders if f != 'low-ngochuyennew']
-    print(f"Tìm thấy {len(folders)} giọng cần tải. Bắt đầu tải song song (3 luồng)...")
-
-    results = []
-    results.append({
-        'id': 'ngochuyennew',
-        'name': 'Ngọc Huyền (Nữ) - Mặc định',
-        'status': 'done' if ngoc_huyen_onnx.is_file() else 'missing',
-        'onnx_file': 'ngochuyennew.onnx',
-        'json_file': 'ngochuyennew.onnx.json',
-        'size_mb': round(ngoc_huyen_onnx.stat().st_size / (1024*1024), 1) if ngoc_huyen_onnx.is_file() else 0
-    })
-
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {executor.submit(process_voice, f): f for f in folders}
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--catalog-only', action='store_true', help='Tải đầy đủ JSON/config, không tải ONNX.')
+    mode.add_argument('--all', action='store_true', help='Tải tất cả JSON và model ONNX.')
+    mode.add_argument('--default-only', action='store_true')
+    mode.add_argument('--voice', help='Tải một giọng theo ID.')
+    parser.add_argument('--offline-catalog', action='store_true', help='Không truy vấn danh mục GitHub; vẫn tải file.')
+    parser.add_argument('--workers', type=int, choices=range(1, 9), default=3)
+    args = parser.parse_args(argv)
+    VOICE_DIR.mkdir(parents=True, exist_ok=True)
+    catalog = load_catalog(not args.offline_catalog)
+    selected_id = 'ngochuyennew' if args.default_only else args.voice
+    if selected_id and selected_id not in {v['id'] for v in catalog}:
+        parser.error('Giọng không có trong danh mục.')
+    # Preserve the entire catalog, including not-yet-installed voices.
+    by_id = {v['id']: v for v in catalog}
+    tasks = [v for v in catalog if not selected_id or v['id'] == selected_id]
+    failed = 0
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = [pool.submit(process_voice, v, args.catalog_only) for v in tasks]
         for future in as_completed(futures):
-            res = future.result()
-            results.append(res)
-            print(f"[{len(results)-1}/{len(folders)}] {res.get('name', res.get('id'))}: {res.get('status')} ({res.get('size_mb', 0)} MB)")
+            result = future.result()
+            by_id[result['id']] = result
+            failed += result['status'] == 'failed'
+            print(f"{result['id']}: {result['status']}", flush=True)
+            manifest = sorted(by_id.values(), key=lambda v: v['id'])
+            write_json(VOICE_DIR / 'voices_manifest.json', manifest)
+            write_json(VOICE_DIR / 'available_voices.json', manifest)
+    print(f'Danh mục đầy đủ: {len(by_id)} giọng. Lỗi tải: {failed}.')
+    return 1 if failed else 0
 
-            manifest_file = VOICE_DIR / 'voices_manifest.json'
-            manifest_file.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding='utf-8')
-
-    print(f"\nHoàn tất! Tổng cộng có {len(results)} giọng đọc đã cập nhật trong manifest.")
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

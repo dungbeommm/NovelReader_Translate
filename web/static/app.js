@@ -288,7 +288,7 @@ async function loadHardware() {
       $('hw-pill').textContent = `⚡ ${dev}: ${currentHardware.cpu_count} luồng${devName}`;
       $('hw-pill').title = currentHardware.summary || '';
       if (currentHardware.batch_size && !$('batch').value) {
-        $('batch').value = Math.max(1, Math.min(256, currentHardware.batch_size));
+        $('batch').value = Math.max(1, Math.min(1024, currentHardware.batch_size));
       }
       updateModelInfo();
     }
@@ -605,6 +605,7 @@ function closeSettingsModal() {
 function switchSettingsTab(tabId) {
   document.querySelectorAll('.modal-tab').forEach(t => {
     t.classList.toggle('active', t.dataset.tab === tabId);
+    if (t.dataset.tab === tabId) t.scrollIntoView({block: 'nearest', inline: 'nearest'});
   });
   document.querySelectorAll('.tab-pane').forEach(p => {
     p.classList.remove('active');
@@ -638,53 +639,128 @@ document.querySelectorAll('.modal-tab').forEach(tab => {
 
 // ----------------- PIXELDRAIN SETTINGS -----------------
 async function loadPixeldrainSettings() {
-  const input = $('modal-pixeldrain-key');
   const status = $('pixeldrain-key-status');
-  const savedKey = localStorage.getItem('pixeldrain_api_key') || '';
-  if (input && !input.value) input.value = savedKey;
-
   try {
-    const serverStat = await api('/api/export/pixeldrain/status');
-    if (serverStat.has_env_key) {
-      if (status) {
-        status.textContent = `✓ Biến môi trường (${serverStat.env_key_masked})`;
-        status.style.color = '#4ade80';
-      }
-    } else if (savedKey) {
-      if (status) {
-        status.textContent = '✓ Đã lưu trên trình duyệt';
-        status.style.color = '#4ade80';
-      }
-    } else {
-      if (status) {
-        status.textContent = 'Chưa cài đặt (Cần nhập key)';
-        status.style.color = '#f87171';
+    // Migrate the old browser-only key once; do not retain it in localStorage.
+    const oldKey = localStorage.getItem('pixeldrain_api_key');
+    if (oldKey) {
+      await api('/api/settings/pixeldrain', {api_key: oldKey});
+      localStorage.removeItem('pixeldrain_api_key');
+    }
+    const info = await api('/api/export/pixeldrain/status');
+    if (status) {
+      status.textContent = info.has_key ? 'Đã cấu hình · Chưa kiểm tra kết nối' : 'Chưa có API key';
+      status.style.color = info.has_key ? 'var(--green)' : 'var(--warning)';
+    }
+    const checkpoint = await api('/api/checkpoints/status');
+    const output = $('checkpoint-status');
+    if (output && checkpoint.last_cloud) {
+      output.replaceChildren(document.createTextNode('Checkpoint gần nhất: '));
+      const link = document.createElement('a');
+      if (/^https:\/\/pixeldrain\.com\/u\/[A-Za-z0-9_-]+$/.test(checkpoint.last_cloud.url)) {
+        link.href = checkpoint.last_cloud.url;
+        link.textContent = checkpoint.last_cloud.created_at;
+        link.target = '_blank'; link.rel = 'noopener noreferrer';
+        output.append(link);
       }
     }
-  } catch {}
+  } catch (e) { if (status) status.textContent = e.message; }
 }
 
-if ($('btn-save-pixeldrain-key')) {
-  $('btn-save-pixeldrain-key').onclick = () => {
-    const val = ($('modal-pixeldrain-key')?.value || '').trim();
-    const status = $('pixeldrain-key-status');
-    if (val) {
-      localStorage.setItem('pixeldrain_api_key', val);
-      if (status) {
-        status.textContent = '✓ Đã lưu trên trình duyệt';
-        status.style.color = '#4ade80';
-      }
-      notice('✓ Đã lưu Pixeldrain API Key thành công!');
-    } else {
-      localStorage.removeItem('pixeldrain_api_key');
-      if (status) {
-        status.textContent = 'Chưa cài đặt';
-        status.style.color = '#f87171';
-      }
-      notice('Đã xóa Pixeldrain API Key.');
-    }
-  };
+if ($('btn-save-pixeldrain-key')) $('btn-save-pixeldrain-key').onclick = () => safe(async () => {
+  const input = $('modal-pixeldrain-key');
+  await api('/api/settings/pixeldrain', {api_key: input.value.trim()});
+  localStorage.removeItem('pixeldrain_api_key');
+  input.value = '';
+  await loadPixeldrainSettings();
+  notice('Đã cập nhật key phía backend. Key để trống sẽ xóa key đã lưu; biến môi trường vẫn được ưu tiên.');
+});
+if ($('btn-test-pixeldrain')) $('btn-test-pixeldrain').onclick = () => safe(async () => {
+  const result = await api('/api/settings/pixeldrain/test', {});
+  $('pixeldrain-key-status').textContent = '✓ Đã xác thực kết nối';
+  notice(result.message);
+});
+
+let checkpointBusy = false;
+async function checkpointAction(action) {
+  if (checkpointBusy) return;
+  checkpointBusy = true;
+  const buttons = document.querySelectorAll('.checkpoint-card button');
+  buttons.forEach(b => b.disabled = true);
+  $('checkpoint-status').textContent = 'Đang xử lý… Không đóng runtime.';
+  try { await action(); }
+  catch (e) { $('checkpoint-status').textContent = e.message; notice(e.message, true); }
+  finally { checkpointBusy = false; buttons.forEach(b => b.disabled = false); }
 }
+if ($('btn-save-draft')) $('btn-save-draft').onclick = () => checkpointAction(async () => {
+  await api('/api/checkpoints/draft', buildTranslatePayload());
+  $('checkpoint-status').textContent = 'Đã lưu cấu hình bảng tạm tại backend; sẽ đi kèm checkpoint.';
+});
+if ($('btn-load-draft')) $('btn-load-draft').onclick = () => checkpointAction(async () => {
+  const {config: c} = await api('/api/checkpoints/draft');
+  setBackend(c.backend); $('engine').value = c.engine;
+  $('glossary').value = c.glossary; $('batch').value = c.batch_size;
+  $('opt-audio').checked = c.generate_audio; $('opt-audio-pipeline').checked = c.audio_pipeline;
+  $('audio-workers').value = c.audio_workers; $('audio-queue-size').value = c.audio_queue_size;
+  $('cloud-checkpoint-auto').checked = c.cloud_checkpoint;
+  $('checkpoint-include-audio').checked = c.checkpoint_include_audio;
+  $('opt-honorific').checked = c.honorific_mode !== 'off';
+  $('opt-pronoun').checked = c.pronoun_harmonizer;
+  $('beam-size').value = c.beam_size; $('beam-val').textContent = c.beam_size;
+  setChunkMode(c.chunk_mode); $('normalize-mode').value = c.normalize_mode;
+  $('voice-select').value = c.voice_id; $('modal-voice').value = c.voice_id;
+  const speedSelect = $('audio-speed');
+  let speedOption = Array.from(speedSelect.options).find(o => Number(o.value) === Number(c.audio_speed));
+  if (!speedOption) {
+    speedOption = new Option(`${c.audio_speed}x`, String(c.audio_speed));
+    speedSelect.add(speedOption);
+  }
+  speedSelect.value = speedOption.value;
+  $('audio-format').value = c.audio_format;
+  $('modal-audio-format').value = c.audio_format; $('modal-audio-bitrate').value = c.audio_bitrate;
+  $('modal-noise-scale').value = c.noise_scale; $('modal-noise-w').value = c.noise_w_scale;
+  $('noise-scale-val').textContent = Number(c.noise_scale).toFixed(2);
+  $('noise-w-val').textContent = Number(c.noise_w_scale).toFixed(2);
+  $('reset').checked = c.reset; $('opt-auto-group').checked = c.auto_group_audio;
+  for (const id of ['toc-group-size', 'opt-group-size', 'modal-group-size']) if ($(id)) $(id).value = c.group_size;
+  $('trans-range-start').value = c.start_pos ?? ''; $('trans-range-end').value = c.end_pos ?? '';
+  $('checkpoint-status').textContent = 'Đã nạp cấu hình bảng tạm. Kiểm tra phạm vi/reset trước khi chạy.';
+});
+if ($('btn-checkpoint-cloud')) $('btn-checkpoint-cloud').onclick = () => checkpointAction(async () => {
+  await api('/api/checkpoints/draft', buildTranslatePayload());
+  const result = await api('/api/checkpoints/pixeldrain', {include_audio: $('checkpoint-include-audio').checked});
+  showPixeldrainModal(result);
+  $('checkpoint-status').textContent = 'Đã lưu checkpoint lên Pixeldrain. Hãy giữ link để khôi phục runtime khác.';
+});
+if ($('btn-checkpoint-download')) $('btn-checkpoint-download').onclick = () => checkpointAction(async () => {
+  await api('/api/checkpoints/draft', buildTranslatePayload());
+  const response = await fetch('/api/checkpoints/download', {method: 'POST',
+    headers: {'X-App-Request': 'novel-translator', 'Content-Type': 'application/json'},
+    body: JSON.stringify({include_audio: $('checkpoint-include-audio').checked})});
+  if (!response.ok) throw new Error((await response.json()).detail || 'Không tải được checkpoint.');
+  const url = URL.createObjectURL(await response.blob());
+  const a = document.createElement('a'); a.href = url; a.download = 'NovelReader_checkpoint.zip';
+  a.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+  $('checkpoint-status').textContent = 'Đã tạo checkpoint để tải về. Giới hạn khôi phục: 2 GB/ZIP.';
+});
+async function finishRestore(result) {
+  selected = null; await refreshAll();
+  $('checkpoint-status').textContent = result.message + ' Bấm Nạp bảng tạm để áp dụng cấu hình đã sao lưu.';
+  notice(result.message);
+}
+if ($('checkpoint-file')) $('checkpoint-file').onchange = () => checkpointAction(async () => {
+  const file = $('checkpoint-file').files[0];
+  if (!file) { $('checkpoint-status').textContent = ''; return; }
+  if (!confirm('Thay dữ liệu truyện hiện tại bằng checkpoint? Bản xuất cũ vẫn được giữ trong thư mục riêng.')) return;
+  if (file.size > 2 * 1024 ** 3) throw new Error('Checkpoint tối đa 2 GB.');
+  const data = new FormData(); data.append('file', file);
+  await finishRestore(await api('/api/checkpoints/restore', data));
+  $('checkpoint-file').value = '';
+});
+if ($('btn-checkpoint-restore')) $('btn-checkpoint-restore').onclick = () => checkpointAction(async () => {
+  if (!confirm('Tải checkpoint Pixeldrain và thay truyện hiện tại?')) return;
+  await finishRestore(await api('/api/checkpoints/restore-pixeldrain', {file_id: $('checkpoint-id').value.trim()}));
+});
 
 if ($('pd-dialog-close')) $('pd-dialog-close').onclick = () => $('pixeldrain-result-dialog')?.close();
 if ($('pd-btn-copy')) {
@@ -718,7 +794,8 @@ async function loadGdriveSettings() {
     }
     if ($('modal-gdrive-path')) $('modal-gdrive-path').value = cfg.local_path || cfg.local_sync_path || '';
     if ($('modal-gdrive-client-id')) $('modal-gdrive-client-id').value = cfg.client_id || '';
-    if ($('modal-gdrive-client-secret')) $('modal-gdrive-client-secret').value = cfg.client_secret || '';
+    if ($('modal-gdrive-client-secret')) $('modal-gdrive-client-secret').value = '';
+    if ($('modal-gdrive-client-secret')) $('modal-gdrive-client-secret').placeholder = cfg.has_client_secret ? 'Đã lưu · để trống để giữ nguyên' : 'Nhập Client Secret';
     if ($('modal-gdrive-folder-id')) $('modal-gdrive-folder-id').value = cfg.folder_id || '';
     if ($('modal-gdrive-auto')) $('modal-gdrive-auto').checked = !!cfg.auto_upload;
     if ($('gdrive-redirect-uri')) $('gdrive-redirect-uri').textContent = `${window.location.origin}/api/gdrive/callback`;
@@ -728,7 +805,7 @@ async function loadGdriveSettings() {
       if (cfg.account_email) {
         ind.textContent = `✓ ${cfg.account_email}`;
         ind.style.color = 'var(--green, #4ade80)';
-      } else if (cfg.access_token) {
+      } else if (cfg.connected) {
         ind.textContent = '✓ Đã liên kết';
         ind.style.color = 'var(--green, #4ade80)';
       } else {
@@ -751,6 +828,7 @@ async function saveGdriveSettings() {
     folder_id: $('modal-gdrive-folder-id') ? $('modal-gdrive-folder-id').value.trim() : '',
     auto_upload: $('modal-gdrive-auto') ? $('modal-gdrive-auto').checked : false
   };
+  if (!payload.client_secret) delete payload.client_secret;
   await api('/api/settings/gdrive', payload, 'POST');
   return payload;
 }
@@ -882,6 +960,7 @@ if ($('btn-upload-all-gdrive')) {
 if ($('btn-save-settings')) {
   $('btn-save-settings').onclick = () => safe(async () => {
     await saveGdriveSettings();
+    await api('/api/checkpoints/draft', buildTranslatePayload());
     closeSettingsModal();
     notice('✓ Đã lưu cài đặt nâng cao.');
   });
@@ -1148,7 +1227,7 @@ function renderProgress(progress) {
   $('stop').disabled = !p.active || p.status === 'stopping';
   $('pause').textContent = p.status === 'paused' ? '▷ Tiếp tục' : 'Ⅱ Tạm dừng';
 
-  const inputs = ['engine', 'glossary', 'batch', 'reset', 'load-path', 'file', 'opt-audio-pipeline', 'opt-honorific', 'opt-pronoun', 'opt-t2s', 'beam-size', 'normalize-mode', 'btn-delete-book', 'btn-save-book-title', 'book-output-title', 'btn-trans-range', 'btn-auto-group-audio', 'range-start', 'range-end', 'trans-range-start', 'trans-range-end', 'toc-group-size', 'btn-reset-current', 'btn-delete-current', 'btn-download-model', 'btn-download-model-action'];
+  const inputs = ['engine', 'glossary', 'batch', 'reset', 'load-path', 'file', 'opt-audio-pipeline', 'audio-workers', 'audio-queue-size', 'cloud-checkpoint-auto', 'checkpoint-include-audio', 'opt-honorific', 'opt-pronoun', 'opt-t2s', 'beam-size', 'normalize-mode', 'btn-delete-book', 'btn-save-book-title', 'book-output-title', 'btn-trans-range', 'btn-auto-group-audio', 'range-start', 'range-end', 'trans-range-start', 'trans-range-end', 'toc-group-size', 'btn-reset-current', 'btn-delete-current', 'btn-download-model', 'btn-download-model-action'];
   inputs.forEach(id => {
     const el = $(id);
     if (el) el.disabled = p.active || busy || isDownloadingModel;
@@ -1492,8 +1571,8 @@ $('path-form').onsubmit = e => {
 // ----------------- TRANSLATION CONTROLS & RANGE SCOPING -----------------
 function buildTranslatePayload(extraConfig = {}) {
   const batch = Number($('batch').value);
-  if (!Number.isInteger(batch) || batch < 1 || batch > 256) {
-    throw new Error('Batch size phải từ 1 đến 256.');
+  if (!Number.isInteger(batch) || batch < 1 || batch > 1024) {
+    throw new Error('Batch size phải từ 1 đến 1024.');
   }
 
   const selectedChunkMode = document.querySelector('input[name="chunk_mode"]:checked')?.value || 'sentence';
@@ -1527,6 +1606,10 @@ function buildTranslatePayload(extraConfig = {}) {
     glossary: $('glossary').value,
     batch_size: batch,
     audio_pipeline: $('opt-audio-pipeline') ? $('opt-audio-pipeline').checked : true,
+    audio_workers: Number($('audio-workers')?.value || 1),
+    audio_queue_size: Number($('audio-queue-size')?.value || 4),
+    cloud_checkpoint: !!$('cloud-checkpoint-auto')?.checked,
+    checkpoint_include_audio: !!$('checkpoint-include-audio')?.checked,
     reset: extraConfig.reset !== undefined ? extraConfig.reset : $('reset').checked,
     honorific_mode: $('opt-honorific').checked ? 'safe' : 'off',
     pronoun_harmonizer: $('opt-pronoun').checked,
@@ -1542,6 +1625,7 @@ function buildTranslatePayload(extraConfig = {}) {
     noise_scale: Number.isFinite(parseFloat($('modal-noise-scale')?.value)) ? parseFloat($('modal-noise-scale').value) : 0.667,
     noise_w_scale: Number.isFinite(parseFloat($('modal-noise-w')?.value)) ? parseFloat($('modal-noise-w').value) : 0.8,
     audio_format: $('audio-format') ? $('audio-format').value : 'mp3',
+    audio_bitrate: $('modal-audio-bitrate')?.value || '96k',
     auto_group_audio: ($('opt-audio') && !$('opt-audio').checked) ? false : (extraConfig.auto_group_audio !== undefined ? !!extraConfig.auto_group_audio : autoGroup),
     group_size: groupSize,
     start_pos: startPos,
@@ -1929,6 +2013,8 @@ let updating = false, dirty = false;
 async function handleEvent(event) {
   if (event.progress) renderProgress(event.progress);
   if (event.type === 'error') notice(event.message || 'Chương dịch lỗi.', true);
+  if (event.type === 'cloud_checkpoint_done') { notice('Đã lưu checkpoint Pixeldrain: ' + event.url); loadPixeldrainSettings(); }
+  if (event.type === 'cloud_checkpoint_error') notice('Lưu cloud thất bại, tiến độ cục bộ vẫn còn: ' + event.error, true);
   if (event.type === 'chapter_audio_error' || event.type === 'audio_group_error') notice(event.error || 'Lỗi xử lý audio.', true);
   if (event.type === 'audio_groups_updated') {
     renderMergeResult(event.groups, event.group_size || $('toc-group-size')?.value || 50);
@@ -1995,7 +2081,7 @@ safe(async () => {
   setViewMode(currentViewMode);
   const savedBackend = localStorage.getItem('novel_backend') || 'ct2';
   setBackend(savedBackend);
-  await Promise.all([loadHardware(), loadModels(), loadVoices(), loadGdriveSettings(), loadExportDestination()]);
+  await Promise.all([loadHardware(), loadModels(), loadVoices(), loadGdriveSettings(), loadExportDestination(), loadPixeldrainSettings()]);
   const s = await refreshAll();
 
   if (s.book) {
@@ -2004,8 +2090,12 @@ safe(async () => {
       if (c.backend) setBackend(c.backend);
       if (c.engine) $('engine').value = c.engine === 'local' ? 'HachimiMT-60-QT' : c.engine;
       $('glossary').value = c.glossary || '';
-      $('batch').value = c.batch_size || Math.min(256, currentHardware?.batch_size || 8);
+      $('batch').value = c.batch_size || Math.min(1024, currentHardware?.batch_size || 8);
       if ($('opt-audio-pipeline')) $('opt-audio-pipeline').checked = c.audio_pipeline !== false;
+      if ($('audio-workers')) $('audio-workers').value = c.audio_workers || 1;
+      if ($('audio-queue-size')) $('audio-queue-size').value = c.audio_queue_size || 4;
+      if ($('cloud-checkpoint-auto')) $('cloud-checkpoint-auto').checked = !!c.cloud_checkpoint;
+      if ($('checkpoint-include-audio')) $('checkpoint-include-audio').checked = !!c.checkpoint_include_audio;
       if (c.honorific_mode !== undefined) $('opt-honorific').checked = c.honorific_mode !== 'off';
       if (c.pronoun_harmonizer !== undefined) $('opt-pronoun').checked = !!c.pronoun_harmonizer;
       if (c.beam_size) {

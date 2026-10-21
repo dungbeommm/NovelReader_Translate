@@ -302,12 +302,12 @@ def test_cuda_guard_detects_provider_lost_after_inference(monkeypatch):
         guard_cuda_session(SimpleNamespace(session=session))
 
 
-@pytest.mark.parametrize('batch', [96, 128, 192, 256])
+@pytest.mark.parametrize('batch', [96, 128, 192, 256, 512, 1024])
 def test_web_allows_larger_translation_batches(batch):
     assert Config(batch_size=batch).batch_size == batch
 
 
-@pytest.mark.parametrize('batch', [0, 257])
+@pytest.mark.parametrize('batch', [0, 1025])
 def test_web_rejects_batch_outside_bounds(batch):
     with pytest.raises(ValueError):
         Config(batch_size=batch)

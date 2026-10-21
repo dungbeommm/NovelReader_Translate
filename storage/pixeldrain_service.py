@@ -4,6 +4,8 @@ Provides direct upload for translated TXT, EPUB, and Audio files to Pixeldrain.
 Supports both anonymous uploads (where permitted) and API-key authenticated uploads.
 """
 import base64
+import re
+import socket
 import io
 import json
 import logging
@@ -30,7 +32,27 @@ def get_pixeldrain_api_key(passed_key: str | None = None) -> str | None:
     env_key = os.getenv("PIXELDRAIN_API_KEY", "").strip()
     if env_key:
         return env_key
-    return None
+    from storage.cloud_settings import load_key
+    return load_key() or None
+
+
+def check_connection(api_key=None):
+    key = get_pixeldrain_api_key(api_key)
+    if not key:
+        raise ValueError("Chưa có API key Pixeldrain.")
+    auth = base64.b64encode(f"api:{key}".encode()).decode()
+    req = urllib.request.Request("https://pixeldrain.com/api/user", headers={
+        "Authorization": f"Basic {auth}", "User-Agent": "NovelReader/4.4"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            data = json.loads(response.read(1024 * 1024))
+        if not isinstance(data, dict) or data.get('success') is False:
+            raise RuntimeError("Pixeldrain không xác nhận tài khoản.")
+        return {"ok": True, "message": "Kết nối Pixeldrain thành công."}
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"Pixeldrain HTTP {exc.code}: kiểm tra API key/quyền tài khoản.") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError("Không kết nối được Pixeldrain; kiểm tra mạng và thử lại.") from exc
 
 
 def upload_to_pixeldrain(
@@ -44,15 +66,16 @@ def upload_to_pixeldrain(
     Returns dict with keys: ok, id, url, download_url, filename, size_bytes, size_mb
     """
     key = get_pixeldrain_api_key(api_key)
-    safe_name = urllib.parse.quote(filename.strip())
+    safe_name = urllib.parse.quote(Path(filename).name.strip(), safe="")
     url = f"{PIXELDRAIN_API_URL}/{safe_name}"
 
     if isinstance(data_or_path, (str, Path)):
         file_path = Path(data_or_path)
         if not file_path.is_file():
             raise FileNotFoundError(f"Không tìm thấy file để upload: {file_path}")
-        payload = file_path.read_bytes()
-        size_bytes = len(payload)
+        # urllib streams file objects when Content-Length is provided.
+        payload = file_path
+        size_bytes = file_path.stat().st_size
     elif isinstance(data_or_path, io.BytesIO):
         payload = data_or_path.getvalue()
         size_bytes = len(payload)
@@ -63,7 +86,8 @@ def upload_to_pixeldrain(
         raise TypeError(f"Dữ liệu không hợp lệ cho upload: {type(data_or_path)}")
 
     headers = {
-        "User-Agent": "NovelReader/4.3",
+        "User-Agent": "NovelReader/4.4",
+        "Content-Length": str(size_bytes),
         "Content-Type": "application/octet-stream",
     }
 
@@ -73,14 +97,17 @@ def upload_to_pixeldrain(
         encoded_auth = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
         headers["Authorization"] = f"Basic {encoded_auth}"
 
-    req = urllib.request.Request(url, data=payload, headers=headers, method="PUT")
-
+    from contextlib import nullcontext
+    source = payload.open('rb') if isinstance(payload, Path) else nullcontext(payload)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        with source as body:
+            req = urllib.request.Request(url, data=body, headers=headers, method="PUT")
+            response = urllib.request.urlopen(req, timeout=timeout)
+        with response:
             resp_bytes = response.read()
             data = json.loads(resp_bytes.decode("utf-8"))
             file_id = data.get("id")
-            if not file_id:
+            if data.get("success") is False or not isinstance(file_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", file_id):
                 raise RuntimeError(f"Pixeldrain không trả về file ID: {data}")
 
             view_url = f"{PIXELDRAIN_FILE_URL}/{file_id}"
@@ -115,7 +142,9 @@ def upload_to_pixeldrain(
             raise RuntimeError(f"File quá lớn ({round(size_bytes / (1024*1024), 1)} MB), vượt giới hạn Pixeldrain.") from exc
         raise RuntimeError(f"Lỗi Pixeldrain HTTP {exc.code}: {err_msg}") from exc
     except urllib.error.URLError as exc:
-        raise RuntimeError(f"Không thể kết nối đến Pixeldrain: {exc.reason}") from exc
+        raise RuntimeError("Không thể kết nối đến Pixeldrain. Kiểm tra mạng và thử lại.") from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise RuntimeError("Pixeldrain hết thời gian chờ; kiểm tra tài khoản trước khi tải lại để tránh file trùng.") from exc
 
 
 def export_book_to_pixeldrain(store, kind: str, api_key: str | None = None) -> dict:
@@ -156,12 +185,15 @@ def export_book_to_pixeldrain(store, kind: str, api_key: str | None = None) -> d
             raise ValueError("Chưa có file audio nào để xuất.")
 
         filename = f"{safe_title}_audio.zip"
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-            for f in audio_files:
-                z.write(f, arcname=str(f.relative_to(store.audio_dir)))
+        # Already-compressed audio: disk-backed ZIP, no full-book RAM copy.
+        with tempfile.TemporaryDirectory(prefix="novel-audio-export-") as work:
+            archive = Path(work) / filename
+            with zipfile.ZipFile(archive, "w", zipfile.ZIP_STORED) as z:
+                for f in audio_files:
+                    if not f.is_symlink():
+                        z.write(f, arcname=str(f.relative_to(store.audio_dir)))
+            return upload_to_pixeldrain(archive, filename, api_key=api_key)
 
-        return upload_to_pixeldrain(buf.getvalue(), filename, api_key=api_key)
 
 
 def export_audio_file_to_pixeldrain(store, filename: str, api_key: str | None = None) -> dict:

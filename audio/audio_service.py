@@ -24,10 +24,13 @@ _voice_instances = {}
 def ensure_voice_downloaded(voice_id: str) -> bool:
     """Tự động tải model giọng đọc và file config nếu chưa có trên máy."""
     voice_id = (voice_id or "ngochuyennew").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", voice_id):
+        raise ValueError("ID giọng đọc không hợp lệ")
     model_path = VOICE_DIR / f"{voice_id}.onnx"
     config_path = VOICE_DIR / f"{voice_id}.onnx.json"
 
-    if model_path.is_file() and model_path.stat().st_size > 10 * 1024 * 1024 and config_path.is_file():
+    from scripts.download_voices import valid_config
+    if model_path.is_file() and model_path.stat().st_size > 10 * 1024 * 1024 and valid_config(config_path):
         return True
 
     log.info("Đang tự động tải model giọng đọc: %s...", voice_id)
@@ -46,7 +49,8 @@ def ensure_voice_downloaded(voice_id: str) -> bool:
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
 
     def _dl(urls, out_file, min_size=50):
-        if out_file.is_file() and out_file.stat().st_size >= min_size:
+        is_config = out_file.name.endswith('.onnx.json')
+        if out_file.is_file() and out_file.stat().st_size >= min_size and (not is_config or valid_config(out_file)):
             return True
         tmp_file = out_file.with_suffix(".tmp")
         for u in urls:
@@ -58,7 +62,7 @@ def ensure_voice_downloaded(voice_id: str) -> bool:
                         if not chunk:
                             break
                         f.write(chunk)
-                if tmp_file.stat().st_size >= min_size:
+                if tmp_file.stat().st_size >= min_size and (not is_config or valid_config(tmp_file)):
                     tmp_file.replace(out_file)
                     return True
                 tmp_file.unlink(missing_ok=True)
@@ -81,6 +85,13 @@ def list_available_voices() -> list[dict]:
         except Exception:
             manifest_items = []
 
+    # Always show the full bundled catalog on a fresh Molab/runtime.
+    try:
+        bundled = json.loads((BASE_DIR.parent / 'tts/voices_catalog.json').read_text('utf-8'))
+        existing = {it.get('id') for it in manifest_items if isinstance(it, dict)}
+        manifest_items.extend(it for it in bundled if it['id'] not in existing)
+    except (OSError, ValueError):
+        pass
     voices = []
     seen_ids = set()
 
@@ -196,12 +207,17 @@ def tts_runtime_status():
 def get_voice(voice_id: str = "ngochuyennew"):
     """Nạp và cache PiperVoice theo voice_id (tự động kích hoạt GPU CUDA nếu có)."""
     voice_id = (voice_id or "ngochuyennew").strip()
-    if voice_id in _voice_instances:
-        return _voice_instances[voice_id]
-
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", voice_id):
+        raise ValueError("ID giọng đọc không hợp lệ")
+    # Separate Piper/phonemizer/ORT state per consumer; never serialize inference
+    # behind the model-loading lock. Cache slots are released after queue shutdown.
+    worker = threading.current_thread().name
+    cache_key = f"{voice_id}@{worker}" if worker.startswith('chapter-audio-') else voice_id
+    if cache_key in _voice_instances:
+        return _voice_instances[cache_key]
     with _voice_lock:
-        if voice_id in _voice_instances:
-            return _voice_instances[voice_id]
+        if cache_key in _voice_instances:
+            return _voice_instances[cache_key]
 
         model_path = VOICE_DIR / f"{voice_id}.onnx"
         config_path = VOICE_DIR / f"{voice_id}.onnx.json"
@@ -209,15 +225,8 @@ def get_voice(voice_id: str = "ngochuyennew"):
         if not (model_path.is_file() and config_path.is_file()):
             ensure_voice_downloaded(voice_id)
 
-        if not model_path.is_file():
-            # Fallback về ngochuyennew nếu giọng yêu cầu tải thất bại
-            if voice_id != "ngochuyennew":
-                ensure_voice_downloaded("ngochuyennew")
-            model_path = VOICE_DIR / "ngochuyennew.onnx"
-            config_path = VOICE_DIR / "ngochuyennew.onnx.json"
-
-        if not model_path.is_file():
-            raise FileNotFoundError(f"Không tìm thấy model giọng TTS: {voice_id}")
+        if not model_path.is_file() or not config_path.is_file():
+            raise FileNotFoundError(f"Không tải được model/config giọng '{voice_id}'. Kiểm tra kết nối hoặc chạy scripts/download_voices.py --voice {voice_id}. Không tự đổi sang giọng khác.")
 
         log.info("Đang nạp Piper voice model: %s", model_path.name)
         from piper import PiperVoice
@@ -254,7 +263,7 @@ def get_voice(voice_id: str = "ngochuyennew"):
                 config_path=str(config_path) if config_path.is_file() else None,
                 use_cuda=False)
 
-        _voice_instances[voice_id] = inst
+        _voice_instances[cache_key] = inst
         active_providers = getattr(inst.session, "get_providers", lambda: [])() if hasattr(inst, "session") else []
         device_label = "GPU (CUDA)" if any("CUDA" in str(p) for p in active_providers) else "CPU"
         log.info("Đã nạp xong model TTS %s [Thiết bị: %s]", voice_id, device_label)
@@ -330,10 +339,9 @@ def synth_text_to_wav(
     from tts.synthesis import synthesize_wav
     settings = dict(length_scale=length_scale, noise_scale=noise_scale, noise_w_scale=noise_w_scale)
 
-    with _voice_lock:
-        with wave.open(str(out_wav), "wb") as w:
-            for i, chunk in enumerate(chunks):
-                synthesize_wav(voice, chunk, w, set_wav_format=(i == 0), **settings)
+    with wave.open(str(out_wav), "wb") as w:
+        for i, chunk in enumerate(chunks):
+            synthesize_wav(voice, chunk, w, set_wav_format=(i == 0), **settings)
 
 
 def convert_wav(in_wav: Path, out_file: Path, fmt: str = "mp3", bitrate: str = "96k"):
@@ -420,3 +428,11 @@ def get_chapter_audio_path(audio_dir: Path, chapter_id: int, position: int | Non
     return None
 
 
+
+
+def release_worker_voices():
+    """Called only after all chapter consumers have stopped."""
+    with _voice_lock:
+        for key in list(_voice_instances):
+            if '@chapter-audio-' in key:
+                del _voice_instances[key]

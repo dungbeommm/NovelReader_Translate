@@ -8,12 +8,18 @@ router = APIRouter()
 
 @router.get('/api/settings/gdrive')
 def get_gdrive_settings():
-    return gdrive_service.get_gdrive_config()
+    return gdrive_service.public_gdrive_config()
 
 
 @router.post('/api/settings/gdrive')
 def save_gdrive_settings(payload: GDriveConfigInput):
-    return gdrive_service.save_gdrive_config(payload.model_dump())
+    # Saving non-secret preferences must not erase existing OAuth tokens.
+    updates = payload.model_dump(exclude_unset=True)
+    for key in ('access_token', 'refresh_token', 'client_secret'):
+        if not updates.get(key):
+            updates.pop(key, None)
+    gdrive_service.save_gdrive_config(updates)
+    return gdrive_service.public_gdrive_config()
 
 
 @router.post('/api/gdrive/auto-detect')
