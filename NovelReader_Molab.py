@@ -47,6 +47,8 @@ def shared_imports():
     import importlib.metadata
     import json
     import os
+    import platform
+    import queue
     import re
     import secrets
     import shutil
@@ -57,6 +59,7 @@ def shared_imports():
     import subprocess
     import sys
     import tempfile
+    import threading
     import time
     import urllib.request
     import zipfile
@@ -69,6 +72,8 @@ def shared_imports():
         importlib,
         mo,
         os,
+        platform,
+        queue,
         re,
         secrets,
         shutil,
@@ -77,6 +82,7 @@ def shared_imports():
         subprocess,
         sys,
         tempfile,
+        threading,
         time,
         urllib,
         zipfile,
@@ -486,11 +492,14 @@ def step5_launch_server(
     base_dir,
     mo,
     os,
+    platform,
+    queue,
     re,
     repo_dir,
     secrets,
     subprocess,
     sys,
+    threading,
     time,
     tunnel_selector,
     urllib,
@@ -501,18 +510,32 @@ def step5_launch_server(
     print("=" * 65)
 
     # 1. Dọn dẹp tiến trình cũ nếu chạy lại cell
-    subprocess.run(["pkill", "-f", "uvicorn.*main:app"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["pkill", "-f", "cloudflared"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(1.5)
+    for old_cmd in [
+        ["pkill", "-f", "uvicorn.*main:app"],
+        ["pkill", "-f", "cloudflared"],
+        ["pkill", "-f", "a.pinggy.io"],
+        ["pkill", "-f", "nokey@localhost.run"],
+    ]:
+        subprocess.run(old_cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1.0)
 
-    # 2. Sinh mã token truy cập bảo mật
+    # 2. Sinh mã token truy cập bảo mật và biến môi trường tunnel
     token_str = secrets.token_urlsafe(32)
     session_str = secrets.token_hex(16)
     os.environ["NOVEL_WEB_ACCESS_TOKEN"] = token_str
     os.environ["NOVEL_EXPORT_SESSION_ID"] = session_str
+    os.environ["ALLOW_TUNNEL"] = "1"
+    os.environ["ALLOWED_HOSTS"] = "*"
 
     log_server = repo_dir / "data/logs/colab-server.log"
     log_tunnel = repo_dir / "data/logs/colab-tunnel.log"
+
+    # Xóa file log tunnel cũ để không đọc nhầm URL của phiên trước
+    if log_tunnel.is_file():
+        try:
+            log_tunnel.unlink()
+        except Exception:
+            pass
 
     # Mở file log bền vững (không đóng theo with block để tránh lỗi broken pipe gây crash tiến trình nền)
     server_out = open(str(log_server), "a", buffering=1, encoding="utf-8", errors="replace")
@@ -556,19 +579,57 @@ def step5_launch_server(
     else:
         print("   ⚠️ Hết thời gian chờ phản hồi từ 127.0.0.1:8000.")
 
-    # 5. Khởi tạo Tunnel đa tầng (Pinggy HTTPS + Cloudflare HTTP/2)
+    # Hàm đọc log stream không chặn (non-blocking) với giới hạn thời gian thực
+    def _read_stream_url(proc, pattern, timeout=25):
+        if proc is None or proc.stdout is None:
+            return None
+        line_q = queue.Queue()
+        def _enqueue():
+            try:
+                for line in iter(proc.stdout.readline, ""):
+                    if line:
+                        line_q.put(line)
+                    else:
+                        break
+            except Exception:
+                pass
+            finally:
+                line_q.put(None)
+        reader_t = threading.Thread(target=_enqueue, daemon=True)
+        reader_t.start()
+        start_t = time.time()
+        while time.time() - start_t < timeout:
+            rem = max(0.1, timeout - (time.time() - start_t))
+            try:
+                item = line_q.get(timeout=min(0.5, rem))
+                if item is None:
+                    break
+                clean_item = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\([a-zA-Z]|\x1b\][^\a\x1b]*(?:\a|\x1b\\)", "", item)
+                m = re.search(pattern, clean_item)
+                if m:
+                    return (m.group(1) if m.groups() else m.group(0)).rstrip("/.")
+            except queue.Empty:
+                if proc.poll() is not None:
+                    break
+        return None
+
+    # 5. Khởi tạo Tunnel đa tầng (Pinggy HTTPS + Cloudflare HTTP/2 + Localhost.run)
     pinggy_url = None
     cloudflare_url = None
     lhr_url = None
+    tunnel_mode = getattr(tunnel_selector, "value", "auto") or "auto"
 
     # 5a. Pinggy HTTPS Tunnel (SSH Port 443 - Tuyệt đối không bị lỗi Cloudflare 1033)
-    tunnel_mode = getattr(tunnel_selector, "value", "auto") or "auto"
     if tunnel_mode in ("auto", "pinggy"):
         try:
             print("🌐 Đang kết nối Pinggy HTTPS Tunnel (Port 443)...")
             pinggy_proc = subprocess.Popen(
                 [
-                    "ssh", "-p", "443", "-o", "StrictHostKeyChecking=no",
+                    "ssh", "-p", "443",
+                    "-o", "StrictHostKeyChecking=no",
+                    "-o", "UserKnownHostsFile=/dev/null",
+                    "-o", "LogLevel=ERROR",
+                    "-o", "ConnectTimeout=15",
                     "-o", "ServerAliveInterval=30",
                     "-R", "0:localhost:8000", "a.pinggy.io"
                 ],
@@ -577,36 +638,38 @@ def step5_launch_server(
                 text=True,
                 env={**os.environ, "TERM": "dumb"}
             )
-            p_start = time.time()
-            while time.time() - p_start < 25:
-                p_line = pinggy_proc.stdout.readline()
-                if not p_line:
-                    break
-                p_match = re.search(r"(https://[a-zA-Z0-9.-]+\.pinggy[a-zA-Z0-9.-]*\.link)", p_line)
-                if p_match:
-                    pinggy_url = p_match.group(1)
-                    print(f"   ✅ Pinggy Tunnel sẵn sàng: {pinggy_url}")
-                    break
+            pinggy_url = _read_stream_url(
+                pinggy_proc,
+                r"https://[a-zA-Z0-9.-]+\.pinggy[a-zA-Z0-9.-]*\.link",
+                timeout=25
+            )
+            if pinggy_url:
+                print(f"   ✅ Pinggy Tunnel sẵn sàng: {pinggy_url}")
+            else:
+                try:
+                    pinggy_proc.terminate()
+                except Exception:
+                    pass
         except Exception as pinggy_err:
             print(f"   ⚠️ Lỗi kết nối Pinggy: {pinggy_err}")
 
     # 5b. Cloudflare Tunnel (HTTP/2 - Port 443)
-    cf_executable = base_dir / "cloudflared"
-    if tunnel_mode not in ("auto", "cloudflare"):
-        cf_executable = None
-    if sys.platform.startswith("linux") and not cf_executable.is_file():
-        try:
-            urllib.request.urlretrieve(
-                "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
-                cf_executable
-            )
-            cf_executable.chmod(0o755)
-        except Exception as cf_dl_err:
-            print(f"   ⚠️ Không tải được cloudflared: {cf_dl_err}")
+    cf_executable = None
+    if tunnel_mode in ("auto", "cloudflare"):
+        cf_executable = base_dir / "cloudflared"
+        if sys.platform.startswith("linux") and not cf_executable.is_file():
+            try:
+                cf_arch = "arm64" if "arm" in platform.machine().lower() or "aarch64" in platform.machine().lower() else "amd64"
+                urllib.request.urlretrieve(
+                    f"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-{cf_arch}",
+                    cf_executable
+                )
+                cf_executable.chmod(0o755)
+            except Exception as cf_dl_err:
+                print(f"   ⚠️ Không tải được cloudflared: {cf_dl_err}")
 
-    if cf_executable.is_file():
+    if cf_executable is not None and cf_executable.is_file():
         print("🌐 Đang kết nối Cloudflare Tunnel (HTTP/2)...")
-        # Sử dụng cờ --logfile độc lập để cloudflared ghi log trực tiếp, tránh đóng luồng gây Error 1033
         cf_proc = subprocess.Popen(
             [
                 str(cf_executable), "tunnel",
@@ -625,18 +688,27 @@ def step5_launch_server(
                 log_text = log_tunnel.read_text(errors="replace")
                 cf_match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", log_text)
                 if cf_match:
-                    cloudflare_url = cf_match.group(0)
+                    cloudflare_url = cf_match.group(0).rstrip("/.")
                     print(f"   ✅ Cloudflare Tunnel sẵn sàng: {cloudflare_url}")
                     break
             time.sleep(1)
+        if not cloudflare_url and cf_proc.poll() is None:
+            try:
+                cf_proc.terminate()
+            except Exception:
+                pass
 
-    # 5c. Localhost.run (Dự phòng nếu hai cổng trên đều không mở được)
-    if not pinggy_url and not cloudflare_url:
+    # 5c. Localhost.run (Dự phòng nếu hai cổng trên đều không mở được hoặc người dùng chọn riêng)
+    if (tunnel_mode == "localhost_run") or (tunnel_mode == "auto" and not pinggy_url and not cloudflare_url):
         print("🌐 Đang kết nối Localhost.run...")
         try:
             lhr_proc = subprocess.Popen(
                 [
-                    "ssh", "-o", "StrictHostKeyChecking=no",
+                    "ssh",
+                    "-o", "StrictHostKeyChecking=no",
+                    "-o", "UserKnownHostsFile=/dev/null",
+                    "-o", "LogLevel=ERROR",
+                    "-o", "ConnectTimeout=15",
                     "-o", "ServerAliveInterval=30",
                     "-R", "80:localhost:8000", "nokey@localhost.run"
                 ],
@@ -645,27 +717,32 @@ def step5_launch_server(
                 text=True,
                 env={**os.environ, "TERM": "dumb"}
             )
-            l_start = time.time()
-            while time.time() - l_start < 25:
-                l_line = lhr_proc.stdout.readline()
-                if not l_line:
-                    break
-                l_match = re.search(r"(https://[a-zA-Z0-9.-]+\.lhr\.life)", l_line)
-                if l_match:
-                    lhr_url = l_match.group(1)
-                    print(f"   ✅ Localhost.run sẵn sàng: {lhr_url}")
-                    break
+            lhr_url = _read_stream_url(
+                lhr_proc,
+                r"https://[a-zA-Z0-9.-]+\.(?:lhr\.life|lhr\.pro|localhost\.run)",
+                timeout=25
+            )
+            if lhr_url:
+                print(f"   ✅ Localhost.run sẵn sàng: {lhr_url}")
+            else:
+                try:
+                    lhr_proc.terminate()
+                except Exception:
+                    pass
         except Exception as lhr_err:
             print(f"   ⚠️ Lỗi kết nối Localhost.run: {lhr_err}")
 
     # 6. Hiển thị bảng điều khiển kết quả
     active_links = []
     if pinggy_url:
-        active_links.append(("Pinggy HTTPS (Khuyên dùng - 100% không lỗi 1033)", f"{pinggy_url}/?access_token={token_str}"))
+        p_clean = pinggy_url.rstrip("/")
+        active_links.append(("Pinggy HTTPS (Khuyên dùng - 100% không lỗi 1033)", f"{p_clean}/?access_token={token_str}"))
     if cloudflare_url:
-        active_links.append(("Cloudflare Tunnel", f"{cloudflare_url}/?access_token={token_str}"))
+        cf_clean = cloudflare_url.rstrip("/")
+        active_links.append(("Cloudflare Tunnel", f"{cf_clean}/?access_token={token_str}"))
     if lhr_url:
-        active_links.append(("Localhost.run", f"{lhr_url}/?access_token={token_str}"))
+        lhr_clean = lhr_url.rstrip("/")
+        active_links.append(("Localhost.run", f"{lhr_clean}/?access_token={token_str}"))
 
     if active_links and server_ready:
         primary_title, primary_link = active_links[0]
@@ -730,8 +807,13 @@ def step6_logs_view(
     subprocess,
 ):
     if stop_server_btn.value:
-        subprocess.run(["pkill", "-f", "uvicorn.*main:app"], check=False)
-        subprocess.run(["pkill", "-f", "cloudflared"], check=False)
+        for cmd in [
+            ["pkill", "-f", "uvicorn.*main:app"],
+            ["pkill", "-f", "cloudflared"],
+            ["pkill", "-f", "a.pinggy.io"],
+            ["pkill", "-f", "nokey@localhost.run"],
+        ]:
+            subprocess.run(cmd, check=False)
         action_msg = mo.md("🛑 **Đã gửi tín hiệu dừng máy chủ thành công.**")
     else:
         action_msg = mo.md("")

@@ -12,14 +12,14 @@ def has_access(headers, cookies):
     if not required:
         return True  # local-only deployments keep the existing behavior
     supplied = headers.get('x-novel-access') or cookies.get(COOKIE, '')
-    return _matches(supplied, required)
+    return _matches(str(supplied).strip(), required)
 
 
 def protect_request(request):
     required = os.getenv('NOVEL_WEB_ACCESS_TOKEN', '')
     if not required:
         return None
-    token = request.query_params.get('access_token', '')
+    token = request.query_params.get('access_token', '').strip()
     if request.url.path == '/' and token and _matches(token, required):
         return _grant(request, required)
     if has_access(request.headers, request.cookies):
@@ -39,7 +39,7 @@ def protect_request(request):
 
 def _matches(supplied, required):
     # compare_digest(str, str) raises TypeError for non-ASCII pasted text.
-    return hmac.compare_digest(str(supplied).encode('utf-8'), required.encode('utf-8'))
+    return hmac.compare_digest(str(supplied).strip().encode('utf-8'), required.strip().encode('utf-8'))
 
 
 def _grant(request, required):
@@ -81,8 +81,11 @@ async def handle_login(request):
     if request.method != 'POST':
         return Response(status_code=405, headers={'Allow': 'POST'})
     origin = request.headers.get('origin')
-    if origin and urlsplit(origin).netloc != request.headers.get('host', ''):
-        return Response('Origin không hợp lệ.', status_code=403, media_type='text/plain')
+    if origin:
+        origin_host = urlsplit(origin).netloc.split(':')[0].lower()
+        req_host = (request.headers.get('x-forwarded-host') or request.headers.get('host', '')).split(':')[0].lower()
+        if origin_host and req_host and origin_host != req_host:
+            return Response('Origin không hợp lệ.', status_code=403, media_type='text/plain')
     # Bound even streamed bodies, without relying solely on Content-Length.
     body = bytearray()
     async for chunk in request.stream():

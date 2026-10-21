@@ -163,10 +163,10 @@ def test_notebook_bootstrap_embedded_source_without_network_or_upload(tmp_path, 
     import subprocess
     import ast
     root = Path(__file__).resolve().parents[1]
-    notebook = json.loads((root/'NovelReader_Colab.ipynb').read_text())
+    notebook = json.loads((root/'NovelReader_Colab.ipynb').read_text(encoding='utf-8'))
     code = ''.join(notebook['cells'][2]['source'])
     assert 'files.upload(' not in code
-    code = code.replace('/content', str(tmp_path))
+    code = code.replace('/content', str(tmp_path).replace('\\', '/'))
     payload = io.BytesIO()
     with zipfile.ZipFile(payload, 'w') as archive:
         archive.writestr('NovelReader_T4_Web/main.py', '# downloaded source')
