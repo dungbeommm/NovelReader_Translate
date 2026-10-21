@@ -98,7 +98,7 @@ def test_draft_normalization_round_trip(client):
 
 
 def test_html_single_export_and_simple_sections():
- html=BeautifulSoup((Path(__file__).resolve().parents[1]/'web/static/index.html').read_text(),'html.parser')
+ html=BeautifulSoup((Path(__file__).resolve().parents[1]/'web/static/index.html').read_text(encoding='utf-8'),'html.parser')
  assert html.select_one('.header-right #btn-open-export')
  assert not html.select('.header-right #export-txt,.header-right #export-epub,.header-right #export-audio')
  assert html.select_one('#legacy-export-actions').has_attr('hidden')

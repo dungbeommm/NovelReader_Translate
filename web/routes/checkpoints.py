@@ -27,16 +27,45 @@ class RestoreCloud(BaseModel):
     file_id: str = Field(min_length=4, max_length=256)
 
 
+def _mask_key(k: str) -> str:
+    if not k:
+        return ""
+    if len(k) <= 8:
+        return "•" * len(k)
+    return k[:4] + "•" * (len(k) - 8) + k[-4:]
+
+
+@router.get('/api/settings/pixeldrain')
+def get_pixeldrain_key():
+    key = pixeldrain_service.get_pixeldrain_api_key() or ''
+    return {
+        'ok': True,
+        'has_key': bool(key),
+        'masked_key': _mask_key(key),
+        'api_key': key
+    }
+
+
 @router.post('/api/settings/pixeldrain')
 def save_key(payload: CloudKey):
-    cloud_settings.save_key(payload.api_key)
-    return {'ok': True, 'has_key': bool(pixeldrain_service.get_pixeldrain_api_key())}
+    clean = payload.api_key.strip()
+    cloud_settings.save_key(clean)
+    return {
+        'ok': True,
+        'has_key': bool(clean),
+        'masked_key': _mask_key(clean),
+        'message': 'Đã lưu API Key Pixeldrain thành công!' if clean else 'Đã xóa API Key Pixeldrain.'
+    }
 
 
 @router.post('/api/settings/pixeldrain/test')
-def test_connection():
+def test_connection(payload: CloudKey | None = None):
+    test_key = payload.api_key.strip() if payload and payload.api_key else None
     try:
-        return pixeldrain_service.check_connection()
+        res = pixeldrain_service.check_connection(test_key)
+        if test_key:
+            cloud_settings.save_key(test_key)
+        return res
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except RuntimeError as exc:

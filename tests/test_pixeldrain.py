@@ -7,6 +7,8 @@ from storage.store import Store
 
 
 def test_get_pixeldrain_api_key(monkeypatch):
+    monkeypatch.setattr("storage.cloud_settings.load_key", lambda: None)
+    monkeypatch.delenv("PIXELDRAIN_API_KEY", raising=False)
     assert pixeldrain_service.get_pixeldrain_api_key(None) is None
     assert pixeldrain_service.get_pixeldrain_api_key("custom_key") == "custom_key"
     monkeypatch.setenv("PIXELDRAIN_API_KEY", "env_key_123")

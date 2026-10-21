@@ -26,33 +26,39 @@ PIXELDRAIN_FILE_URL = "https://pixeldrain.com/u"
 
 
 def get_pixeldrain_api_key(passed_key: str | None = None) -> str | None:
-    """Retrieve Pixeldrain API key from argument, environment, or saved config."""
+    """Retrieve Pixeldrain API key from argument, saved config, or environment."""
     if passed_key and passed_key.strip():
         return passed_key.strip()
+    from storage.cloud_settings import load_key
+    saved = load_key()
+    if saved:
+        return saved
     env_key = os.getenv("PIXELDRAIN_API_KEY", "").strip()
     if env_key:
         return env_key
-    from storage.cloud_settings import load_key
-    return load_key() or None
+    return None
 
 
 def check_connection(api_key=None):
     key = get_pixeldrain_api_key(api_key)
     if not key:
-        raise ValueError("Chưa có API key Pixeldrain.")
+        raise ValueError("Chưa có API key Pixeldrain. Vui lòng nhập key và nhấn Lưu.")
     auth = base64.b64encode(f"api:{key}".encode()).decode()
     req = urllib.request.Request("https://pixeldrain.com/api/user", headers={
         "Authorization": f"Basic {auth}", "User-Agent": "NovelReader/4.4"})
     try:
-        with urllib.request.urlopen(req, timeout=20) as response:
+        with urllib.request.urlopen(req, timeout=15) as response:
             data = json.loads(response.read(1024 * 1024))
         if not isinstance(data, dict) or data.get('success') is False:
-            raise RuntimeError("Pixeldrain không xác nhận tài khoản.")
-        return {"ok": True, "message": "Kết nối Pixeldrain thành công."}
+            raise RuntimeError("API key không hợp lệ hoặc tài khoản bị khóa.")
+        username = data.get('username') or 'Người dùng'
+        return {"ok": True, "message": f"Kết nối Pixeldrain thành công! (Tài khoản: {username})"}
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"Pixeldrain HTTP {exc.code}: kiểm tra API key/quyền tài khoản.") from exc
+        if exc.code == 401:
+            raise RuntimeError("API key Pixeldrain không đúng (HTTP 401 Unauthorized).")
+        raise RuntimeError(f"Lỗi Pixeldrain HTTP {exc.code}: Vui lòng kiểm tra lại tài khoản.") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise RuntimeError("Không kết nối được Pixeldrain; kiểm tra mạng và thử lại.") from exc
+        raise RuntimeError("Không thể kết nối máy chủ Pixeldrain (kiểm tra Internet/DNS hoặc thử lại sau).") from exc
 
 
 def upload_to_pixeldrain(

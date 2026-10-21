@@ -197,11 +197,12 @@ async function exportToPixeldrain(format) {
     notice('Đang tải lên Pixeldrain. Vui lòng đợi...');
     return;
   }
-  const apiKey = localStorage.getItem('pixeldrain_api_key') || '';
+  const apiKey = localStorage.getItem('pixeldrain_api_key') || null;
   pixeldrainExportBusy = true;
   notice(`Đang xuất và tải ${format.toUpperCase()} lên Pixeldrain...`);
   try {
-    const res = await api('/api/export/pixeldrain/' + format, { api_key: apiKey }, 'POST');
+    const payload = apiKey ? { api_key: apiKey } : {};
+    const res = await api('/api/export/pixeldrain/' + format, payload, 'POST');
     if (res.ok) {
       notice(`✓ Đã tải lên Pixeldrain: ${res.url}`);
       showPixeldrainModal(res);
@@ -682,6 +683,7 @@ document.querySelectorAll('.modal-tab').forEach(tab => {
 // ----------------- PIXELDRAIN SETTINGS -----------------
 async function loadPixeldrainSettings() {
   const status = $('pixeldrain-key-status');
+  const input = $('modal-pixeldrain-key');
   try {
     // Migrate the old browser-only key once; do not retain it in localStorage.
     const oldKey = localStorage.getItem('pixeldrain_api_key');
@@ -689,10 +691,22 @@ async function loadPixeldrainSettings() {
       await api('/api/settings/pixeldrain', {api_key: oldKey});
       localStorage.removeItem('pixeldrain_api_key');
     }
-    const info = await api('/api/export/pixeldrain/status');
-    if (status) {
-      status.textContent = info.has_key ? 'Đã cấu hình · Chưa kiểm tra kết nối' : 'Chưa có API key';
-      status.style.color = info.has_key ? 'var(--green)' : 'var(--warning)';
+    const info = await api('/api/settings/pixeldrain');
+    if (info && info.ok) {
+      if (input && !input.dataset.userEditing) {
+        input.value = info.api_key || '';
+      }
+      if (status) {
+        if (info.has_key) {
+          status.textContent = '✓ Đã lưu (' + (info.masked_key || 'Đã cấu hình') + ')';
+          status.className = 'chip chip-success';
+          status.style.color = 'var(--md-sys-color-primary, #4ade80)';
+        } else {
+          status.textContent = 'Chưa lưu API key';
+          status.className = 'chip';
+          status.style.color = 'var(--text-muted, #8e918f)';
+        }
+      }
     }
     const checkpoint = await api('/api/checkpoints/status');
     const output = $('checkpoint-status');
@@ -706,21 +720,54 @@ async function loadPixeldrainSettings() {
         output.append(link);
       }
     }
-  } catch (e) { if (status) status.textContent = e.message; }
+  } catch (e) {
+    if (status) {
+      status.textContent = 'Lỗi: ' + e.message;
+      status.style.color = 'var(--md-sys-color-error, #cf6679)';
+    }
+  }
+}
+
+if ($('modal-pixeldrain-key')) {
+  $('modal-pixeldrain-key').addEventListener('input', () => {
+    $('modal-pixeldrain-key').dataset.userEditing = 'true';
+  });
 }
 
 if ($('btn-save-pixeldrain-key')) $('btn-save-pixeldrain-key').onclick = () => safe(async () => {
   const input = $('modal-pixeldrain-key');
-  await api('/api/settings/pixeldrain', {api_key: input.value.trim()});
+  const val = input ? input.value.trim() : '';
+  const status = $('pixeldrain-key-status');
+  if (status) status.textContent = 'Đang lưu...';
+  const res = await api('/api/settings/pixeldrain', {api_key: val});
   localStorage.removeItem('pixeldrain_api_key');
-  input.value = '';
+  if (input) delete input.dataset.userEditing;
   await loadPixeldrainSettings();
-  notice('Đã cập nhật key phía backend. Key để trống sẽ xóa key đã lưu; biến môi trường vẫn được ưu tiên.');
+  notice(val ? '✓ Đã lưu API key Pixeldrain thành công!' : 'Đã xóa API key Pixeldrain.');
 });
+
 if ($('btn-test-pixeldrain')) $('btn-test-pixeldrain').onclick = () => safe(async () => {
-  const result = await api('/api/settings/pixeldrain/test', {});
-  $('pixeldrain-key-status').textContent = '✓ Đã xác thực kết nối';
-  notice(result.message);
+  const input = $('modal-pixeldrain-key');
+  const val = input ? input.value.trim() : '';
+  const status = $('pixeldrain-key-status');
+  if (status) {
+    status.textContent = 'Đang kiểm tra...';
+    status.style.color = 'var(--text-muted, #8e918f)';
+  }
+  const result = await api('/api/settings/pixeldrain/test', {api_key: val});
+  if (result.ok) {
+    if (status) {
+      status.textContent = '✓ ' + (result.message || 'Kết nối thành công');
+      status.style.color = 'var(--md-sys-color-primary, #4ade80)';
+    }
+    notice('✓ ' + (result.message || 'Kết nối Pixeldrain thành công!'));
+  } else {
+    if (status) {
+      status.textContent = '⚠ ' + (result.message || 'Lỗi kết nối');
+      status.style.color = 'var(--md-sys-color-error, #cf6679)';
+    }
+    notice('Lỗi: ' + (result.message || 'Không thể kết nối'), true);
+  }
 });
 
 let checkpointBusy = false;
@@ -1121,10 +1168,11 @@ async function loadMergedGroups() {
       pdBtn.textContent = '☁ Pixeldrain';
       pdBtn.title = 'Tải file này lên Pixeldrain và lấy link chia sẻ';
       pdBtn.onclick = async () => {
-        const apiKey = localStorage.getItem('pixeldrain_api_key') || '';
+        const apiKey = localStorage.getItem('pixeldrain_api_key') || null;
         notice(`Đang tải ${g.filename} lên Pixeldrain...`);
         try {
-          const res = await api('/api/export/pixeldrain/file/' + encodeURIComponent(g.filename), { api_key: apiKey }, 'POST');
+          const payload = apiKey ? { api_key: apiKey } : {};
+          const res = await api('/api/export/pixeldrain/file/' + encodeURIComponent(g.filename), payload, 'POST');
           if (res.ok) {
             notice(`✓ Đã tải lên Pixeldrain: ${res.url}`);
             showPixeldrainModal(res);

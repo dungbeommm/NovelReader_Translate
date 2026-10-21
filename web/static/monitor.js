@@ -12,7 +12,10 @@ function bar(value,label){return `<progress max="100" ${valid(value)?`value="${M
 function metric(label,value){return `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`}
 function renderResources(r){
  const old=!r||!valid(r.age_seconds)||r.age_seconds>10||stale;
- el('resource-rings').innerHTML=resources.map(([key,label,hue])=>{const value=old?null:r[key]?.percent;return `<span class="resource-gauge"><span class="resource-ring ${valid(value)?'':'unavailable'}" style="--hue:${hue};--value:${valid(value)?Math.max(0,Math.min(100,value)):0}" aria-label="${label}: ${valid(value)?pct(value):'không có số liệu'}"><b>${valid(value)?Math.round(value):'—'}</b></span><span>${label}</span></span>`}).join('');
+ el('resource-rings').innerHTML=resources.map(([key,label,hue])=>{
+   const value=old?null:r[key]?.percent;
+   return `<span class="resource-gauge" title="${label}: ${valid(value)?pct(value):'—'}"><span class="resource-pill" style="--hue:${hue}"><b class="resource-dot"></b><span class="resource-name">${label}</span><span class="resource-val">${valid(value)?Math.round(value)+'%':'—'}</span></span></span>`;
+ }).join('');
  el('open-resources').title=old?'Tài nguyên: đang chờ hoặc mất kết nối':'Mức sử dụng (%) · bấm để xem chi tiết';
  el('resource-freshness').textContent=old?'Chưa có mẫu mới · không hiển thị số cũ như số hiện tại':`Cập nhật mỗi 2 giây · mẫu cách đây ${num(r.age_seconds)}s`;
  el('resource-cards').innerHTML=resources.map(([key,label,hue])=>{const x=r?.[key]||{},p=old?null:x.percent;return `<article class="resource-card" style="--hue:${hue}"><h3>${label}</h3><div class="resource-value">${pct(p)}</div><p>${key==='cpu'?`${x.logical_cores||'—'} CPU logic`:key==='gpu'?'GPU đo được':`${bytes(old?null:x.used_bytes)} / ${bytes(x.total_bytes)}`}</p><p>Đỉnh phiên ${pct(x.peak_percent)}</p></article>`}).join('');
@@ -21,10 +24,26 @@ function renderResources(r){
  el('resource-scope').textContent=`${r?.note||''}${r?.ram?.scope==='container'?' RAM đang theo hạn mức container.':''}${r?.process_rss_bytes?` Riêng tiến trình Web: ${bytes(r.process_rss_bytes)} RAM.`:''}${disks?' '+disks:''}`;
 }
 function renderTasks(t,j){
- const tr=t?.translation, rows=t?.audio||[], running=rows.filter(a=>a.state==='running'),done=rows.filter(a=>a.state==='done').length, completed=rows.reduce((s,a)=>s+(a.state==='done'?100:a.percent||0),0),audioPercent=rows.length?completed/rows.length:0;
+ const tr=t?.translation, rows=t?.audio||[], running=rows.filter(a=>a.state==='running'),done=rows.filter(a=>a.state==='done').length, completed=rows.reduce((s,a)=>s+(a.state==='done'?100:a.percent||0),0),audioPercent=rows.length?Math.round(completed/rows.length):0;
  el('dock-translation').textContent=stale?'Mất kết nối':tr?`${pct(tr.percent)}${valid(tr.chars_per_second)?' · '+(tr.chars_per_second>=1000?num(tr.chars_per_second/1000)+'k':num(tr.chars_per_second))+'/s':''}`:'Sẵn sàng';
  el('dock-audio').textContent=stale?'—':rows.length?(running.length?`${running.length} chạy · ${done}/${rows.length}`:`${done}/${rows.length} xong`):'Sẵn sàng';
  el('dock-translation-bar').value=stale?0:(tr?.percent||0);el('dock-audio-bar').value=stale?0:audioPercent;
+
+ // Update Live Workflow Card (Top: Translation Time/Speed, Bottom: Audio Speed/Progress)
+ if (el('trans-elapsed-time')) el('trans-elapsed-time').textContent = tr?.elapsed_seconds ? duration(tr.elapsed_seconds) : (j?.active ? 'Đang chạy' : '—');
+ if (el('trans-eta-time')) el('trans-eta-time').textContent = (tr?.state === 'running' && valid(tr?.eta_seconds)) ? duration(tr.eta_seconds) : '—';
+ if (el('trans-speed-rate')) el('trans-speed-rate').textContent = (valid(tr?.chars_per_second) && tr.chars_per_second > 0) ? `${num(tr.chars_per_second)} k/tự/s` : '—';
+ if (el('workflow-trans-state')) el('workflow-trans-state').textContent = stateLabel[j?.status] || 'Sẵn sàng';
+
+ const activeAudio = running[0] || rows[0];
+ if (el('audio-progress-text')) el('audio-progress-text').textContent = rows.length ? `${done} / ${rows.length} chương audio` : '0 / 0 chương audio';
+ if (el('audio-percent')) el('audio-percent').textContent = `${audioPercent}%`;
+ if (el('audio-progress-bar')) el('audio-progress-bar').value = audioPercent;
+ if (el('audio-speed-rate')) el('audio-speed-rate').textContent = (activeAudio && valid(activeAudio.audio_per_second)) ? `${num(activeAudio.audio_per_second)}× realtime` : (running.length ? 'Đang tạo...' : '—');
+ if (el('audio-elapsed-time')) el('audio-elapsed-time').textContent = (activeAudio && valid(activeAudio.elapsed_seconds)) ? duration(activeAudio.elapsed_seconds) : '—';
+ if (el('audio-eta-time')) el('audio-eta-time').textContent = (activeAudio?.state === 'running' && valid(activeAudio.audio_seconds) && valid(activeAudio.audio_per_second) && activeAudio.audio_per_second > 0) ? duration(Math.max(0, (activeAudio.audio_seconds - (activeAudio.elapsed_seconds || 0)) / activeAudio.audio_per_second)) : (running.length ? 'Đang tính...' : '—');
+ if (el('workflow-audio-state')) el('workflow-audio-state').textContent = running.length ? 'Đang tạo audio' : (done && done === rows.length ? 'Hoàn tất' : (rows.length ? 'Tạm dừng' : 'Chưa có'));
+
  el('task-freshness').textContent=stale?'Mất kết nối · thông tin bên dưới là mẫu cuối, không phải tiến trình trực tiếp':`${running.length&&!j?.active?'Đang tạo audio':stateLabel[j?.status]||j?.status||'Sẵn sàng'} · phiên đo ${duration(t?.session_seconds)}`;
  el('translation-scope').textContent=j?`${j.done}/${j.total} chương trong phạm vi`:'';
  const trState=tr?.state==='running'&&j?.status==='paused'?'paused':tr?.state==='running'&&j?.status==='stopping'?'stopped':tr?.state;

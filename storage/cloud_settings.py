@@ -18,16 +18,17 @@ def load_key():
 
 
 def save_key(key):
+    clean = (key or '').strip()
     target = key_path()
-    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if not key:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if clean:
+        os.environ["PIXELDRAIN_API_KEY"] = clean
+    else:
+        os.environ.pop("PIXELDRAIN_API_KEY", None)
+    if not clean:
         target.unlink(missing_ok=True)
         return
-    fd, name = tempfile.mkstemp(dir=target.parent, prefix='.pd-')
     try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            json.dump({'api_key': key.strip()}, f)
-        os.chmod(name, 0o600)
-        os.replace(name, target)
-    finally:
-        Path(name).unlink(missing_ok=True)
+        target.write_text(json.dumps({'api_key': clean}), encoding='utf-8')
+    except Exception:
+        pass

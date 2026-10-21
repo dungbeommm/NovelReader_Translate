@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import threading
 import wave
 import zipfile
@@ -84,7 +85,8 @@ def test_reject_checksum_damage_before_db_mutation(book, tmp_path):
 def test_cloud_key_saved_private_and_never_returned(book):
     cloud_settings.save_key('private-key')
     assert pixeldrain_service.get_pixeldrain_api_key() == 'private-key'
-    assert cloud_settings.key_path().stat().st_mode & 0o777 == 0o600
+    if os.name != 'nt':
+        assert cloud_settings.key_path().stat().st_mode & 0o777 == 0o600
     cloud_settings.save_key('')
     assert pixeldrain_service.get_pixeldrain_api_key() is None
 
