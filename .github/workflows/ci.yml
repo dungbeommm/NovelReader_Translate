@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff pytest httpx fastapi "pydantic>=2.9" python-multipart ebooklib beautifulsoup4 charset-normalizer opencc-python-reimplemented psutil websockets uvicorn gradio-client huggingface-hub sentencepiece ctranslate2 soundfile numpy
+      - name: Lint
+        run: ruff check --select F,E9 --ignore F401 --extend-exclude "*.ipynb" .
+      - name: Compile
+        run: python -m compileall -q .
+      - name: Test
+        run: python -m pytest -q tests
