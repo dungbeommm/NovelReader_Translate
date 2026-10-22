@@ -8,17 +8,15 @@ import sys
 import time
 from pathlib import Path
 
-# Fix UTF-8 display on Windows CMD
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 import oci
 
-# Cấu hình mặc định đã được trích xuất từ tài khoản Oracle Cloud Singapore
 CONFIG_PATH = Path("C:/Users/trung/.oci/config")
 DEFAULT_SUBNET_ID = "ocid1.subnet.oc1.ap-singapore-1.aaaaaaaavc7ew3xcr5zmi2xpyven7q2yklahbrurfkhhtzsa5usfx6zuoekq"
 DEFAULT_AD_NAME = "Qpri:AP-SINGAPORE-1-AD-1"
-DEFAULT_IMAGE_ID = "ocid1.image.oc1.ap-singapore-1.aaaaaaaaw75ef2chh5goomskvdznqz36cadczqelqvndbqcozc5icyig57za" # Ubuntu 24.04 ARM
+DEFAULT_IMAGE_ID = "ocid1.image.oc1.ap-singapore-1.aaaaaaaaw75ef2chh5goomskvdznqz36cadczqelqvndbqcozc5icyig57za"
 DEFAULT_SSH_KEY_PUB = Path("C:/Users/trung/Downloads/ssh-key-2026-10-20.key.pub")
 DEFAULT_SSH_KEY_PRIV = Path("C:/Users/trung/Downloads/ssh-key-2026-10-20.key")
 
@@ -104,12 +102,10 @@ def launch_hunter(
     compute_client = oci.core.ComputeClient(config)
     vn_client = oci.core.VirtualNetworkClient(config)
 
-    # Đọc SSH Key
     if not ssh_pub_path.is_file():
         raise FileNotFoundError(f"Không tìm thấy SSH public key: {ssh_pub_path}")
     ssh_public_key = ssh_pub_path.read_text(encoding="utf-8").strip()
 
-    # Encode user_data sang Base64
     user_data_b64 = base64.b64encode(CLOUD_INIT_SCRIPT.encode("utf-8")).decode("utf-8")
 
     instance_name = "novelreader-vps"
@@ -145,9 +141,9 @@ def launch_hunter(
     print(f"[*] Khu vực (Region): {config.get('region')}")
     print(f"[*] Phân vùng (AD):   {ad_name}")
     print(f"[*] Cấu hình yêu cầu: {ocpus} OCPU, {ram_gb} GB RAM (Always Free Max)")
-    print(f"[*] Tự động cài đặt:  Python 3.11, CTranslate2, Piper, NovelReader Web UI (Port 8000)")
+    print("[*] Tự động cài đặt:  Python 3.11, CTranslate2, Piper, NovelReader Web UI (Port 8000)")
     print(f"[*] Tần suất thử:     Mỗi {delay_seconds} giây")
-    print(f"[*] Nhấn Ctrl+C để dừng bất kỳ lúc nào.\n" + "-" * 65)
+    print("[*] Nhấn Ctrl+C để dừng bất kỳ lúc nào.\n" + "-" * 65)
 
     attempt = 0
     while True:

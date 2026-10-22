@@ -40,7 +40,7 @@ def test_glossary_tab_format():
 def test_invert_opener_spacing():
     assert invert_opener_spacing('“ Khấu Hồng”') == '“Khấu Hồng”'
     assert invert_opener_spacing('“Khấu Hồng”') == '“Khấu Hồng”'
-    assert invert_opener_spacing('“ 123”') == '“ 123”'  # numbers not stripped
+    assert invert_opener_spacing('“ 123”') == '“ 123”'
 
 def test_postprocess_honorifics():
     cfg = {'honorific_mode': 'safe', 'pronoun_harmonizer': True}
@@ -55,17 +55,14 @@ def test_postprocess_honorifics():
 
 def test_triplet_options_validation(client):
     H = {'X-App-Request': 'novel-translator'}
-    # Valid config with 3 triplet options
     r = client.post('/api/translate/start', json={
         'engine': 'HachimiMT-60-QT',
         'beam_size': 3,
         'chunk_mode': 'paragraph',
         'normalize_mode': 't2s'
     }, headers=H)
-    # Status code is 409 because no book loaded, but not 422 validation error
     assert r.status_code == 409 and 'Hãy nạp truyện trước' in r.text
 
-    # Invalid beam size should fail validation (422)
     r_bad = client.post('/api/translate/start', json={
         'beam_size': 10
     }, headers=H)

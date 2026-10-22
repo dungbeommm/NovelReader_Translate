@@ -40,7 +40,6 @@ def main():
     device = engine.translator.device if engine.translator is not None else engine.model.device
     if device != 'cuda':
         raise RuntimeError(f'CT2 đang chạy {device}, không phải CUDA')
-    # Release translation model before checking voice to keep smoke-test simple.
     del engine
     if args.tts_engine=='vieneu':
         import tempfile,os
@@ -61,7 +60,6 @@ def main():
     providers = voice.session.get_providers()
     if 'CUDAExecutionProvider' not in providers:
         raise RuntimeError(f'Piper session không dùng CUDA: {providers}')
-    # Separate WAVs because Piper sets WAV parameters on each synthesis call.
     before = time.perf_counter()
     durations = []
     for text in ('Xin chào, kiểm tra giọng đọc trên GPU.',

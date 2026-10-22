@@ -31,24 +31,14 @@ HONORIFIC_MODES = {HONORIFIC_OFF, HONORIFIC_SAFE, HONORIFIC_STRICT}
 KINSHIP_MODES = {"always", "classical_only"}
 _BOUNDARY_CHARS = r"\wÀ-ỹ"
 
-# ---------------------------------------------------------------------------
-# Bảng tra: ZH-term → {hv (đích Hán-Việt), drift (biến thể VI cần thay), tier}
-#   tier "kinship" = thân tộc/cặp/đồng môn/title (áp ở safe)
-#   tier "kinship_single" = thân tộc 1 ký tự (TẮT — hay trùng proper-noun)
-#   tier "pronoun" = đại từ (chỉ xianxia_strict + gate cổ trang)
-# hv=None = cụm KHÔNG phải xưng hô (chiếm span longest-match, chặn term ngắn lọt).
-# ---------------------------------------------------------------------------
 _RAW = {
-    # cụm không phải xưng hô (blacklist)
     "哥们": {"hv": None}, "哥们儿": {"hv": None}, "哥儿们": {"hv": None},
     "大哥大": {"hv": None}, "弟媳": {"hv": None}, "弟妹": {"hv": None},
     "小姐": {"hv": None}, "大嫂": {"hv": None}, "嫂子": {"hv": None}, "嫂": {"hv": None},
-    # ngoài scope đại từ số nhiều / compound sở hữu: chặn term số ít lọt vào
     "我们": {"hv": None}, "咱们": {"hv": None}, "你们": {"hv": None},
     "他们": {"hv": None}, "她们": {"hv": None},
     "我校": {"hv": None}, "我司": {"hv": None}, "我国": {"hv": None},
     "我方": {"hv": None}, "我院": {"hv": None},
-    # đồng môn tu tiên
     "师兄": {"hv": "sư huynh", "drift": ["sư ca", "sư anh"], "tier": "kinship"},
     "师弟": {"hv": "sư đệ", "drift": ["sư em"], "tier": "kinship"},
     "师姐": {"hv": "sư tỷ", "drift": ["sư chị"], "tier": "kinship"},
@@ -57,18 +47,15 @@ _RAW = {
     "师伯": {"hv": "sư bá", "drift": [], "tier": "kinship"},
     "师祖": {"hv": "sư tổ", "drift": [], "tier": "kinship"},
     "徒儿": {"hv": "đồ nhi", "drift": [], "tier": "kinship"},
-    # cặp collective
     "姐妹": {"hv": "tỷ muội", "drift": ["chị em"], "tier": "kinship"},
     "兄弟": {"hv": "huynh đệ", "drift": ["anh em"], "tier": "kinship"},
     "兄妹": {"hv": "huynh muội", "drift": ["anh em"], "tier": "kinship"},
     "姐弟": {"hv": "tỷ đệ", "drift": ["chị em"], "tier": "kinship"},
     "师徒": {"hv": "sư đồ", "drift": [], "tier": "kinship"},
-    # thân tộc đôi
     "姐姐": {"hv": "tỷ tỷ", "drift": ["chị gái", "chị"], "tier": "kinship"},
     "妹妹": {"hv": "muội muội", "drift": ["em gái"], "tier": "kinship"},
     "哥哥": {"hv": "ca ca", "drift": ["anh trai", "anh"], "tier": "kinship"},
     "弟弟": {"hv": "đệ đệ", "drift": ["em trai"], "tier": "kinship"},
-    # titles
     "大哥": {"hv": "đại ca", "drift": ["anh cả", "anh lớn", "anh hai"], "tier": "kinship"},
     "公子": {"hv": "công tử", "drift": [], "tier": "kinship"},
     "姑娘": {"hv": "cô nương", "drift": [], "tier": "kinship"},
@@ -77,12 +64,10 @@ _RAW = {
     "前辈": {"hv": "tiền bối", "drift": [], "tier": "kinship"},
     "晚辈": {"hv": "vãn bối", "drift": [], "tier": "kinship"},
     "本座": {"hv": "bản tọa", "drift": [], "tier": "kinship"},
-    # thân tộc ĐƠN (TẮT mặc định — 1 ký tự hay trùng proper-noun 哥伦比亚/空姐)
     "姐": {"hv": "tỷ", "drift": ["chị"], "tier": "kinship_single"},
     "妹": {"hv": "muội", "drift": [], "tier": "kinship_single"},
     "哥": {"hv": "ca", "drift": ["anh"], "tier": "kinship_single"},
     "弟": {"hv": "đệ", "drift": [], "tier": "kinship_single"},
-    # đại từ (pronoun) — drift đã loại từ trùng tên riêng (anh/chị) + "mình"
     "你": {"hv": "ngươi", "drift": ["cậu", "bạn", "mày"], "tier": "pronoun"},
     "您": {"hv": "ngài", "drift": ["ông", "bác"], "tier": "pronoun"},
     "他": {"hv": "hắn", "drift": ["anh ấy", "anh ta", "cậu ấy", "cậu ta", "gã"], "tier": "pronoun"},
@@ -94,7 +79,7 @@ HONORIFIC_MAP: dict[str, dict] = {}
 for _k, _v in _RAW.items():
     _e = dict(_v)
     if _e.get("drift"):
-        _e["drift"] = sorted(_e["drift"], key=len, reverse=True)  # phrase dài trước
+        _e["drift"] = sorted(_e["drift"], key=len, reverse=True)
     HONORIFIC_MAP[_k] = _e
 
 _TERMS_BY_LEN = sorted(HONORIFIC_MAP.keys(), key=len, reverse=True)
@@ -292,7 +277,7 @@ def _mode_to_flags(mode: str) -> tuple[bool, bool]:
         return True, False
     if mode == HONORIFIC_STRICT:
         return True, True
-    return False, False  # off
+    return False, False
 
 
 def normalize_honorifics(zh: str, vi: str, mode: str | None = None,
@@ -347,7 +332,6 @@ def normalize_honorifics(zh: str, vi: str, mode: str | None = None,
     return vi
 
 
-# alias để test suite port (dùng tên `normalize`) chạy được
 normalize = normalize_honorifics
 
 

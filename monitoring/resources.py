@@ -35,7 +35,6 @@ def nvidia_devices():
 def memory_usage():
     if psutil is None:return dict(percent=None,used_bytes=None,total_bytes=None,scope='unavailable')
     m=psutil.virtual_memory();used,total=m.total-m.available,m.total;scope='host_available'
-    # cgroup v2 / v1: prefer notebook/container allowance to the host RAM.
     for maximum,current in [('/sys/fs/cgroup/memory.max','/sys/fs/cgroup/memory.current'),
                             ('/sys/fs/cgroup/memory/memory.limit_in_bytes','/sys/fs/cgroup/memory/memory.usage_in_bytes')]:
         try:
@@ -65,7 +64,7 @@ class ResourceSampler:
         self.stop_event.wait(.2)
         while not self.stop_event.is_set():
             try:self.sample()
-            except Exception:pass  # Keep prior timestamp: UI will mark stale, not invent data.
+            except Exception:pass
             self.stop_event.wait(2)
 
     def sample(self):
@@ -84,7 +83,6 @@ class ResourceSampler:
             except OSError:pass
         gpu_values=[g['percent'] for g in devices if g['percent'] is not None]
         gpu=dict(percent=sum(gpu_values)/len(gpu_values) if gpu_values else None)
-        # Never pretend that a partially unmeasured device has zero VRAM.
         valid=bool(devices) and all(g['used_bytes'] is not None and g['total_bytes'] for g in devices)
         used=sum(g['used_bytes'] for g in devices) if valid else None
         total=sum(g['total_bytes'] for g in devices) if valid else None

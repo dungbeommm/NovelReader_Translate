@@ -22,7 +22,7 @@ def api_env(tmp_path, monkeypatch):
     monkeypatch.setenv('NOVEL_DRIVE_BACKEND','api')
     monkeypatch.setenv('NOVEL_DRIVE_CREDENTIAL_DIR',str(tmp_path/'private'))
     monkeypatch.setenv('NOVEL_DATA',str(tmp_path/'data'))
-    monkeypatch.setenv('NOVEL_COLAB_DRIVE_BRIDGE','1') # old setting must not trigger mount
+    monkeypatch.setenv('NOVEL_COLAB_DRIVE_BRIDGE','1')
     return tmp_path
 
 
@@ -165,7 +165,7 @@ def test_kaggle_notebook_config_uses_api_and_keeps_gpu_zero(tmp_path,monkeypatch
         assert os.environ['HACHIMIMT_GPU_INDICES']=='0'
         assert os.environ['HACHIMIMT_AUTO_ALL_GPUS']=='0'
         assert 'NOVEL_BALANCE_GPUS' not in code
-        assert os.environ['COLAB_GPU']=='1'  # original v4.2 config kept unchanged
+        assert os.environ['COLAB_GPU']=='1'
     finally:
         os.environ.clear();os.environ.update(before)
     assert "if not IS_KAGGLE:\n    from google.colab import drive" in ''.join(x['cells'][10]['source'])
@@ -245,4 +245,4 @@ def test_kaggle_bootstrap_keeps_legacy_checkpoint(tmp_path,monkeypatch):
     assert (legacy/'data/novel.sqlite3').read_text()=='existing checkpoint'
     assert (legacy/'gdrive/api_drive.py').is_file()
     assert not (tmp_path/'working/NovelReader_GPU_notebook.zip').exists()
-    assert (legacy/'audio/vieneu_service.py').is_file()  # Embedded source bootstraps offline.
+    assert (legacy/'audio/vieneu_service.py').is_file()

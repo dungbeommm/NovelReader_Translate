@@ -10,7 +10,6 @@ sys.path.insert(0, str(ROOT))
 
 
 def install_vieneu(device):
-    # Optional dependencies: do not make Piper users install the whole SDK.
     subprocess.run([sys.executable, '-m', 'pip', 'install', 'vieneu==3.8.3', 'soundfile', 'transformers==4.57.6'], check=True)
     if device == 'cuda':
         try:
@@ -22,8 +21,6 @@ def install_vieneu(device):
             subprocess.run([sys.executable, '-m', 'pip', 'install', 'torch==2.8.0', 'torchaudio==2.8.0', '--index-url', 'https://download.pytorch.org/whl/cu128'], check=True)
         else:
             subprocess.run([sys.executable, '-m', 'pip', 'install', 'torchaudio==2.8.0'], check=True)
-        # CPU and GPU ORT distributions install the same Python module. Reinstall
-        # GPU files AFTER removing CPU ORT, otherwise importing Piper can break.
         subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'onnxruntime'], check=True)
         subprocess.run([sys.executable, '-m', 'pip', 'install', '--force-reinstall', '--no-deps', 'onnxruntime-gpu>=1.21,<2'], check=True)
 
@@ -48,7 +45,6 @@ def main(argv=None):
     if args.install:
         device = args.device
         if device == 'auto':
-            # Choose hardware without importing CPU torch before replacing its wheel.
             gpu = subprocess.run(['nvidia-smi','--query-gpu=name','--format=csv,noheader'], capture_output=True, text=True) if __import__('shutil').which('nvidia-smi') else None
             device = 'cuda' if gpu and gpu.returncode == 0 and gpu.stdout.strip() else 'cpu'
         install_vieneu(device)

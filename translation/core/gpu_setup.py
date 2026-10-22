@@ -17,8 +17,6 @@ import os
 import sys
 from typing import Callable, Iterator
 
-# Các channel CUDA mà PyTorch stable phát hành (cao → thấp).
-# (major, minor, "cuXXX")
 _TORCH_CUDA_CHANNELS = [
     (12, 8, "cu128"),
     (12, 6, "cu126"),
@@ -35,7 +33,6 @@ def choose_cuda_channel(driver_cuda: str | None) -> str | None:
     Trả None nếu driver quá cũ hơn cả bản thấp nhất (cu118).
     """
     if not driver_cuda:
-        # Không biết driver → chọn bản phổ biến tương thích rộng nhất.
         return "cu118"
     try:
         major, minor = (int(part) for part in driver_cuda.split(".")[:2])
@@ -48,9 +45,6 @@ def choose_cuda_channel(driver_cuda: str | None) -> str | None:
 
 
 def torch_install_command(channel: str) -> list[str]:
-    # --upgrade --force-reinstall: BẮT BUỘC. Nếu user đã có torch-CPU (vd từ setup
-    # cũ / requirements-pytorch), `pip install torch` thường báo "already satisfied"
-    # và KHÔNG ghi đè → cài xong vẫn là CPU. Force-reinstall đảm bảo lấy bản CUDA.
     return [
         sys.executable,
         "-m",
@@ -76,7 +70,7 @@ def verify_torch_cuda() -> tuple[bool, str]:
         "print('CUDA_OK='+str(torch.cuda.is_available()))"
     )
     env = dict(os.environ)
-    env.pop("CUDA_VISIBLE_DEVICES", None)  # bỏ mask để torch nhìn thấy GPU thật
+    env.pop("CUDA_VISIBLE_DEVICES", None)
     try:
         result = subprocess.run(
             [sys.executable, "-c", code],
@@ -214,8 +208,6 @@ def install_torch_cuda(
             "Kiểm tra mạng/dung lượng đĩa, hoặc cài thủ công theo README."
         )
 
-    # Cài xong chưa đủ — xác minh torch và CT2 THẬT SỰ thấy CUDA (bắt 'already
-    # satisfied', bản không khớp driver, hoặc CT2 không nạp được CUDA/cuBLAS).
     ok, verify_msg = verify_torch_cuda()
     if not ok:
         return False, verify_msg

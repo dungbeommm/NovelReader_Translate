@@ -46,7 +46,6 @@ class Store:
         with self.connect() as c:
             c.execute("UPDATE chapter SET audio_status='none' WHERE audio_status IN ('queued', 'generating')")
 
-        # Backward-compatible SQLite migration: persist the output folder per book.
         with self.connect() as c:
             columns = {row['name'] for row in c.execute('PRAGMA table_info(book)')}
             if 'output_folder' not in columns:
@@ -198,7 +197,6 @@ class Store:
         return full_file
 
     def replace(self, name, encoding, chapters):
-        # Preserve previous books' exports; never reset another title's output.
         title = Path(name.replace('\\', '/')).stem
         folder = self._available_folder(title)
         with self.connect() as c:
@@ -397,7 +395,6 @@ class Store:
                 c.execute('DELETE FROM book')
 
         if purge_cache:
-            # Xóa các file .tmp, .temp trong project
             for pattern in ('*.tmp', '*.temp', '*.log'):
                 for p in list(self.path.parent.glob(pattern)):
                     if p.is_file() and p.name != 'novel.sqlite3':
@@ -410,7 +407,6 @@ class Store:
                         except Exception:
                             pass
 
-            # Xóa các file tạm wav trong thư mục temp hệ thống
             import tempfile
             tmp_dir = Path(tempfile.gettempdir())
             for p in list(tmp_dir.glob('chunk_*.wav')) + list(tmp_dir.glob('chapter_*.wav')) + list(tmp_dir.glob('chapter.*')):

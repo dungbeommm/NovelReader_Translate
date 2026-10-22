@@ -326,7 +326,6 @@ def test_job_scoped_range_smaller_than_group_size_auto_merges(tmp_path, monkeypa
     monkeypatch.setattr(audio_service, 'generate_chapter_audio', generate)
 
     job = Job(store)
-    # Translate chapters 1 to 5 with group_size=50 (5 < 50)
     job.start({'engine': 'local', 'glossary': '', 'batch_size': 8,
                'start_pos': 1, 'end_pos': 5, 'group_size': 50,
                'force_retranslate': True, 'auto_group_audio': True})
@@ -334,7 +333,6 @@ def test_job_scoped_range_smaller_than_group_size_auto_merges(tmp_path, monkeypa
     assert not job.thread.is_alive()
     assert job.status == 'ready'
 
-    # Must automatically merge chapters 1..5 into one file even though 5 < 50
     assert len(fake_merge) >= 1
     merged_files = fake_merge[-1][0]
     assert merged_files == [f'chuong_{i:04d}.wav' for i in range(1, 6)]

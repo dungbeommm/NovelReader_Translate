@@ -61,7 +61,6 @@ def create_checkpoint(store, destination, include_audio=False):
         snap = Path(temp) / 'novel.sqlite3'
         with store.connect() as source, sqlite3.connect(snap) as target:
             source.backup(target)
-            # Ignore unknown fields even if an old config contains credentials.
             row = target.execute('SELECT config FROM book LIMIT 1').fetchone()
             target.execute('UPDATE book SET config=?', (json.dumps(clean_config(json.loads(row[0] or '{}')), ensure_ascii=False),))
         with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
@@ -120,7 +119,6 @@ def parse_pixeldrain_id(value):
 
 def download_checkpoint(value, destination):
     file_id = parse_pixeldrain_id(value)
-    # No arbitrary URLs, no redirects to other hosts (SSRF).
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs):
             raise ValueError('Không cho phép chuyển hướng khi tải checkpoint.')

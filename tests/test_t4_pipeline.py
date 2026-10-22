@@ -110,7 +110,7 @@ def test_stop_with_full_queue_does_not_leave_queued_chapters(tmp_path, monkeypat
     try:
         assert entered.wait(3)
         job.pause()
-        job.stop()  # wakes a paused producer AND consumer
+        job.stop()
     finally:
         release.set()
         finish(job)
@@ -187,7 +187,6 @@ def test_oom_retries_same_segments_without_loss(tmp_path, monkeypatch):
                 raise RuntimeError('CUDA out of memory')
             return super().translate(texts, glossary, **kwargs)
     store, job = setup(tmp_path, monkeypatch, count=1, engine=OOM())
-    # Multiple source segments force a real smaller re-batch.
     store.replace('x.txt', 'utf8', [('第一章', '甲\n乙\n丙\n丁')])
     job.start(config(generate_audio=False))
     finish(job)

@@ -158,7 +158,6 @@ def _run(task_id, store, job_lock):
         task = read_task(task_id)
         task.update(status='uploading', message='Đang sao chép bản xuất lên Google Drive…')
         write_task(task)
-        # Fixed by the notebook, never accepted as a user-supplied request path.
         drive_root = Path(os.getenv('NOVEL_COLAB_DRIVE_ROOT', '/content/drive/MyDrive'))
         if not drive_root.is_dir():
             raise RuntimeError('Drive chưa được mount hoặc đã mất kết nối; bản gốc vẫn còn ở Colab.')

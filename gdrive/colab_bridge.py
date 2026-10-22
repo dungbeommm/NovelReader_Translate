@@ -28,7 +28,6 @@ def process_drive_requests(directory, mount_drive, mountpoint='/content/drive'):
         return 0
     error = None
     try:
-        # Colab reuses an existing mount; otherwise presents Google's permission UI.
         print('Có yêu cầu xuất file: hãy cho phép kết nối Google Drive trong tab Colab.', flush=True)
         mount_drive(mountpoint)
         if not (Path(mountpoint) / 'MyDrive').is_dir():
@@ -39,7 +38,7 @@ def process_drive_requests(directory, mount_drive, mountpoint='/content/drive'):
     for task_id in waiting:
         task = read_task(task_id)
         if task.get('status') != 'waiting_permission':
-            continue  # e.g. worker timed out while the permission UI was open
+            continue
         task.update(status='auth_error' if error else 'authorized',
                     message=('Cấp quyền Drive chưa thành công: ' + error) if error else 'Đã kết nối Drive')
         write_task(task)

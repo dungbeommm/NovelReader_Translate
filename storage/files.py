@@ -25,7 +25,6 @@ def parse_file(name,data):
         text,encoding=decode_text(data)
         return split_chapters(text),encoding
     if ext!='.epub': raise ValueError('Chỉ hỗ trợ .txt và .epub.')
-    # Guard compressed bombs, path traversal and encrypted archives before ebooklib.
     with zipfile.ZipFile(BytesIO(data)) as z:
         infos=z.infolist()
         if len(infos)>20000 or sum(i.file_size for i in infos)>200*1024*1024:

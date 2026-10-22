@@ -25,16 +25,16 @@ def get_gdrive_config() -> dict:
             pass
     return {
         "enabled": False,
-        "mode": "local_folder",    # "local_folder" hoac "api"
-        "local_path": "",          # Vi du: G:\My Drive\Novel_Audio
-        "client_id": "",           # Google Cloud OAuth Client ID
-        "client_secret": "",       # Google Cloud OAuth Client Secret
-        "access_token": "",        # Google Drive API Access Token
-        "refresh_token": "",       # Token lam moi tu dong vinh vien
-        "account_email": "",       # Email tai khoan da lien ket
-        "folder_id": "",           # Google Drive Folder ID
+        "mode": "local_folder",
+        "local_path": "",
+        "client_id": "",
+        "client_secret": "",
+        "access_token": "",
+        "refresh_token": "",
+        "account_email": "",
+        "folder_id": "",
         "folder_name": "Novel_Audio",
-        "auto_upload": False       # Tu dong upload sau khi tao audio
+        "auto_upload": False
     }
 
 
@@ -67,7 +67,6 @@ def save_gdrive_config(cfg: dict) -> dict:
 def auto_detect_desktop_gdrive() -> str | None:
     """Tu dong tim kiem thu muc Google Drive Desktop tren Windows."""
     candidates = []
-    # 1. Cac o dia ao cua Google Drive Desktop (G:, H:, I:, ...)
     for letter in "GHIJKLMNOPQRSTUVWXYZCDE":
         drive = Path(f"{letter}:/")
         if drive.exists():
@@ -78,7 +77,6 @@ def auto_detect_desktop_gdrive() -> str | None:
                 drive / "Meu Drive",
                 drive / "Mi unidad",
             ])
-    # 2. Thu muc trong UserProfile
     user_home = Path.home()
     candidates.extend([
         user_home / "Google Drive",
@@ -138,7 +136,6 @@ def exchange_code_for_tokens(code: str, redirect_uri: str) -> dict:
     access_token = token_data.get("access_token", "")
     refresh_token = token_data.get("refresh_token") or cfg.get("refresh_token", "")
 
-    # Lay email tai khoan da lien ket
     account_email = ""
     try:
         user_req = urllib.request.Request("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {access_token}"})
@@ -148,7 +145,6 @@ def exchange_code_for_tokens(code: str, redirect_uri: str) -> dict:
     except Exception:
         pass
 
-    # Tu dong tao thu muc Novel_Audio tren Google Drive neu chua co
     folder_id = cfg.get("folder_id", "")
     try:
         folder_id = ensure_drive_folder(access_token, folder_name="Novel_Audio")
@@ -204,7 +200,6 @@ def ensure_drive_folder(token: str, folder_name: str = "Novel_Audio") -> str:
     """Kiem tra hoac tu dong tao thu muc Novel_Audio tren Google Drive."""
     headers = {"Authorization": f"Bearer {token}"}
     
-    # 1. Tim kiem thu muc da ton tai
     query = f"mimeType = 'application/vnd.google-apps.folder' and name = '{folder_name}' and trashed = false"
     search_url = f"https://www.googleapis.com/drive/v3/files?q={urllib.parse.quote(query)}&fields=files(id,name)"
     req = urllib.request.Request(search_url, headers=headers)
@@ -214,7 +209,6 @@ def ensure_drive_folder(token: str, folder_name: str = "Novel_Audio") -> str:
         if files:
             return files[0]["id"]
 
-    # 2. Neu chua co, tu dong tao thu muc moi
     create_url = "https://www.googleapis.com/drive/v3/files"
     meta = {
         "name": folder_name,
@@ -269,7 +263,6 @@ def test_gdrive_connection() -> tuple[bool, str]:
                 return True, f"Kết nối Google Drive API thành công: Thư mục '{data.get('name', folder_id)}'{email_info}"
         except urllib.error.HTTPError as e:
             if e.code == 401 and cfg.get("refresh_token"):
-                # Thu refresh token mot lan nua
                 token = refresh_access_token_if_needed()
                 if token:
                     return test_gdrive_connection()
@@ -337,7 +330,6 @@ def upload_audio_file(file_path: Path, subfolder_name: str = None) -> tuple[bool
             return True, f"Google Drive File ID: {file_id}"
         except urllib.error.HTTPError as e:
             if e.code == 401 and cfg.get("refresh_token"):
-                # Token het han -> Tu dong refresh va thu lai
                 log.info("Google token het han, dang tu dong refresh token...")
                 new_token = refresh_access_token_if_needed()
                 if new_token:

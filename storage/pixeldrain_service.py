@@ -79,7 +79,6 @@ def upload_to_pixeldrain(
         file_path = Path(data_or_path)
         if not file_path.is_file():
             raise FileNotFoundError(f"Không tìm thấy file để upload: {file_path}")
-        # urllib streams file objects when Content-Length is provided.
         payload = file_path
         size_bytes = file_path.stat().st_size
     elif isinstance(data_or_path, io.BytesIO):
@@ -98,7 +97,6 @@ def upload_to_pixeldrain(
     }
 
     if key:
-        # Pixeldrain Basic Auth: username is 'api' or blank, password is API key
         auth_str = f"api:{key}"
         encoded_auth = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
         headers["Authorization"] = f"Basic {encoded_auth}"
@@ -188,7 +186,6 @@ def export_book_to_pixeldrain(store, kind: str, api_key: str | None = None) -> d
             raise ValueError("Chưa có file audio nào để xuất.")
 
         filename = f"{safe_title}_audio.zip"
-        # Already-compressed audio: disk-backed ZIP, no full-book RAM copy.
         with tempfile.TemporaryDirectory(prefix="novel-audio-export-") as work:
             archive = Path(work) / filename
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_STORED) as z:
@@ -201,7 +198,6 @@ def export_book_to_pixeldrain(store, kind: str, api_key: str | None = None) -> d
 
 def export_audio_file_to_pixeldrain(store, filename: str, api_key: str | None = None) -> dict:
     """Upload a specific chapter audio or merged audio file to Pixeldrain."""
-    # Look in audio_dir root or audio_gop
     candidates = [
         (store.audio_dir / filename).resolve(),
         (store.audio_dir / "audio_gop" / filename).resolve(),

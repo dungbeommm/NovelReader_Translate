@@ -143,7 +143,6 @@ def get_runtime():
         except ImportError as exc:
             raise RuntimeError('Chưa cài VieNeu. Chạy python scripts/setup_tts.py --engine vieneu --install --preload.') from exc
         spec = model_spec()
-        # SDK resolves/caches BOTH backbone and MOSS codec; do not pass GGUF here.
         runtime = Vieneu(mode='v3turbo', backbone_repo=spec['backbone_repo'],
                          model_subfolder=spec['model_subfolder'], moss_tokenizer=spec['moss_tokenizer'],
                          onnx_subfolder=spec['onnx_subfolder'], device=device,
@@ -161,12 +160,10 @@ def synthesize_to_wav(text, voice_id, destination, temperature=0.8, top_p=0.95, 
     if voice_id not in references['voices']:
         raise ValueError(f'Không có giọng VieNeu {voice_id}; không tự đổi giọng.')
     ref = references['voices'][voice_id]
-    # Public SDK accepts a voice dict. No private SDK fields or monkey-patching.
     voice = {'speaker_emb': np.asarray(ref['speaker_emb'], dtype=np.float32),
              'codes': np.asarray(ref['codes'], dtype=np.int64)}
     from monitoring.tasks import audio_report, characters
     from audio.audio_service import split_text_for_tts
-    # Observable outer groups; SDK still batches inner segments on the same runtime.
     chunks=split_text_for_tts(text,max_chars=4000)
     total=sum(characters(c) for c in chunks);completed=0;duration=0.
     audio_report(stage='waiting',total=total,completed=0)

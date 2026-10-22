@@ -7,7 +7,6 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 def test_tts_http_with_stub_voice_real_ffmpeg(monkeypatch):
-    # Real HTTP validation, real WAV/MP3 conversion; voice is intentionally stubbed.
     from fastapi.testclient import TestClient
     sys.path.insert(0,str(ROOT))
     spec=importlib.util.spec_from_file_location('tts_server',ROOT/'tts/server.py')

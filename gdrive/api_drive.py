@@ -60,7 +60,6 @@ def _client(raw):
         raise ValueError('Client ID không hợp lệ.')
     if not isinstance(secret, str) or not secret or len(secret)>4096:
         raise ValueError('Thiếu client secret hợp lệ trong JSON.')
-    # Never trust URLs from an uploaded client JSON.
     return {'installed': {'client_id': client_id, 'client_secret': secret,
         'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
         'token_uri': 'https://oauth2.googleapis.com/token', 'redirect_uris': [REDIRECT]}}
@@ -196,7 +195,6 @@ def _upload_file(drive, file, parent, filename, progress=None):
                 progress(round(chunk.progress()*100))
         return result
     finally:
-        # MediaFileUpload owns the input stream; release it even on upload errors.
         media.stream().close()
 
 

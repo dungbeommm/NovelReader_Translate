@@ -64,7 +64,7 @@ def test_same_title_never_overwrites_existing_output(tmp_path):
     assert (original/'chuong_0001.txt').is_file()
     current = store.text_dir
     store.set_title('Truyện A')
-    assert store.text_dir == current  # Saving the unchanged title is a no-op.
+    assert store.text_dir == current
 
 
 def test_folder_persists_on_restart(tmp_path):

@@ -89,7 +89,6 @@ def process_voice(item, config_only=False):
         raise ValueError('ID giọng không hợp lệ')
     folder = item.get('folder', f'low-{vid}')
     base = f'https://raw.githubusercontent.com/dungbeommm/NovelReader_voices/main/voices/low/{folder}'
-    # metadata improves display names and includes canonical CDN URLs.
     try:
         with urllib.request.urlopen(urllib.request.Request(base + '/voice_info.json', headers=HEADERS), timeout=15) as response:
             meta = json.loads(response.read().decode('utf-8-sig'))
@@ -136,7 +135,6 @@ def main(argv=None):
     selected_id = 'ngochuyennew' if args.default_only else args.voice
     if selected_id and selected_id not in {v['id'] for v in catalog}:
         parser.error('Giọng không có trong danh mục.')
-    # Preserve the entire catalog, including not-yet-installed voices.
     by_id = {v['id']: v for v in catalog}
     tasks = [v for v in catalog if not selected_id or v['id'] == selected_id]
     failed = 0

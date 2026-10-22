@@ -90,10 +90,8 @@ def main():
     print(f"✅ Phát hiện GPU: {gpu_name} (VRAM: {vram_str})")
     print(f"📌 CUDA Driver Version: {driver_cuda or 'N/A'}")
 
-    # 1. Cài đặt các gói thư viện cuBLAS 12 và cuDNN nếu là Linux (chứa libcublas.so.12)
     install_nvidia_libs_if_needed()
 
-    # 2. Kiểm tra PyTorch CUDA hiện tại
     torch_ok, msg = verify_torch_cuda()
     channel = choose_cuda_channel(driver_cuda) or "cu124"
 
@@ -108,10 +106,8 @@ def main():
             sys.exit(2)
         print(f"✅ {res_msg}")
 
-    # 3. Preload các thư viện CUDA (libcublas.so.12, libcublasLt.so.12) vào bộ nhớ tiến trình
     preload_cuda_libraries()
 
-    # 4. Kiểm tra CTranslate2 CUDA
     ct2_ok, ct2_msg = verify_ct2_cuda()
     if ct2_ok:
         print(f"✅ CTranslate2 CUDA: {ct2_msg}")
@@ -120,7 +116,6 @@ def main():
         print("   Đang thiết lập cờ HACHIMIMT_FORCE_CT2_CUDA=1...")
         os.environ["HACHIMIMT_FORCE_CT2_CUDA"] = "1"
 
-    # 5. Đánh thức GPU và kiểm tra tensor
     try:
         import torch
         if torch.cuda.is_available():

@@ -225,7 +225,6 @@ def group_and_merge_chapters(store, group_size: int = 50, fmt: str = "mp3",
                 'download_url': f'/api/audio/groups/{out_filename}'
             }
 
-        # Case 2: Scoped selection with count <= group_size
         if chapter_ids is not None:
             allowed = set(chapter_ids)
             scoped_chapters = [c for c in all_chapters if c['id'] in allowed and c.get('position', 0) > 0]
@@ -243,7 +242,6 @@ def group_and_merge_chapters(store, group_size: int = 50, fmt: str = "mp3",
                         results.append(res)
                 return results
 
-            # Scoped selection > group_size: split into groups of group_size, plus remainder
             buckets = {}
             for c in scoped_chapters:
                 pos = c['position']
@@ -267,7 +265,6 @@ def group_and_merge_chapters(store, group_size: int = 50, fmt: str = "mp3",
                             results.append(res)
             return results
 
-        # chapter_ids is None: Scan all existing audio in the book (Manual merge)
         buckets = {}
         for chapter in all_chapters:
             position = chapter.get('position', 0)

@@ -87,7 +87,6 @@ def list_available_voices() -> list[dict]:
         except Exception:
             manifest_items = []
 
-    # Always show the full bundled catalog on a fresh Molab/runtime.
     try:
         bundled = json.loads((BASE_DIR.parent / 'tts/voices_catalog.json').read_text('utf-8'))
         existing = {it.get('id') for it in manifest_items if isinstance(it, dict)}
@@ -97,7 +96,6 @@ def list_available_voices() -> list[dict]:
     voices = []
     seen_ids = set()
 
-    # 1. Quét tất cả các file .onnx đã có sẵn trong thư mục voice
     for onnx in sorted(VOICE_DIR.glob("*.onnx")):
         vid = onnx.stem
         cfg = onnx.with_suffix(".onnx.json")
@@ -137,7 +135,6 @@ def list_available_voices() -> list[dict]:
             "downloaded": True
         })
 
-    # 2. Đưa thêm các giọng trong manifest (nếu chưa tải) để luôn hiển thị đầy đủ
     for it in manifest_items:
         vid = it.get("id")
         if not vid or vid in seen_ids:
@@ -163,14 +160,12 @@ def list_available_voices() -> list[dict]:
             "downloaded": False
         })
 
-    # Đưa giọng mặc định lên đầu, sau đó sắp xếp theo giới tính rồi đến tên
     voices.sort(key=lambda x: (not x["is_default"], x["gender"] != "female", x["name"]))
     return voices
 
 
 def _prepare_ort():
     import onnxruntime as ort
-    # ORT >=1.21 knows the pip NVIDIA runtime layout. Also support older ORT.
     preload = getattr(ort, 'preload_dlls', None)
     if preload:
         try:
@@ -211,8 +206,6 @@ def get_voice(voice_id: str = "ngochuyennew"):
     voice_id = (voice_id or "ngochuyennew").strip()
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", voice_id):
         raise ValueError("ID giọng đọc không hợp lệ")
-    # Separate Piper/phonemizer/ORT state per consumer; never serialize inference
-    # behind the model-loading lock. Cache slots are released after queue shutdown.
     worker = threading.current_thread().name
     cache_key = f"{voice_id}@{worker}" if worker.startswith('chapter-audio-') else voice_id
     if cache_key in _voice_instances:
@@ -358,7 +351,6 @@ def convert_wav(in_wav: Path, out_file: Path, fmt: str = "mp3", bitrate: str = "
     if not 0.4 <= speed <= 2.5 or sample_rate not in (0, 22050, 24000, 44100, 48000):
         raise ValueError('Tốc độ/tần số xuất không hợp lệ.')
     if speed != 1.0:
-        # Keep each atempo stage within 0.5–2 for older FFmpeg builds.
         filters = []
         remaining = speed
         while remaining < 0.5:
@@ -374,7 +366,7 @@ def convert_wav(in_wav: Path, out_file: Path, fmt: str = "mp3", bitrate: str = "
         if effective_rate<=24000:
             raise ValueError('MP3 192 kbps cần 44.1 hoặc 48 kHz. Chọn 128 kbps hoặc đổi tần số xuất để tránh hạ âm thầm xuống 160 kbps.')
     if fmt in ('opus', 'ogg'):
-        sample_rate = 48000  # Opus decoder clock; never imply 22.05 kHz Opus.
+        sample_rate = 48000
     if sample_rate:
         cmd.extend(['-ar', str(sample_rate)])
     if fmt == "mp3":
@@ -386,7 +378,6 @@ def convert_wav(in_wav: Path, out_file: Path, fmt: str = "mp3", bitrate: str = "
     elif fmt == "wav":
         cmd.extend(["-c:a", "pcm_s16le", str(out_file)])
     else:
-        # Mặc định mp3
         cmd.extend(["-c:a", "libmp3lame", "-threads", "0", "-b:a", bitrate, str(out_file)])
 
     subprocess.run(cmd, check=True, timeout=600)
@@ -427,7 +418,6 @@ def generate_chapter_audio(
     voice = get_voice(voice_id) if tts_engine == 'piper' else None
     length_scale = 1.0 / max(0.4, min(2.5, speed))
 
-    # Same filesystem for atomic publication; partial MP3s are never visible.
     with tempfile.TemporaryDirectory(prefix=".audio-", dir=audio_dir) as tmp_dir:
         tmp_path = Path(tmp_dir)
         raw_wav = tmp_path / "chapter.wav"
@@ -451,7 +441,6 @@ def generate_chapter_audio(
         convert_wav(raw_wav, temp_target, **convert_options)
 
         os.replace(temp_target, out_file)
-        # Remove stale alternatives only after successful atomic publication.
         for ext in ('mp3','m4b','m4a','opus','wav'):
             for old in (audio_dir/f'chuong_{position:04d}.{ext}',audio_dir/f'chapter_{chapter_id}.{ext}',audio_dir/f'chuong_{position}.{ext}'):
                 if old!=out_file: old.unlink(missing_ok=True)

@@ -127,7 +127,6 @@ def test_pixeldrain_audio_uses_completed_files_only(tmp_path,monkeypatch):
  from storage.store import Store
  from storage import pixeldrain_service as pd
  store=Store(tmp_path/'book.sqlite3',text_dir=tmp_path/'text',audio_dir=tmp_path/'audio')
- # Use the same book creation path as the existing API tests.
  from storage.files import parse_file
  parsed=parse_file('test.txt','第一章\n你好。'.encode())
  store.replace("test.txt",parsed[1],parsed[0])

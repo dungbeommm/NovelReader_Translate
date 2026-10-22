@@ -17,8 +17,6 @@ def main():
                          'ctranslate2==4.6.0',
                          'nvidia-cublas-cu12>=12,<13', os.getenv('NOVEL_CUDNN_SPEC', 'nvidia-cudnn-cu12==9.10.2.21'),
                          'nvidia-cuda-runtime-cu12>=12,<13'], check=True)
-    # piper-tts itself may require the CPU distribution. Remove both AFTER all
-    # normal dependency resolution; the GPU wheel provides the same ort module.
     subprocess.run(pip + ['uninstall', '-y', 'onnxruntime', 'onnxruntime-gpu'], check=True)
     subprocess.run(pip + ['install', '-q', 'onnxruntime-gpu==1.23.2'], check=True)
     print('Đã cài ORT GPU. Không chạy pip -r requirements.txt sau bước này; nếu cần, chạy lại script này.')

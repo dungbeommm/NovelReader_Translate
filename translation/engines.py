@@ -199,7 +199,7 @@ class LocalEngine(TranslatorEngine):
             self.translator = None
             log.warning("HachimiTranslator core load failed (%s), using fallback CT2 loader: %s", self.model_key, exc)
 
-        from .ct2_safe_import import import_ctranslate2
+        from translation.core.ct2_safe_import import import_ctranslate2
         ctranslate2 = import_ctranslate2()
         import sentencepiece as spm
         from huggingface_hub import snapshot_download
@@ -267,9 +267,8 @@ class LocalEngine(TranslatorEngine):
         )
         mode = 'paragraph' if chunk_mode == 'paragraph' else 'sentence'
 
-        # 1. Primary path: Official HachimiTranslator core
         if self.translator is not None:
-            from .text_preprocess import normalize_chinese_text
+            from translation.core.text_preprocess import normalize_chinese_text
             all_chunks = []
             mapping = []
 
@@ -287,7 +286,6 @@ class LocalEngine(TranslatorEngine):
             if not all_chunks:
                 return ['' for _ in texts]
 
-            # Batch translation with clamped beam_size
             from translation.core.translator import Backend
             if getattr(self.translator, '_backend', Backend.CT2) == Backend.TRANSFORMERS:
                 translated_chunks = self.translator._translate_torch_batch(all_chunks, beam_size=beam)
@@ -302,8 +300,7 @@ class LocalEngine(TranslatorEngine):
                     outputs.append(' '.join(translated_chunks[start:end]).strip())
             return outputs
 
-        # 2. Fallback path
-        from .text_preprocess import normalize_chinese_text
+        from translation.core.text_preprocess import normalize_chinese_text
         from .core.chunker import split_chunks
         jobs = []
         groups = []
@@ -392,7 +389,6 @@ class SpaceEngine(TranslatorEngine):
                 if len(extracted) == len(non_empty):
                     return [extracted.get(i, '') if batch_texts[i].strip() else '' for i in range(len(batch_texts))]
 
-                # Fallback: split on \n\n if markers missing
                 splits = [invert_opener_spacing(re.sub(r'^§\d+§\s*', '', s).strip()) for s in full_text.split('\n\n') if s.strip()]
                 if len(splits) == len(non_empty):
                     res_map = {idx: splits[pos] for pos, idx in enumerate(non_empty)}

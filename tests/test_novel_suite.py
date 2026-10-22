@@ -48,7 +48,6 @@ def test_novel_store_operations():
         assert len(ch_list) == 3
         assert ch_list[0]["status"] == "pending"
 
-        # Update translation for chapter 0
         store.update(
             ch_list[0]["id"],
             translated=["Bản dịch 1", "Bản dịch 2"],
@@ -58,17 +57,14 @@ def test_novel_store_operations():
         assert ch0["status"] == "done"
         assert len(ch0["translated"]) == 2
 
-        # Reset chapter 0
         store.reset_chapters([ch_list[0]["id"]])
         ch0_reset = store.get(ch_list[0]["id"])
         assert ch0_reset["status"] == "pending"
         assert ch0_reset["translated"] == []
 
-        # Delete chapter 2
         store.delete_chapters([ch_list[2]["id"]])
         assert len(store.list()) == 2
 
-        # Clear store
         store.clear()
         assert store.book() is None
         assert store.list() == []
@@ -90,7 +86,7 @@ def test_novel_files_and_export():
     assert "Dịch đoạn 1".encode("utf-8") in txt_data
 
     epub_data = export_epub(book, ch_objs)
-    assert epub_data.startswith(b"PK")  # ZIP / EPUB magic header
+    assert epub_data.startswith(b"PK")
 
 
 def test_novel_service():
@@ -98,7 +94,6 @@ def test_novel_service():
         db_path = Path(tmpdir) / "test_svc.sqlite3"
         svc = NovelService(db_path=db_path)
 
-        # Ingest text file
         book_path = Path(tmpdir) / "sample.txt"
         book_path.write_text(SAMPLE_TXT, encoding="utf-8")
 
@@ -112,12 +107,10 @@ def test_novel_service():
         assert toc[0][2] == "第1章 Mở đầu"
         assert "◷" in toc[0][4]
 
-        # Test reader html
         html = svc.render_reader_html(toc[0][0], view_mode="Song song (Đối chiếu)")
         assert "第1章" in html
         assert "novel-reader-box" in html
 
-        # Test delete and reset
         del_msg = svc.delete_chapters([toc[0][0]])
         assert "1 chương" in del_msg
         assert len(svc.get_toc_data()) == 1

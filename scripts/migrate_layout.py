@@ -67,7 +67,6 @@ def build_plan(source, destination, flat_output=False):
                     continue
                 name = f.name
                 if kind == 'output_audio':
-                    # Drop ID aliases and stale fingerprints; chapter-position files are canonical.
                     if name.startswith('chapter_') or name.endswith('.sources.json'):
                         continue
                     is_group = len(rel.parts) > 1 or name.count('_') >= 2
@@ -83,7 +82,6 @@ def build_plan(source, destination, flat_output=False):
 def migrate(source, destination, apply=False, flat_output=False):
     plan = build_plan(source, destination, flat_output)
     targets = {}
-    # Check ALL conflicts before copying, rather than half-migrating a database.
     for old, new in plan:
         if not new.resolve().is_relative_to(destination.resolve()):
             raise ValueError(f'Đích nằm ngoài thư mục cài đặt: {new}')
@@ -97,7 +95,6 @@ def migrate(source, destination, apply=False, flat_output=False):
         if apply and not new.exists():
             new.parent.mkdir(parents=True, exist_ok=True)
             if old.suffix == '.sqlite3':
-                # SQLite backup includes committed WAL pages; the old app must be stopped first.
                 with sqlite3.connect(f'{old.as_uri()}?mode=ro', uri=True) as src:
                     with sqlite3.connect(new) as dst:
                         src.backup(dst)

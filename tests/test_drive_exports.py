@@ -183,7 +183,7 @@ def test_notebook_bootstrap_embedded_source_without_network_or_upload(tmp_path, 
     monkeypatch.setattr(subprocess, 'run', lambda *a, **k: None)
     monkeypatch.setitem(sys.modules, 'google', types.ModuleType('google'))
     colab = types.ModuleType('google.colab')
-    colab.files = types.SimpleNamespace()  # intentionally has NO upload method
+    colab.files = types.SimpleNamespace()
     monkeypatch.setitem(sys.modules, 'google.colab', colab)
     original_cwd, original_path = os.getcwd(), sys.path[:]
     try:
@@ -191,7 +191,7 @@ def test_notebook_bootstrap_embedded_source_without_network_or_upload(tmp_path, 
     finally:
         os.chdir(original_cwd)
         sys.path[:] = original_path
-    assert calls == []  # Source is embedded; no stale remote bootstrap ZIP required.
+    assert calls == []
     project = tmp_path/'NovelReader_T4_Web'
     assert (project/'web/routes/drive_exports.py').is_file()
     assert 'protect_request' in (project/'web/application.py').read_text()

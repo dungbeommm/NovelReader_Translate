@@ -11,7 +11,6 @@ import time
 from pathlib import Path
 from typing import Generator
 
-# Ensure repo root is in sys.path
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -45,7 +44,6 @@ class NovelService:
 
     def load_novel(self, file_path_or_obj, manual_path: str = "") -> tuple[bool, str]:
         """Loads and parses a novel from uploaded file or local path."""
-        target_path: Path | None = None
         data: bytes | None = None
         filename: str = ""
 
@@ -109,7 +107,6 @@ class NovelService:
         from translation.core.text_preprocess import normalize_chinese_text
         from translation.core.glossary import compile_glossary, protect_glossary_text, restore_glossary_rows, apply_glossary_rows
 
-        # Safely resolve apply_postprocess_rows without package collision
         apply_postprocess_rows = None
         for mod_key in ("hachimi_app", "app"):
             mod = sys.modules.get(mod_key)
@@ -212,7 +209,6 @@ class NovelService:
             trans_paras = []
 
         if len(trans_paras) < len(source_paras):
-            # Pad with empty or single line if segmented differently
             while len(trans_paras) < len(source_paras):
                 trans_paras.append("")
 
@@ -289,7 +285,7 @@ class NovelService:
                 c["title"],
                 c["translated_title"] or "(chưa dịch)",
                 icons.get(c["status"], c["status"]),
-                False,  # checkbox for multi-select
+                False,
             ])
         return rows
 
@@ -323,12 +319,12 @@ class NovelService:
 
         lines = [
             f'<div class="novel-reader-box {mode_class}" style="font-size: {font_size};">',
-            f'  <div class="novel-chapter-header">',
+            '  <div class="novel-chapter-header">',
             f'    <div class="novel-chap-badge">CHƯƠNG #{chapter["position"]}</div>',
             f'    <h3 class="novel-chap-title-vi">{title_vi}</h3>',
             f'    <div class="novel-chap-title-zh">{title_zh}</div>',
-            f'  </div>',
-            f'  <div class="novel-paragraphs-container">',
+            '  </div>',
+            '  <div class="novel-paragraphs-container">',
         ]
 
         max_len = max(len(source_paras), len(trans_paras), 1)
@@ -343,12 +339,11 @@ class NovelService:
             lines.append(f'    <div class="novel-para-row" id="row-{i+1}">')
             lines.append(f'      <div class="novel-col-zh"><span class="para-num">{i+1}</span><p>{zh or "—"}</p></div>')
             lines.append(f'      <div class="novel-col-vi"><p>{vi_html}</p></div>')
-            lines.append(f'    </div>')
+            lines.append('    </div>')
 
         lines.append('  </div>')
         lines.append('</div>')
         return "\n".join(lines)
 
 
-# Global novel service instance
 novel_service = NovelService()
