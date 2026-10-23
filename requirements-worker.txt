@@ -12,7 +12,6 @@ ctranslate2>=4.5,<5
 sentencepiece>=0.2,<1
 gradio-client>=1.10,<3
 opencc-python-reimplemented>=0.1.7,<1
-transformers>=4.40,<5
 sacremoses>=0.1.1
 safetensors>=0.4
 google-api-python-client>=2.150,<3

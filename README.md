@@ -1,43 +1,26 @@
 # NovelReader
 
-NovelReader imports Chinese novels, translates them to Vietnamese with the Hachimi core, and can create speech with Piper or VieNeu. The Web interface and FastAPI service continue to run from the Molab marimo notebook.
+NovelReader nhập truyện TXT/EPUB, dịch sang tiếng Việt và tạo audio bằng Piper hoặc VieNeu. Giao diện HTML của ứng dụng được phục vụ bởi FastAPI; `NovelReader_Molab.py` khởi động toàn bộ ứng dụng trong phiên Molab và hiển thị nút mở giao diện.
 
-## Run on Molab
+## Chạy trên Molab
 
-Open `NovelReader_Molab.py`, select the translation model, TTS engine, and voice, then start the server. The default translation model is `HachimiMT-60-QT`; choose `HachimiMT-60` for modern settings. The notebook checks the GPU and runs translation/TTS inference before it reports GPU readiness. CPU mode remains available when no GPU is attached.
+1. Mở `NovelReader_Molab.py` trong Molab.
+2. Chọn bộ đọc và giọng đọc, sau đó chạy lần lượt các cell từ trên xuống.
+3. Chờ cài thư viện và chuẩn bị giọng hoàn tất. Cell cuối khởi chạy server và tạo Cloudflare Quick Tunnel.
+4. Bấm **Mở giao diện NovelReader** trong thẻ HTML được hiển thị.
 
-The initial translation batch is estimated from available VRAM. If translation runs out of memory, the worker lowers the batch and retries the same work. Audio begins with one worker. GPU throughput and end-to-end speed have not been benchmarked on Molab hardware in this workspace.
+Nếu Molab đã mở cả repository, notebook dùng trực tiếp mã nguồn đó. Nếu chỉ tải notebook lên, nó lấy mã nguồn từ GitHub vào thư mục phiên. CPU được dùng khi không tìm thấy NVIDIA GPU. Piper là lựa chọn nhẹ; VieNeu tải các thành phần inference và model cần thiết, nên bước chuẩn bị sẽ lâu hơn.
 
-Molab sessions are limited in duration. NovelReader sets a 690-minute processing budget to leave time for a checkpoint, but the notebook cannot guarantee the runtime itself will stay available for 12 hours. At the next session, start the app, connect a Hugging Face write token, and restore the latest checkpoint before continuing. Keep the Molab page open while the current web service is in use; this version does not create a background VPS worker or restart sessions automatically.
+Giữ phiên Molab hoạt động trong khi dùng ứng dụng. Khi phiên runtime kết thúc, server, tunnel và cache model trong runtime cũng dừng. Lưu tiến độ qua **Cài đặt → Sao lưu & Khôi phục** trong giao diện trước khi kết thúc phiên. Có thể khôi phục checkpoint ở phiên sau.
 
-## Hugging Face Bucket
+Liên kết mở ứng dụng chứa access token của phiên. Chỉ chia sẻ với người được phép truy cập. Đích Hugging Face Bucket mặc định là công khai; chỉ tải lên nội dung có thể chia sẻ công khai.
 
-The default destination is `hf://buckets/uri410/NovelReader_Cloud_Audio`. The bucket is public, so uploaded source text, translations, configuration, and checkpoints may be read by other people. Only upload stories you are comfortable making public.
+## Chạy cục bộ
 
-In **Settings → Backup & Restore**, enter a Hugging Face write token. The token is held in the running Web process memory and is not written into logs, checkpoints, or bucket objects. Alternatively set `HF_TOKEN` or `HUGGINGFACE_HUB_TOKEN` in the runtime environment. After a restart, enter the token again unless supplied through the environment.
-
-Completed chapter text and audio are queued for upload. A bounded background worker retries failures with backoff and persists its local upload queue. When automatic checkpointing is enabled, NovelReader writes a SQLite-consistent checkpoint periodically and after a job. The archive is uploaded before its checksum manifest and latest pointer; restore validates the checksum before applying the checkpoint. Audio can be included in a checkpoint, or fetched later with **Nạp audio đã lưu** after restoring the story.
-
-Use **Save checkpoint** for a manual save and **Restore** to load a listed story. Restore replaces the active story, so save any current work first. A local ZIP checkpoint and legacy Pixeldrain restore remain available for migration.
-
-## Translation and audio
-
-The model selector uses the models defined in the Hachimi registry. Translation uses the core public `translate_text` API, which owns token-aware chunking and layout restoration. NovelReader preserves paragraph boundaries, glossary terms, and model-specific decoding settings. Blank source paragraphs remain blank. Missing output lines are treated as errors rather than silently dropped.
-
-Translation and audio progress are stored in local SQLite while the runtime is alive. Continue processes missing or failed work; changing only the voice requires regenerating audio. The Bucket checkpoint is the durable copy across runtime resets. Models and voice weights are not included in checkpoints.
-
-## Local development
-
-Install `requirements.txt`, then run:
+Cài thư viện từ `requirements.txt`, rồi chạy:
 
 ```powershell
 python main.py
 ```
 
-Run focused tests with:
-
-```powershell
-python -m pytest tests/test_translation_pipeline.py tests/test_text.py tests/test_glossary.py tests/test_jobs.py tests/test_api.py
-```
-
-GPU, model quality, Piper/VieNeu speed, and long-session behavior require measurements on the target Molab runtime. This workspace has not performed a live Bucket upload or a real Molab benchmark.
+Mở `http://127.0.0.1:8000`. Model dịch và giọng đọc có thể tải/chọn từ giao diện.

@@ -1,892 +1,278 @@
 # /// script
+# dependencies = ["marimo>=0.19,<1"]
+# ///
+"""NovelReader: bootstrap and launch the web app in a Molab session."""
 
 import marimo
 
 __generated_with = "0.25.1"
-app = marimo.App(
-    width="full",
-    app_title="NovelReader AI — Molab Marimo Edition",
-    css_file="custom.css",
-    html_head_file="head.html",
-    auto_download=["html"],
-)
+app = marimo.App(width="full", app_title="NovelReader · Molab")
 
 
 @app.cell
-def shared_imports():
-    import datetime
-    import hashlib as _hashlib
-    import json
+def _intro():
+    import marimo as mo
     import os
-    import platform
-    import queue
-    import re
-    import secrets
-    import shutil
-    import site
-    import socket
-    import sqlite3
-    import stat
     import subprocess
     import sys
-    import tempfile
-    import threading
-    import time
-    import urllib.request
-    import zipfile
     from pathlib import Path
-    import marimo as mo
 
-    return (
-        Path,
-        datetime,
-        mo,
-        os,
-        platform,
-        queue,
-        re,
-        secrets,
-        shutil,
-        site,
-        sqlite3,
-        subprocess,
-        sys,
-        tempfile,
-        threading,
-        time,
-        urllib,
-        zipfile,
+    engine = mo.ui.dropdown(
+        options={"Piper · nhẹ": "piper", "VieNeu v3": "vieneu"},
+        value="Piper · nhẹ", label="Bộ đọc",
     )
+    piper_voice = mo.ui.dropdown(
+        options=["ngochuyennew", "banmai", "calmwoman3688", "adam1", "chieuthanh", "deepman3909"],
+        value="ngochuyennew", label="Giọng Piper",
+    )
+    vieneu_voice = mo.ui.dropdown(
+        options=["truc_ly", "minh_quan_pro", "adam_bua", "mai_anh", "thuy_dung", "ngoc_huyen"],
+        value="truc_ly", label="Giọng VieNeu",
+    )
+
+    mo.output.replace(mo.vstack([
+        mo.md("# NovelReader"),
+        mo.md("Nạp truyện **TXT/EPUB**, dịch sang tiếng Việt và tạo audio. Chạy cell theo thứ tự từ trên xuống; giữ phiên Molab mở khi sử dụng."),
+        engine,
+        mo.hstack([piper_voice, vieneu_voice], gap=2),
+    ]))
+    return Path, engine, mo, os, piper_voice, subprocess, sys, vieneu_voice
 
 
 @app.cell
-def intro_ui(mo):
-    model_selector = mo.ui.dropdown(
-        options={
-            "HachimiMT-60-QT · Cổ trang": "HachimiMT-60-QT",
-            "HachimiMT-60 · Hiện đại": "HachimiMT-60",
-            "HachimiMT-40-QT · Cổ trang, nhẹ": "HachimiMT-40-QT",
-            "HachimiMT-30 · Nhẹ": "HachimiMT-30",
-            "MoxhiMT-60 · Kiếm hiệp": "MoxhiMT-60",
-            "MoxhiMT-30": "MoxhiMT-30",
-            "MoxhiMT-30-QT · Cổ trang": "MoxhiMT-30-QT",
-            "HirashibaMT-Medium": "HirashibaMT-Medium",
-            "HirashibaMT-Tiny · Nhẹ": "HirashibaMT-Tiny",
-        },
-        value="HachimiMT-60-QT · Cổ trang",
-        label="Dịch thuật (Model)",
-    )
+def _prepare(Path, mo, os, subprocess, sys):
+    """Use the checked-out project, or fetch its source when only this file was uploaded."""
+    import shutil
+    import urllib.request as _urllib_bootstrap
+    import zipfile
 
-    voice_selector = mo.ui.dropdown(
-        options={
-            "Ngọc Huyền (Mới) (ngochuyennew)": "ngochuyennew",
-            "Ban Mai (banmai)": "banmai",
-            "Calm Woman (calmwoman3688)": "calmwoman3688",
-            "Adam (adam1)": "adam1",
-            "Chiêu Thành (chieuthanh)": "chieuthanh",
-            "Deep Man (deepman3909)": "deepman3909",
-            "Kinh Phật (kinhphat)": "kinhphat",
-            "Duy Oryx (duyoryx3175)": "duyoryx3175",
-            "Lạc Phi (lacphi)": "lacphi",
-            "Mai Phương (maiphuong)": "maiphuong",
-            "Mạnh Dũng (manhdung)": "manhdung",
-            "Minh Quang (minhquang)": "minhquang",
-            "Minh Khang (minhkhang)": "minhkhang",
-            "Ngọc Huyền (ngochuyen)": "ngochuyen",
-            "Ngọc Ngân (ngocngan3701)": "ngocngan3701",
-            "Tài An (taian4)": "taian4",
-            "Phương Trang (phuongtrang)": "phuongtrang",
-            "VAIS 1000 (vais1000medium)": "vais1000medium",
-            "Thanh Phương (thanhphuong2)": "thanhphuong2",
-            "Thiện Tâm (thientam)": "thientam",
-            "Vũ Nga (vunga)": "vunga",
-            "Việt Thảo (vietthao3886)": "vietthao3886",
-        },
-        value="Ngọc Huyền (Mới) (ngochuyennew)",
-        label="Giọng đọc TTS",
-    )
-    tts_engine_selector = mo.ui.dropdown(options={"Piper (nhẹ, ONNX)":"piper","VieNeu v3 Turbo (25 giọng, 48 kHz)":"vieneu"},value="Piper (nhẹ, ONNX)",label="Bộ đọc")
-    vieneu_voice_selector = mo.ui.dropdown(options={'Minh Quân Pro (minh_quan_pro)': 'minh_quan_pro', 'Adam bựa (adam_bua)': 'adam_bua', 'Trúc Ly (truc_ly)': 'truc_ly', 'Anh Khôi (anh_khoi)': 'anh_khoi', 'Mai Anh (mai_anh)': 'mai_anh', 'Thùy Dung (thuy_dung)': 'thuy_dung', 'Thiền Tâm Đức (thien_tam_duc)': 'thien_tam_duc', 'Ngọc Huyền (ngoc_huyen)': 'ngoc_huyen', 'Quang Sơn (quang_son)': 'quang_son', 'Ngọc Trân (ngoc_tran)': 'ngoc_tran', 'Minh Đức (minh_duc)': 'minh_duc', 'Phạm Tuyên (pham_tuyen)': 'pham_tuyen', 'Thái Sơn (thai_son)': 'thai_son', 'Xuân Vĩnh (xuan_vinh)': 'xuan_vinh', 'Thanh Bình (thanh_binh)': 'thanh_binh', 'Ngọc Linh (ngoc_linh)': 'ngoc_linh', 'Đoan Trang (doan_trang)': 'doan_trang', 'Thục Đoan (thuc_doan)': 'thuc_doan', 'Minh Triết (minh_triet)': 'minh_triet', 'Mỹ Duyên (my_duyen)': 'my_duyen', 'Quỳnh Anh (quynh_anh)': 'quynh_anh', 'Đức Trí (duc_tri)': 'duc_tri', 'Kim Thanh (kim_thanh)': 'kim_thanh', 'Adam (adam)': 'adam', 'Mạnh Dũng (manh_dung)': 'manh_dung'},value="Trúc Ly (truc_ly)",label="Giọng VieNeu")
-    voice_download_mode = mo.ui.dropdown(
-        options={"Đầy đủ JSON + model giọng đã chọn (gọn)": "catalog", "Tải toàn bộ JSON + tất cả model ONNX (nhiều GB)": "all"},
-        value="Đầy đủ JSON + model giọng đã chọn (gọn)",
-        label="Tải giọng đọc",
-    )
-
-    tunnel_selector = mo.ui.dropdown(
-        options={
-            "Tự động (Cloudflare HTTP/2 + Pinggy + Localhost.run)": "auto",
-            "Cloudflare HTTPS Tunnel (Port 443)": "cloudflare",
-            "Pinggy SSH Tunnel (Port 443)": "pinggy",
-            "Localhost.run SSH Tunnel (Port 80)": "localhost_run",
-        },
-        value="Tự động (Cloudflare HTTP/2 + Pinggy + Localhost.run)",
-        label="Chế độ Tunnel Web",
-    )
-
-    intro_markdown = mo.md(
-        r"""
-        # NovelReader
-
-        Chạy máy chủ đọc và dịch truyện trong phiên Molab hiện tại. Chọn model dịch,
-        giọng đọc và bộ TTS trước khi khởi động. Model và giọng được tải theo lựa chọn.
-
-        Batch dưới đây là giá trị khởi đầu dựa trên VRAM; ứng dụng giảm batch và thử lại
-        cùng đoạn nếu gặp lỗi hết bộ nhớ. Hãy kiểm tra thông tin GPU và smoke test trước khi chạy.
-        Phiên runtime có giới hạn thời gian; tiến độ cần được đồng bộ lên Hugging Face Bucket
-        trước khi phiên kết thúc để có thể khôi phục trong phiên sau.
-        """
-    )
-
-    settings_panel = mo.vstack([
-        mo.md("### ⚙️ Tuỳ chọn cấu hình khởi động:"),
-        mo.hstack([model_selector, voice_selector, tunnel_selector], justify="start", gap=2),
-        mo.hstack([tts_engine_selector,vieneu_voice_selector],justify="start",gap=2),
-        voice_download_mode,
-    ])
-
-    intro_view = mo.vstack([intro_markdown, settings_panel])
-    mo.output.replace(intro_view)
-    return model_selector, tunnel_selector, voice_selector, voice_download_mode, tts_engine_selector, vieneu_voice_selector
-
-
-@app.cell
-def step1_source_setup(Path, os, shutil, subprocess, sys, urllib, zipfile):
-    print("=" * 65)
-    print("📥 BƯỚC 1: KHỞI TẠO MÔI TRƯỜNG & MÃ NGUỒN NOVELREADER")
-    print("=" * 65)
-
-    base_dir = Path.cwd().resolve()
-
-    if (base_dir / "main.py").is_file() and (base_dir / "translation").is_dir():
-        repo_dir = base_dir
-        print(f"✅ Đang chạy trực tiếp trong thư mục dự án: {repo_dir}")
-    elif (base_dir / "NovelReader_T4_Web" / "main.py").is_file():
-        repo_dir = base_dir / "NovelReader_T4_Web"
-        print(f"✅ Đã tìm thấy thư mục NovelReader_T4_Web: {repo_dir}")
+    cwd = Path.cwd().resolve()
+    if (cwd / "main.py").is_file() and (cwd / "web").is_dir():
+        root = cwd
     else:
-        repo_dir = base_dir / "NovelReader_T4_Web"
-        repo_dir.mkdir(parents=True, exist_ok=True)
-        print("📦 Đang tải mã nguồn NovelReader v4.7 từ kho lưu trữ GitHub...")
-        zip_url = "https://github.com/dungbeommm/NovelReader_Translate/archive/refs/heads/main.zip"
-        zip_dest = base_dir / "repo_main.zip"
-        try:
-            req = urllib.request.Request(zip_url, headers={"User-Agent": "NovelReader-Molab"})
-            with urllib.request.urlopen(req, timeout=60) as resp, open(zip_dest, "wb") as _zip_out:
-                shutil.copyfileobj(resp, _zip_out)
-            with zipfile.ZipFile(zip_dest, "r") as z:
-                for member in z.infolist():
-                    parts = Path(member.filename).parts
-                    if len(parts) <= 1:
-                        continue
-                    rel_parts = parts[1:]
-                    if rel_parts[0] in {'data', 'models', 'output_text', 'output_audio'}:
-                        continue
-                    target = repo_dir / Path(*rel_parts)
-                    if member.is_dir():
-                        target.mkdir(parents=True, exist_ok=True)
-                    else:
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        with z.open(member) as src, open(target, "wb") as dst:
-                            shutil.copyfileobj(src, dst)
-            zip_dest.unlink(missing_ok=True)
-            print("✅ Đã giải nén mã nguồn NovelReader v4.7 thành công!")
-        except Exception as dl_err:
-            print(f"⚠️ Lỗi tải ZIP từ GitHub ({dl_err}), thử dùng git clone...")
-            subprocess.run(["git", "clone", "--depth", "1", "https://github.com/dungbeommm/NovelReader_Translate.git", str(repo_dir)], check=False)
-
-    repo_path_str = str(repo_dir)
-    if repo_path_str not in sys.path:
-        sys.path.insert(0, repo_path_str)
-    os.chdir(repo_dir)
-
-    for folder_name in (
-        "data/logs", "models/translation", "models/voices",
-        "output_text", "output_audio", "web/static", "web/templates"
-    ):
-        (repo_dir / folder_name).mkdir(parents=True, exist_ok=True)
-
-    gpu_detected = False
-    gpu_label = "Không phát hiện GPU (Chế độ CPU)"
-    vram_display = "0 GB"
-    try:
-        smi_proc = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=10
+        root = cwd / "NovelReader_Translate"
+        root.mkdir(parents=True, exist_ok=True)
+        archive = cwd / "novelreader-source.zip"
+        _request = _urllib_bootstrap.Request(
+            "https://github.com/dungbeommm/NovelReader_Translate/archive/refs/heads/main.zip",
+            headers={"User-Agent": "NovelReader-Molab"},
         )
-        if smi_proc.returncode == 0 and smi_proc.stdout.strip():
-            smi_parts = [p.strip() for p in smi_proc.stdout.strip().split(",", 1)]
-            gpu_label = smi_parts[0]
-            if len(smi_parts) > 1:
-                mem_gb = float(smi_parts[1]) / 1024.0
-                vram_display = f"{mem_gb:.1f} GB"
-            gpu_detected = True
-            print(f"✅ GPU Phát hiện: {gpu_label} (VRAM: {vram_display})")
-        else:
-            print("⚠️ Runtime chưa gắn GPU NVIDIA (đang chạy CPU).")
-    except Exception:
-        print("⚠️ Không thể gọi nvidia-smi.")
+        with _urllib_bootstrap.urlopen(_request, timeout=90) as response, archive.open("wb") as output:
+            shutil.copyfileobj(response, output)
+        with zipfile.ZipFile(archive) as bundle:
+            prefix = bundle.namelist()[0].split("/")[0] + "/"
+            for item in bundle.infolist():
+                if item.is_dir() or not item.filename.startswith(prefix):
+                    continue
+                relative = item.filename[len(prefix):]
+                if not relative:
+                    continue
+                destination = root / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with bundle.open(item) as source, destination.open("wb") as target:
+                    shutil.copyfileobj(source, target)
+        archive.unlink(missing_ok=True)
 
-    return base_dir, gpu_detected, repo_dir
+    os.chdir(root)
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    for name in ("data/logs", "models/translation", "models/voices", "output_text", "output_audio"):
+        (root / name).mkdir(parents=True, exist_ok=True)
+
+    try:
+        gpu = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        gpu = None
+    gpu_line = gpu.stdout.strip().splitlines()[0] if gpu and gpu.returncode == 0 and gpu.stdout.strip() else ""
+    gpu_name, vram_mb = (part.strip() for part in gpu_line.split(",", 1)) if gpu_line else ("CPU", "0")
+    mo.output.replace(mo.md(f"**Mã nguồn:** `{root}`  ·  **Thiết bị:** {gpu_name}  ·  **VRAM:** {int(vram_mb) / 1024:.1f} GB"))
+    return Path, gpu_line, mo, os, root, subprocess, sys
+
+
 @app.cell
-def step2_install_libraries(
-    gpu_detected,
-    Path,
-    repo_dir,
-    subprocess,
-    sys,
-    tts_engine_selector,
-):
+def _install(engine, gpu_line, mo, os, piper_voice, root, subprocess, sys, vieneu_voice):
     import hashlib
 
-    print("=" * 65)
-    print("📦 BƯỚC 2: CÀI ĐẶT THƯ VIỆN & CẤU HÌNH PIPER CUDA")
-    print("=" * 65)
+    worker_dir = root / ".worker-venv"
+    python = worker_dir / "bin/python"
+    if not python.exists():
+        subprocess.run([sys.executable, "-m", "venv", "--system-site-packages", str(worker_dir)], check=True)
+    requirements = [root / "requirements-worker.txt"]
+    requirements.append(root / ("requirements-vieneu.txt" if engine.value == "vieneu" else "tts/requirements.txt"))
+    signature = hashlib.sha256((engine.value + "|" + "|".join(hashlib.sha256(p.read_bytes()).hexdigest() for p in requirements)).encode()).hexdigest()
+    marker = worker_dir / ".molab-requirements"
+    if not marker.is_file() or marker.read_text(encoding="utf-8") != signature:
+        for requirement in requirements:
+            subprocess.run([str(python), "-m", "pip", "install", "-q", "-r", str(requirement)], check=True)
+        if gpu_line and engine.value == "piper":
+            subprocess.run([str(python), "-m", "pip", "uninstall", "-y", "onnxruntime"], check=False, stdout=subprocess.DEVNULL)
+            subprocess.run([str(python), "-m", "pip", "install", "-q", "onnxruntime-gpu>=1.20,<2", "nvidia-cudnn-cu12", "nvidia-cublas-cu12"], check=True)
+        marker.write_text(signature, encoding="utf-8")
 
-    worker_dir = repo_dir / ".worker-venv"
-    worker_python = worker_dir / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
-    if not worker_python.is_file():
-        print("Tạo môi trường worker riêng; thư viện của kernel marimo được giữ nguyên.")
-        subprocess.run(
-            [sys.executable, "-m", "venv", "--system-site-packages", str(worker_dir)],
-            check=True,
-        )
-    pip_executable = [str(worker_python), "-m", "pip"]
-    worker_requirements = repo_dir / "requirements-worker.txt"
-    if not worker_requirements.is_file():
-        worker_requirements.write_text(
-            "\n".join([
-                "fastapi>=0.115,<1", "uvicorn>=0.30,<1", "websockets>=13,<16",
-                "python-multipart>=0.0.18,<1", "pydantic>=2.9,<3", "ebooklib>=0.19,<1",
-                "beautifulsoup4>=4.12,<5", "charset-normalizer>=3.4,<4",
-                "huggingface-hub>=1.1,<2", "ctranslate2>=4.5,<5", "sentencepiece>=0.2,<1",
-                "gradio-client>=1.10,<3", "opencc-python-reimplemented>=0.1.7,<1",
-                "sacremoses>=0.1.1", "safetensors>=0.4",
-                "google-api-python-client>=2.150,<3", "google-auth-oauthlib>=1.2,<2",
-                "google-auth-httplib2>=0.2,<1", "psutil>=5.9,<8",
-            ]) + "\n",
-            encoding="utf-8",
-        )
-        print("Generated compatible worker requirements for this legacy checkout.")
-    requirements = [worker_requirements]
-    requirements.append(repo_dir / ("requirements-vieneu.txt" if tts_engine_selector.value == "vieneu" else "tts/requirements.txt"))
-    for req_path in requirements:
-        if not req_path.is_file():
-            raise FileNotFoundError(f"Thiếu tệp phụ thuộc: {req_path}")
-    signature = hashlib.sha256(
-        ("|".join([str(tts_engine_selector.value), str(gpu_detected)] + [hashlib.sha256(path.read_bytes()).hexdigest() for path in requirements])).encode()
-    ).hexdigest()
-    marker = worker_dir / ".requirements-signature"
-    if not marker.is_file() or marker.read_text("utf-8") != signature:
-        for req_path in requirements:
-            subprocess.run(pip_executable + ["install", "-q", "-r", str(req_path)], check=True)
-
-        if gpu_detected:
-            cuda_packages = ["nvidia-cudnn-cu12", "nvidia-cublas-cu12", "nvidia-cuda-runtime-cu12>=12,<13"]
-            if tts_engine_selector.value == "piper":
-                subprocess.run(pip_executable + ["uninstall", "-y", "onnxruntime"], check=False)
-                cuda_packages.append("onnxruntime-gpu>=1.20,<2")
-            subprocess.run(pip_executable + ["install", "-q", *cuda_packages], check=True)
-        marker.write_text(signature, "utf-8")
-    else:
-        print("   Thư viện worker khớp cấu hình; bỏ qua cài đặt lại.")
-
-    if sys.platform.startswith("linux"):
-        print("📦 Kiểm tra tiện ích âm thanh hệ thống (ffmpeg, espeak-ng)...")
-        try:
-            apt_run = subprocess.run(
-                ["apt-get", "install", "-y", "-qq", "ffmpeg", "espeak-ng"],
-                capture_output=True, text=True, timeout=60
-            )
-            if apt_run.returncode != 0:
-                subprocess.run(["apt-get", "update", "-qq"], capture_output=True, text=True, timeout=60)
-                subprocess.run(
-                    ["apt-get", "install", "-y", "-qq", "ffmpeg", "espeak-ng"],
-                    capture_output=True, text=True, timeout=120
-                )
-            print("   ✅ ffmpeg & espeak-ng đã sẵn sàng.")
-        except Exception as exc:
-            print(f"   ⚠️ apt-get bỏ qua: {exc}")
-
-    step2_ready = True
-    return step2_ready, worker_python
-
-
-@app.cell
-def step3_configure_env(Path, gpu_detected, os, repo_dir, site, step2_ready, worker_python, subprocess, tts_engine_selector, voice_selector, vieneu_voice_selector):
-    assert step2_ready
-    print("=" * 65)
-    print("⚙️ BƯỚC 3: THIẾT LẬP BIẾN MÔI TRƯỜNG & LIÊN KẾT CUDA")
-    print("=" * 65)
-
-    batch_size = 64
-    if gpu_detected:
-        try:
-            probe = subprocess.run(
-                ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=10, check=True
-            )
-            vram_mb = int(probe.stdout.strip().splitlines()[0])
-            batch_size = max(32, min(256, (vram_mb // 16384) * 64))
-        except Exception:
-            batch_size = 64
-
-    env_map = {
-        "HACHIMIMT_WEB_BATCH_SIZE": str(batch_size),
-        "HACHIMIMT_BATCH_SIZE": str(batch_size),
-        "HACHIMIMT_CT2_BATCH_TYPE": "tokens",
-        "HACHIMIMT_CT2_WINDOW_MULTIPLIER": "16",
-        "HACHIMIMT_INTER_THREADS": "1",
-        "HACHIMIMT_COMPUTE_TYPE": "int8_float16" if gpu_detected else "default",
-        "HACHIMIMT_FORCE_CT2_CUDA": "1" if gpu_detected else "0",
-        "HACHIMIMT_GPU_INDICES": "0",
-        "HACHIMIMT_AUTO_ALL_GPUS": "0",
-        "HACHIMIMT_TOKENIZE_WORKERS": str(min(os.cpu_count() or 2, 4)),
-        "NOVEL_TTS_ENGINE": tts_engine_selector.value or "piper",
-        "NOVEL_TTS_VOICE": (vieneu_voice_selector.value or "truc_ly") if tts_engine_selector.value=="vieneu" else (voice_selector.value or "ngochuyennew"),
-        "VIENEU_DEVICE": "cuda" if gpu_detected else "cpu",
-        "VIENEU_MODEL_DIR": str(repo_dir/"models/vieneu"),
-        "PIPER_DEVICE": "cuda" if gpu_detected else "cpu",
-        "PIPER_REQUIRE_CUDA": "1" if gpu_detected else "0",
-        "PIPER_CUDNN_ALGO": "DEFAULT",
-        "AUDIO_WORKERS": "1",
-        "TTS_CHUNK_MAX_CHARS": "4000" if gpu_detected else "2500",
+    voice = vieneu_voice.value if engine.value == "vieneu" else piper_voice.value
+    os.environ.update({
+        "NOVEL_TTS_ENGINE": engine.value,
+        "NOVEL_TTS_VOICE": voice,
+        "VIENEU_DEVICE": "cuda" if gpu_line else "cpu",
+        "PIPER_DEVICE": "cuda" if gpu_line else "cpu",
+        "PIPER_REQUIRE_CUDA": "0",
+        "HACHIMIMT_FORCE_CT2_CUDA": "1" if gpu_line else "0",
+        "HACHIMIMT_COMPUTE_TYPE": "int8_float16" if gpu_line else "default",
+        "HACHIMIMT_BATCH_SIZE": str(max(32, min(192, int(gpu_line.split(",", 1)[1]) // 1024 * 4)) if gpu_line else 16),
+        "NOVEL_WORKER_PYTHON": str(python),
+        "NOVEL_DATA": str(root / "data"),
+        "NOVEL_MODELS": str(root / "models/translation"),
+        "TTS_VOICE_DIR": str(root / "models/voices"),
+        "NOVEL_OUTPUT_TEXT": str(root / "output_text"),
+        "NOVEL_OUTPUT_AUDIO": str(root / "output_audio"),
         "ALLOWED_HOSTS": "*",
         "ALLOW_TUNNEL": "1",
-        "COLAB_GPU": "1" if gpu_detected else "0",
-        "NOVEL_SESSION_BUDGET_MINUTES": "690",
-        "NOVEL_WORKER_PYTHON": str(worker_python),
-        "NOVEL_DATA": str(repo_dir / "data"),
-        "NOVEL_MODELS": str(repo_dir / "models/translation"),
-        "TTS_VOICE_DIR": str(repo_dir / "models/voices"),
-        "NOVEL_OUTPUT_TEXT": str(repo_dir / "output_text"),
-        "NOVEL_OUTPUT_AUDIO": str(repo_dir / "output_audio"),
         "PYTHONUNBUFFERED": "1",
-        "NOVEL_DRIVE_BACKEND": "api",
-        "NOVEL_COLAB_DRIVE_BRIDGE": "0",
-        "NOVEL_DRIVE_CREDENTIAL_DIR": "/tmp/novelreader-drive",
-    }
-    os.environ.update(env_map)
-
-    discovered_nvidia_libs = []
-    for site_directory in site.getsitepackages():
-        nv_dir = Path(site_directory) / "nvidia"
-        if nv_dir.is_dir():
-            discovered_nvidia_libs.extend(str(p) for p in nv_dir.glob("*/lib") if p.is_dir())
-
-    original_ld = os.environ.get("LD_LIBRARY_PATH", "")
-    os.environ["LD_LIBRARY_PATH"] = ":".join(
-        discovered_nvidia_libs + ([original_ld] if original_ld else [])
-    )
-
-    print(f"   Batch khởi đầu theo VRAM: {env_map['HACHIMIMT_BATCH_SIZE']}")
-    print(f"   Compute Type: {env_map['HACHIMIMT_COMPUTE_TYPE']}")
-    print(f"   Piper Device: {env_map['PIPER_DEVICE']}")
-    print(f"   NVIDIA Dynamic Libs: Đã nạp {len(discovered_nvidia_libs)} thư mục")
-    print("✅ Cấu hình môi trường GPU hoàn tất.")
-
-    step3_ready = True
-    return (step3_ready,)
+    })
+    voice_args = [str(python), str(root / "scripts/setup_tts.py"), "--engine", engine.value, "--voice", voice]
+    if engine.value == "vieneu":
+        voice_args += ["--device", os.environ["VIENEU_DEVICE"], "--install", "--preload"]
+    subprocess.run(voice_args, cwd=root, check=True)
+    mo.output.replace(mo.md("✅ **Môi trường đã sẵn sàng.** Chạy cell tiếp theo để mở ứng dụng."))
+    return python, root
 
 
 @app.cell
-def step4_models_and_smoke_test(
-    gpu_detected,
-    model_selector,
-    os,
-    repo_dir,
-    shutil,
-    subprocess,
-    sys,
-    urllib,
-    voice_selector,
-    voice_download_mode,
-    step3_ready,
-    worker_python,
-    tts_engine_selector,
-    vieneu_voice_selector,
-):
-    assert step3_ready
-    print("=" * 65)
-    print("🔍 BƯỚC 4: TẢI MODEL GIỌNG ĐỌC & KIỂM TRA GPU CUDA")
-    print("=" * 65)
+def _launch(mo, os, python, root, subprocess, sys):
+    import secrets
+    import queue
+    import re
+    import threading
+    import time
+    import urllib.request as _urllib_tunnel
 
-    selected_tts=os.environ["NOVEL_TTS_ENGINE"]
-    chosen_voice=os.environ["NOVEL_TTS_VOICE"]
-    tts_command=[str(worker_python),str(repo_dir/"scripts/setup_tts.py"),"--engine",selected_tts,"--voice",chosen_voice]
-    if selected_tts=="vieneu":
-        tts_command += ["--device",os.environ["VIENEU_DEVICE"],"--install","--preload"]
-    elif voice_download_mode.value=="all":
-        tts_command += ["--all"]
-    subprocess.run(tts_command,cwd=str(repo_dir),env=dict(os.environ),check=True)
-
-    if gpu_detected and selected_tts == "piper":
-        try:
-            clean_env = dict(os.environ)
-            ort_test = subprocess.run(
-                [
-                    str(worker_python), "-c",
-                    "import onnxruntime as ort; "
-                    "p = ort.get_available_providers(); "
-                    "print('PROVIDERS=' + ','.join(p)); "
-                    "print('CUDA_OK=' + str('CUDAExecutionProvider' in p))"
-                ],
-                capture_output=True, text=True, timeout=60, env=clean_env
-            )
-            if "CUDA_OK=True" in ort_test.stdout:
-                print("🎉 ORT có CUDAExecutionProvider (chưa chứng minh inference).")
-            else:
-                print("⚠️ CUDAExecutionProvider chưa xuất hiện trong phiên kiểm tra.")
-        except Exception as ort_err:
-            print(f"⚠️ Kiểm tra ORT: {ort_err}")
-
-    if gpu_detected:
-        chosen_model = model_selector.value or "HachimiMT-60-QT"
-        print(f"🚀 Chạy GPU smoke-test với model '{chosen_model}'...")
-        try:
-            smoke_test = subprocess.run(
-                [
-                    str(worker_python), "scripts/check_gpu.py",
-                    "--model", chosen_model,
-                    "--voice", chosen_voice, "--tts-engine", selected_tts
-                ],
-                capture_output=True, text=True, timeout=300,
-                cwd=str(repo_dir), env=dict(os.environ)
-            )
-            if smoke_test.returncode == 0:
-                print("GPU smoke test passed: CT2 translation and Piper CUDA inference succeeded.")
-            elif selected_tts == "piper":
-                failure_text = (smoke_test.stderr or "") + (smoke_test.stdout or "")
-                if "piper/voice.py" not in failure_text and "tts/synthesis.py" not in failure_text and "Piper session" not in failure_text:
-                    print((smoke_test.stderr or smoke_test.stdout)[-1200:])
-                    raise RuntimeError("GPU translation smoke test failed; Web was not started.")
-                print("Piper CUDA inference failed; checking CPU Piper while keeping CT2 translation on GPU.")
-                cpu_env = dict(os.environ)
-                cpu_env["PIPER_DEVICE"] = "cpu"
-                cpu_env["PIPER_REQUIRE_CUDA"] = "0"
-                cpu_code = "import io,os,wave; from audio.audio_service import _voice_instances,get_voice; from tts.synthesis import synthesize_wav; _voice_instances.clear(); v=get_voice(os.environ['NOVEL_TTS_VOICE']); b=io.BytesIO(); w=wave.open(b,'wb'); synthesize_wav(v,'Hello, this is an online voice test.',w); w.close(); print('CPU_TTS_OK')"
-                cpu_smoke = subprocess.run(
-                    [str(worker_python), "-c", cpu_code], cwd=str(repo_dir), env=cpu_env,
-                    capture_output=True, text=True, timeout=120
-                )
-                if cpu_smoke.returncode != 0 or "CPU_TTS_OK" not in cpu_smoke.stdout:
-                    print((cpu_smoke.stderr or cpu_smoke.stdout)[-1200:])
-                    raise RuntimeError("Piper CPU fallback smoke test failed; Web was not started.")
-                os.environ.update({"PIPER_DEVICE": "cpu", "PIPER_REQUIRE_CUDA": "0"})
-                print("CT2 translation remains on GPU; Piper TTS will run on CPU for this Molab session.")
-            else:
-                print((smoke_test.stderr or smoke_test.stdout)[-1200:])
-                raise RuntimeError("GPU smoke test failed; Web was not started.")
-        except Exception as smoke_err:
-            print(f"   ❌ Không xác nhận được inference GPU: {smoke_err}")
-            raise
-    else:
-        print("ℹ️ Đang chạy chế độ CPU, bỏ qua kiểm tra CUDA.")
-
-    step4_ready = True
-    return (step4_ready,)
-
-
-@app.cell
-def step5_launch_server(
-    step4_ready,
-    Path,
-    base_dir,
-    mo,
-    os,
-    platform,
-    queue,
-    re,
-    repo_dir,
-    secrets,
-    subprocess,
-    sys,
-    threading,
-    time,
-    tunnel_selector,
-    urllib,
-    worker_python,
-):
-    assert step4_ready
-    print("=" * 65)
-    print("🌐 BƯỚC 5: KHỞI CHẠY MÁY CHỦ WEB & HỆ THỐNG TUNNEL ĐA TẦNG")
-    print("=" * 65)
-
-    for old_cmd in [
-        ["pkill", "-f", "uvicorn.*main:app"],
-        ["pkill", "-f", "cloudflared"],
-        ["pkill", "-f", "a.pinggy.io"],
-        ["pkill", "-f", "nokey@localhost.run"],
-    ]:
-        subprocess.run(old_cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(1.0)
-
-    try:
-        ssh_dir = Path.home() / ".ssh"
-        ssh_key = ssh_dir / "id_ed25519"
-        if not ssh_key.is_file():
-            ssh_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-            subprocess.run(["ssh-keygen", "-t", "ed25519", "-N", "", "-f", str(ssh_key)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
-
-    token_str = secrets.token_urlsafe(32)
-    session_str = secrets.token_hex(16)
-    os.environ["NOVEL_WEB_ACCESS_TOKEN"] = token_str
-    os.environ["NOVEL_EXPORT_SESSION_ID"] = session_str
-    os.environ["ALLOW_TUNNEL"] = "1"
-    os.environ["ALLOWED_HOSTS"] = "*"
-
-    log_server = repo_dir / "data/logs/colab-server.log"
-    log_tunnel = repo_dir / "data/logs/colab-tunnel.log"
-
-    if log_tunnel.is_file():
-        try:
-            log_tunnel.unlink()
-        except Exception:
-            pass
-
-    server_out = open(str(log_server), "a", buffering=1, encoding="utf-8", errors="replace")
-
-    print("🚀 Đang khởi động máy chủ Uvicorn trên 127.0.0.1:8000...")
-    server_process = subprocess.Popen(
-        [
-            str(worker_python), "-m", "uvicorn", "main:app",
-            "--host", "127.0.0.1", "--port", "8000",
-            "--workers", "1", "--no-access-log",
-            "--timeout-graceful-shutdown", "120"
-        ],
-        cwd=str(repo_dir),
-        stdout=server_out,
-        stderr=subprocess.STDOUT,
-        env=dict(os.environ)
+    token = secrets.token_urlsafe(32)
+    os.environ["NOVEL_WEB_ACCESS_TOKEN"] = token
+    os.environ["NOVEL_EXPORT_SESSION_ID"] = secrets.token_hex(16)
+    server_log = root / "data/logs/molab-server.log"
+    tunnel_log = root / "data/logs/molab-tunnel.log"
+    tunnel_log.unlink(missing_ok=True)
+    log_handle = server_log.open("a", encoding="utf-8", buffering=1)
+    server = subprocess.Popen(
+        [str(python), "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-access-log"],
+        cwd=root, env=os.environ.copy(), stdout=log_handle, stderr=subprocess.STDOUT,
     )
 
-    server_ready = False
-    for attempt in range(120):
-        if server_process.poll() is not None:
-            print("❌ Máy chủ đã dừng bất thường!")
-            print(log_server.read_text(errors="replace")[-1000:])
+    ready = False
+    for _ in range(90):
+        if server.poll() is not None:
             break
         try:
-            req_check = urllib.request.Request(
-                "http://127.0.0.1:8000/api/state",
-                headers={"X-Novel-Access": token_str}
-            )
-            with urllib.request.urlopen(req_check, timeout=2) as state_resp:
-                if state_resp.status == 200:
-                    server_ready = True
-                    break
+            _request = _urllib_tunnel.Request("http://127.0.0.1:8000/api/state", headers={"X-Novel-Access": token})
+            with _urllib_tunnel.urlopen(_request, timeout=2):
+                ready = True
+                break
         except Exception:
             time.sleep(1)
 
-    if server_ready:
-        print("   ✅ Máy chủ Uvicorn đã sẵn sàng hoạt động!")
-    else:
-        print("   ⚠️ Hết thời gian chờ phản hồi từ 127.0.0.1:8000.")
-
-    def _read_stream_url(proc, pattern, timeout=25):
-        if proc is None or proc.stdout is None:
-            return None
-        line_q = queue.Queue()
-        def _enqueue():
+    public_url = None
+    tunnel = None
+    if ready and sys.platform.startswith("linux"):
+        cloudflared = root / "data/cloudflared"
+        if not cloudflared.is_file():
+            arch = "arm64" if "aarch64" in __import__("platform").machine().lower() else "amd64"
             try:
-                for line in iter(proc.stdout.readline, ""):
-                    if line:
-                        line_q.put(line)
-                    else:
+                _urllib_tunnel.urlretrieve(f"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-{arch}", cloudflared)
+                cloudflared.chmod(0o755)
+            except Exception:
+                pass
+        if cloudflared.is_file():
+            tunnel = subprocess.Popen(
+                [str(cloudflared), "tunnel", "--url", "http://127.0.0.1:8000", "--no-autoupdate", "--logfile", str(tunnel_log)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            for _ in range(40):
+                if tunnel.poll() is not None:
+                    break
+                if tunnel_log.exists():
+                    import re
+                    match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", tunnel_log.read_text(errors="replace"))
+                    if match:
+                        public_url = match.group(0)
                         break
-            except Exception:
-                pass
-            finally:
-                line_q.put(None)
-        reader_t = threading.Thread(target=_enqueue, daemon=True)
-        reader_t.start()
-        start_t = time.time()
-        while time.time() - start_t < timeout:
-            rem = max(0.1, timeout - (time.time() - start_t))
-            try:
-                item = line_q.get(timeout=min(0.5, rem))
-                if item is None:
-                    break
-                clean_item = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\([a-zA-Z]|\x1b\][^\a\x1b]*(?:\a|\x1b\\)", "", item)
-                m = re.search(pattern, clean_item)
-                if m:
-                    return (m.group(1) if m.groups() else m.group(0)).rstrip("/.")
-            except queue.Empty:
-                if proc.poll() is not None:
-                    break
-        return None
+                time.sleep(1)
 
-    pinggy_url = None
-    cloudflare_url = None
-    lhr_url = None
-    tunnel_mode = getattr(tunnel_selector, "value", "auto") or "auto"
-
-    if tunnel_mode in ("auto", "pinggy"):
+    # A Quick Tunnel URL can be issued before Cloudflare has a healthy edge route.
+    if ready and public_url:
         try:
-            print("🌐 Đang kết nối Pinggy HTTPS Tunnel (Port 443)...")
-            pinggy_proc = subprocess.Popen(
-                [
-                    "ssh", "-p", "443",
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", "UserKnownHostsFile=/dev/null",
-                    "-o", "LogLevel=ERROR",
-                    "-o", "ConnectTimeout=15",
-                    "-o", "ServerAliveInterval=30",
-                    "-R", "0:localhost:8000", "a.pinggy.io"
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env={**os.environ, "TERM": "dumb"}
+            _urllib_tunnel.urlopen(f"{public_url}/?access_token={token}", timeout=8)
+        except Exception:
+            public_url = None
+
+    if ready and not public_url and sys.platform.startswith("linux"):
+        try:
+            tunnel = subprocess.Popen(
+                ["ssh", "-p", "443", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+                 "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=30",
+                 "-R", "0:localhost:8000", "a.pinggy.io"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                env={**os.environ, "TERM": "dumb"},
             )
-            pinggy_url = _read_stream_url(
-                pinggy_proc,
-                r"https://[a-zA-Z0-9.-]+\.pinggy[a-zA-Z0-9.-]*\.link",
-                timeout=25
-            )
-            if pinggy_url:
-                print(f"   ✅ Pinggy Tunnel sẵn sàng: {pinggy_url}")
-            else:
+            lines = queue.Queue()
+            threading.Thread(
+                target=lambda: [lines.put(line) for line in iter(tunnel.stdout.readline, "")], daemon=True
+            ).start()
+            deadline = time.monotonic() + 40
+            while time.monotonic() < deadline and tunnel.poll() is None:
                 try:
-                    pinggy_proc.terminate()
-                except Exception:
+                    match = re.search(r"https://[A-Za-z0-9.-]+\.pinggy[A-Za-z0-9.-]*\.link", lines.get(timeout=0.5))
+                    if match:
+                        public_url = match.group(0)
+                        break
+                except queue.Empty:
                     pass
-        except Exception as pinggy_err:
-            print(f"   ⚠️ Lỗi kết nối Pinggy: {pinggy_err}")
+        except Exception:
+            public_url = None
 
-    cf_executable = None
-    if tunnel_mode in ("auto", "cloudflare"):
-        cf_executable = base_dir / "cloudflared"
-        if sys.platform.startswith("linux") and not cf_executable.is_file():
-            try:
-                cf_arch = "arm64" if "arm" in platform.machine().lower() or "aarch64" in platform.machine().lower() else "amd64"
-                urllib.request.urlretrieve(
-                    f"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-{cf_arch}",
-                    cf_executable
-                )
-                cf_executable.chmod(0o755)
-            except Exception as cf_dl_err:
-                print(f"   ⚠️ Không tải được cloudflared: {cf_dl_err}")
-
-    if cf_executable is not None and cf_executable.is_file():
-        print("🌐 Đang kết nối Cloudflare Tunnel (HTTP/2)...")
-        cf_proc = subprocess.Popen(
-            [
-                str(cf_executable), "tunnel",
-                "--protocol", "http2",
-                "--url", "http://127.0.0.1:8000",
-                "--logfile", str(log_tunnel),
-                "--loglevel", "info"
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        for _ in range(35):
-            if cf_proc.poll() is not None:
-                break
-            if log_tunnel.is_file():
-                log_text = log_tunnel.read_text(errors="replace")
-                cf_match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", log_text)
-                if cf_match:
-                    cloudflare_url = cf_match.group(0).rstrip("/.")
-                    print(f"   ✅ Cloudflare Tunnel sẵn sàng: {cloudflare_url}")
-                    break
-            time.sleep(1)
-        if not cloudflare_url and cf_proc.poll() is None:
-            try:
-                cf_proc.terminate()
-            except Exception:
-                pass
-
-    if (tunnel_mode == "localhost_run") or (tunnel_mode == "auto" and not pinggy_url and not cloudflare_url):
-        print("🌐 Đang kết nối Localhost.run...")
+    if ready and not public_url and sys.platform.startswith("linux"):
         try:
-            lhr_proc = subprocess.Popen(
-                [
-                    "ssh",
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", "UserKnownHostsFile=/dev/null",
-                    "-o", "LogLevel=ERROR",
-                    "-o", "ConnectTimeout=15",
-                    "-o", "ServerAliveInterval=30",
-                    "-R", "80:localhost:8000", "nokey@localhost.run"
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env={**os.environ, "TERM": "dumb"}
+            tunnel = subprocess.Popen(
+                ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+                 "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=30",
+                 "-R", "80:localhost:8000", "nokey@localhost.run"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                env={**os.environ, "TERM": "dumb"},
             )
-            lhr_url = _read_stream_url(
-                lhr_proc,
-                r"https://[a-zA-Z0-9.-]+\.(?:lhr\.life|lhr\.pro|localhost\.run)",
-                timeout=25
-            )
-            if lhr_url:
-                print(f"   ✅ Localhost.run sẵn sàng: {lhr_url}")
-            else:
+            lines = queue.Queue()
+            threading.Thread(
+                target=lambda: [lines.put(line) for line in iter(tunnel.stdout.readline, "")], daemon=True
+            ).start()
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline and tunnel.poll() is None:
                 try:
-                    lhr_proc.terminate()
-                except Exception:
+                    match = re.search(r"https://[A-Za-z0-9.-]+\.(?:lhr\.life|lhr\.pro|localhost\.run)", lines.get(timeout=0.5))
+                    if match:
+                        public_url = match.group(0)
+                        break
+                except queue.Empty:
                     pass
-        except Exception as lhr_err:
-            print(f"   ⚠️ Lỗi kết nối Localhost.run: {lhr_err}")
+        except Exception:
+            public_url = None
 
-    active_links = []
-    if pinggy_url:
-        p_clean = pinggy_url.rstrip("/")
-        active_links.append(("Pinggy HTTPS (Khuyên dùng - 100% không lỗi 1033)", f"{p_clean}/?access_token={token_str}"))
-    if cloudflare_url:
-        cf_clean = cloudflare_url.rstrip("/")
-        active_links.append(("Cloudflare Tunnel", f"{cf_clean}/?access_token={token_str}"))
-    if lhr_url:
-        lhr_clean = lhr_url.rstrip("/")
-        active_links.append(("Localhost.run", f"{lhr_clean}/?access_token={token_str}"))
-
-    if active_links and server_ready:
-        primary_title, primary_link = active_links[0]
-        print("\n🎉 NOVELREADER ĐÃ KHỞI CHẠY THÀNH CÔNG!")
-        for title, link in active_links:
-            print(f"🌐 {title}: {link}")
-        print(f"🔑 Token: {token_str}\n")
-
-        other_links_md = ""
-        if len(active_links) > 1:
-            other_lines = [f"- **{t}:** [{lnk}]({lnk})" for t, lnk in active_links]
-            other_links_md = "#### 🌐 Danh sách các cổng kết nối:\n" + "\n".join(other_lines) + "\n\n*(Nếu Cloudflare báo lỗi Error 1033 do nghẽn DNS, bạn chỉ cần bấm vào link **Pinggy** phía trên để vào ngay)*\n\n"
-
-        status_view = mo.callout(
-            mo.vstack([
-                mo.md("### 🎉 NovelReader Đang Hoạt Động!"),
-                mo.md(
-                    f"👉 **[BẤM VÀO ĐÂY ĐỂ MỞ ỨNG DỤNG ({primary_title})]({primary_link})**  \n\n"
-                    f"{other_links_md}"
-                    f"**🔑 Mã Access Token bảo mật:** `{token_str}`  \n"
-                    f"> ⚠️ **Lưu ý:** Giữ tab trình duyệt Molab này mở trong suốt quá trình dịch truyện."
-                ),
-            ]),
-            kind="success"
-        )
-    elif server_ready:
-        localhost_link = f"http://127.0.0.1:8000/?access_token={token_str}"
-        print(f"✅ Server đang chạy cục bộ: {localhost_link}")
-        status_view = mo.callout(
-            mo.vstack([
-                mo.md("### ⚠️ Server đang chạy nhưng chưa tạo được Tunnel công khai"),
-                mo.md(f"Bạn có thể kết nối port forwarding 8000: `{localhost_link}`"),
-                mo.md(f"**🔑 Access Token:** `{token_str}`")
-            ]),
-            kind="warn"
-        )
+    if ready and public_url:
+        app_url = f"{public_url}/?access_token={token}"
+        # Render the actual web app inside the notebook so it can be used in place.
+        # The backend is still served by the worker process and reached through its
+        # authenticated public tunnel; the iframe keeps the full existing UI intact.
+        panel = f'''<section style="font-family:system-ui,sans-serif;width:100%;">
+          <iframe title="NovelReader" src="{app_url}" style="display:block;width:100%;height:min(88vh,1100px);min-height:720px;border:1px solid #263b34;border-radius:16px;background:#0b1110;" allow="clipboard-read; clipboard-write" loading="eager"></iframe>
+          <p style="margin:10px 4px 0;color:#63736c;font:13px system-ui">Giữ phiên Molab mở trong khi dịch hoặc tạo audio. Đường dẫn chứa access token, không chia sẻ công khai.</p>
+        </section>'''
+        view = mo.Html(panel)
+    elif ready:
+        view = mo.callout(mo.md("Máy chủ đang chạy tại `http://127.0.0.1:8000`, nhưng Molab chưa cấp tunnel công khai. Dùng chức năng port forwarding của Molab cho cổng **8000** để mở giao diện."), kind="warn")
     else:
-        status_view = mo.callout(
-            mo.md("### ❌ Không thể khởi động Server. Vui lòng kiểm tra log bên dưới."),
-            kind="danger"
-        )
-
-    mo.output.replace(status_view)
-    return log_server, log_tunnel
-
-
-@app.cell
-def step6_controls_ui(mo):
-    refresh_logs_btn = mo.ui.run_button(label="🔄 Làm mới nhật ký Server")
-    stop_server_btn = mo.ui.run_button(label="🛑 Dừng toàn bộ Server", kind="danger")
-    return refresh_logs_btn, stop_server_btn
-
-
-@app.cell
-def step6_logs_view(
-    log_server,
-    log_tunnel,
-    mo,
-    refresh_logs_btn,
-    stop_server_btn,
-    subprocess,
-):
-    if stop_server_btn.value:
-        for cmd in [
-            ["pkill", "-f", "uvicorn.*main:app"],
-            ["pkill", "-f", "cloudflared"],
-            ["pkill", "-f", "a.pinggy.io"],
-            ["pkill", "-f", "nokey@localhost.run"],
-        ]:
-            subprocess.run(cmd, check=False)
-        action_msg = mo.md("🛑 **Đã gửi tín hiệu dừng máy chủ thành công.**")
-    else:
-        action_msg = mo.md("")
-
-    _ = refresh_logs_btn.value
-
-    recent_logs = ""
-    if log_server.is_file():
-        all_lines = log_server.read_text(errors="replace").splitlines()
-        recent_logs = "\n".join(all_lines[-35:])
-    else:
-        recent_logs = "Chưa có log ghi nhận."
-
-    tunnel_logs = ""
-    if log_tunnel.is_file():
-        t_lines = log_tunnel.read_text(errors="replace").splitlines()
-        tunnel_logs = "\n".join(t_lines[-15:])
-
-    control_card = mo.vstack([
-        mo.md("## 📊 Nhật ký & Điều khiển Máy chủ"),
-        mo.hstack([refresh_logs_btn, stop_server_btn], gap=2),
-        action_msg,
-        mo.accordion({
-            "📄 Nhật ký Server (Uvicorn 35 dòng gần nhất)": mo.ui.code_editor(
-                value=recent_logs, language="text", min_height=200, disabled=True
-            ),
-            "🌐 Nhật ký Tunnel Kết nối": mo.ui.code_editor(
-                value=tunnel_logs, language="text", min_height=120, disabled=True
-            ),
-        })
-    ])
-    mo.output.replace(control_card)
-    return
-
-
-@app.cell
-def step7_backup_ui(mo):
-    create_backup_btn = mo.ui.run_button(label="📦 Tạo bản sao lưu toàn bộ (ZIP)", kind="success")
-    backup_ui_panel = mo.vstack([
-        mo.md("## 💾 Sao lưu & Xuất dữ liệu"),
-        mo.md("Dừng job dịch trước (giữ máy chủ Web đang chạy). Nút này tạo checkpoint chuẩn có audio, khôi phục được trong tab Cloud. Muốn lưu Pixeldrain hoặc bỏ audio, dùng Cài đặt → Lưu trữ Đám mây trên Web:"),
-        create_backup_btn,
-    ])
-    mo.output.replace(backup_ui_panel)
-    return (create_backup_btn,)
-
-
-@app.cell
-def step7_backup_process(base_dir, create_backup_btn, datetime, mo, os, shutil, urllib):
-    if not create_backup_btn.value:
-        backup_result_display = mo.md("")
-    else:
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_filename = f"NovelReader_Checkpoint_{timestamp}.zip"
-        backup_path = base_dir / backup_filename
-        try:
-            backup_request = urllib.request.Request(
-                "http://127.0.0.1:8000/api/checkpoints/download",
-                data=b'{"include_audio":true}', method="POST",
-                headers={"Content-Type": "application/json", "X-App-Request": "novel-translator",
-                         "X-Novel-Access": os.environ.get("NOVEL_WEB_ACCESS_TOKEN", "")},
-            )
-            with urllib.request.urlopen(backup_request, timeout=1800) as source, backup_path.open("wb") as _backup_out:
-                shutil.copyfileobj(source, _backup_out, 1024 * 1024)
-            size_mb = backup_path.stat().st_size / (1024 * 1024)
-            backup_result_display = mo.vstack([
-                mo.md(f"✅ **Checkpoint:** `{backup_filename}` ({size_mb:.1f} MB). Giữ file để khôi phục runtime mới."),
-                mo.download(data=lambda: backup_path.read_bytes(), filename=backup_filename,
-                            mimetype="application/zip", label="⬇️ Tải checkpoint về máy"),
-            ])
-        except Exception as backup_error:
-            backup_path.unlink(missing_ok=True)
-            backup_result_display = mo.md(f"⚠️ Chưa tạo được checkpoint: {backup_error}. Hãy dừng job nhưng giữ server chạy và thử lại.")
-    mo.output.replace(backup_result_display)
+        error = server_log.read_text(errors="replace")[-4000:] if server_log.exists() else "Không có nhật ký máy chủ."
+        view = mo.vstack([mo.callout(mo.md("Không khởi động được máy chủ."), kind="danger"), mo.ui.code_editor(value=error, language="text", disabled=True, min_height=180)])
+    mo.output.replace(view)
     return
 
 
