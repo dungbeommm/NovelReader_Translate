@@ -1,0 +1,21 @@
+/* Keep the notebook comfortable to edit on desktop and mobile. */
+:root {
+  color-scheme: light dark;
+}
+
+.markdown {
+  line-height: 1.6;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  letter-spacing: -0.02em;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}

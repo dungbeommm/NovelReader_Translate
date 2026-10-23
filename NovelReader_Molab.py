@@ -6,6 +6,9 @@ __generated_with = "0.25.1"
 app = marimo.App(
     width="full",
     app_title="NovelReader AI — Molab Marimo Edition",
+    css_file="custom.css",
+    html_head_file="head.html",
+    auto_download=["html"],
 )
 
 
