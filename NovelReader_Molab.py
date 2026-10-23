@@ -12,8 +12,7 @@ app = marimo.App(
 @app.cell
 def shared_imports():
     import datetime
-    import hashlib
-    import importlib.metadata
+    import hashlib as _hashlib
     import json
     import os
     import platform
@@ -38,7 +37,6 @@ def shared_imports():
     return (
         Path,
         datetime,
-        importlib,
         mo,
         os,
         platform,
@@ -62,11 +60,17 @@ def shared_imports():
 def intro_ui(mo):
     model_selector = mo.ui.dropdown(
         options={
-            "HachimiMT-60-QT (Khuyên dùng - Nhanh, chuẩn)": "HachimiMT-60-QT",
-            "HachimiMT-125-QT (Chất lượng cao hơn)": "HachimiMT-125-QT",
-            "HachimiMT-Small (Siêu nhẹ)": "HachimiMT-Small",
+            "HachimiMT-60-QT · Cổ trang": "HachimiMT-60-QT",
+            "HachimiMT-60 · Hiện đại": "HachimiMT-60",
+            "HachimiMT-40-QT · Cổ trang, nhẹ": "HachimiMT-40-QT",
+            "HachimiMT-30 · Nhẹ": "HachimiMT-30",
+            "MoxhiMT-60 · Kiếm hiệp": "MoxhiMT-60",
+            "MoxhiMT-30": "MoxhiMT-30",
+            "MoxhiMT-30-QT · Cổ trang": "MoxhiMT-30-QT",
+            "HirashibaMT-Medium": "HirashibaMT-Medium",
+            "HirashibaMT-Tiny · Nhẹ": "HirashibaMT-Tiny",
         },
-        value="HachimiMT-60-QT (Khuyên dùng - Nhanh, chuẩn)",
+        value="HachimiMT-60-QT · Cổ trang",
         label="Dịch thuật (Model)",
     )
 
@@ -119,18 +123,15 @@ def intro_ui(mo):
 
     intro_markdown = mo.md(
         r"""
-        # 🚀 NovelReader AI — Molab Marimo Edition v4.7
+        # NovelReader
 
-        Bản notebook tối ưu hóa riêng cho **Molab Marimo** (reactive environment), tương thích 100% với Google Colab / Kaggle.
-        Tự động cấu hình **CTranslate2 CUDA + Piper ONNX hoặc VieNeu v3 Turbo** và hệ thống kết nối **Tunnel HTTP/2 đa tầng**.
+        Chạy máy chủ đọc và dịch truyện trong phiên Molab hiện tại. Chọn model dịch,
+        giọng đọc và bộ TTS trước khi khởi động. Model và giọng được tải theo lựa chọn.
 
-        ### 📋 Các bước chạy tự động:
-        1. 📥 **Bước 1:** Khởi tạo môi trường & Mã nguồn NovelReader
-        2. 📦 **Bước 2:** Cài đặt thư viện + ONNX Runtime GPU + NVIDIA cuDNN 12
-        3. ⚙️ **Bước 3:** Cấu hình tham số GPU tối ưu (Batch 96, int8_float16)
-        4. 🔍 **Bước 4:** Tải model theo bộ đọc. VieNeu: 25 giọng Vbook + backbone/codec chính thức tải riêng, không chạy GGUF.
-        5. 🌐 **Bước 5:** Khởi chạy máy chủ Web + Link truy cập bảo mật
-        6. 📦 **Bước 6:** Xem log trực tiếp & Sao lưu kết quả dịch ra file ZIP
+        Batch dưới đây là giá trị khởi đầu dựa trên VRAM; ứng dụng giảm batch và thử lại
+        cùng đoạn nếu gặp lỗi hết bộ nhớ. Hãy kiểm tra thông tin GPU và smoke test trước khi chạy.
+        Phiên runtime có giới hạn thời gian; tiến độ cần được đồng bộ lên Hugging Face Bucket
+        trước khi phiên kết thúc để có thể khôi phục trong phiên sau.
         """
     )
 
@@ -227,54 +228,49 @@ def step1_source_setup(Path, os, shutil, subprocess, sys, urllib, zipfile):
 @app.cell
 def step2_install_libraries(
     gpu_detected,
-    importlib,
+    Path,
     repo_dir,
     subprocess,
     sys,
+    tts_engine_selector,
 ):
+    import hashlib
+
     print("=" * 65)
     print("📦 BƯỚC 2: CÀI ĐẶT THƯ VIỆN & CẤU HÌNH PIPER CUDA")
     print("=" * 65)
 
-    pip_executable = [sys.executable, "-m", "pip"]
-
-    needed_packages = ["fastapi", "uvicorn", "ctranslate2", "piper-tts", "psutil"]
-    if gpu_detected:
-        needed_packages.extend(["onnxruntime-gpu", "nvidia-cudnn-cu12", "nvidia-cublas-cu12"])
-
-    missing_packages = []
-    for package_name in needed_packages:
-        try:
-            importlib.metadata.version(package_name)
-        except importlib.metadata.PackageNotFoundError:
-            missing_packages.append(package_name)
-
-    if missing_packages:
-        print(f"📦 Đang bổ sung các thư viện: {', '.join(missing_packages)}...")
-        req_path = repo_dir / "requirements.txt"
-        if req_path.is_file():
-            subprocess.run(pip_executable + ["install", "-q", "-r", str(req_path)], check=False)
+    worker_dir = repo_dir / ".worker-venv"
+    worker_python = worker_dir / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    if not worker_python.is_file():
+        print("Tạo môi trường worker riêng; thư viện của kernel marimo được giữ nguyên.")
+        subprocess.run(
+            [sys.executable, "-m", "venv", "--system-site-packages", str(worker_dir)],
+            check=True,
+        )
+    pip_executable = [str(worker_python), "-m", "pip"]
+    requirements = [repo_dir / "requirements-worker.txt"]
+    requirements.append(repo_dir / ("requirements-vieneu.txt" if tts_engine_selector.value == "vieneu" else "tts/requirements.txt"))
+    for req_path in requirements:
+        if not req_path.is_file():
+            raise FileNotFoundError(f"Thiếu tệp phụ thuộc: {req_path}")
+    signature = _hashlib.sha256(
+        ("|".join([str(tts_engine_selector.value), str(gpu_detected)] + [_hashlib.sha256(path.read_bytes()).hexdigest() for path in requirements])).encode()
+    ).hexdigest()
+    marker = worker_dir / ".requirements-signature"
+    if not marker.is_file() or marker.read_text("utf-8") != signature:
+        for req_path in requirements:
+            subprocess.run(pip_executable + ["install", "-q", "-r", str(req_path)], check=True)
 
         if gpu_detected:
-            print("🔧 Cấu hình bộ tăng tốc ONNX Runtime GPU & NVIDIA cuDNN 12...")
-            subprocess.run(
-                pip_executable + ["uninstall", "-y", "onnxruntime", "onnxruntime-gpu"],
-                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-            subprocess.run(
-                pip_executable + [
-                    "install", "-q", "--upgrade",
-                    "onnxruntime-gpu>=1.20,<2",
-                    "nvidia-cudnn-cu12",
-                    "nvidia-cublas-cu12",
-                    "nvidia-cuda-runtime-cu12>=12,<13",
-                    "ctranslate2>=4.5,<5"
-                ],
-                check=False
-            )
-        print("   ✅ Cài đặt thư viện Python hoàn tất.")
+            cuda_packages = ["nvidia-cudnn-cu12", "nvidia-cublas-cu12", "nvidia-cuda-runtime-cu12>=12,<13"]
+            if tts_engine_selector.value == "piper":
+                subprocess.run(pip_executable + ["uninstall", "-y", "onnxruntime"], check=False)
+                cuda_packages.append("onnxruntime-gpu>=1.20,<2")
+            subprocess.run(pip_executable + ["install", "-q", *cuda_packages], check=True)
+        marker.write_text(signature, "utf-8")
     else:
-        print("   ✅ Toàn bộ thư viện cốt lõi đã sẵn sàng.")
+        print("   Thư viện worker khớp cấu hình; bỏ qua cài đặt lại.")
 
     if sys.platform.startswith("linux"):
         print("📦 Kiểm tra tiện ích âm thanh hệ thống (ffmpeg, espeak-ng)...")
@@ -294,19 +290,31 @@ def step2_install_libraries(
             print(f"   ⚠️ apt-get bỏ qua: {exc}")
 
     step2_ready = True
-    return (step2_ready,)
+    return step2_ready, worker_python
 
 
 @app.cell
-def step3_configure_env(Path, gpu_detected, os, repo_dir, site, step2_ready, tts_engine_selector, voice_selector, vieneu_voice_selector):
+def step3_configure_env(Path, gpu_detected, os, repo_dir, site, step2_ready, worker_python, subprocess, tts_engine_selector, voice_selector, vieneu_voice_selector):
     assert step2_ready
     print("=" * 65)
     print("⚙️ BƯỚC 3: THIẾT LẬP BIẾN MÔI TRƯỜNG & LIÊN KẾT CUDA")
     print("=" * 65)
 
+    batch_size = 64
+    if gpu_detected:
+        try:
+            probe = subprocess.run(
+                ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=10, check=True
+            )
+            vram_mb = int(probe.stdout.strip().splitlines()[0])
+            batch_size = max(32, min(256, (vram_mb // 16384) * 64))
+        except Exception:
+            batch_size = 64
+
     env_map = {
-        "HACHIMIMT_WEB_BATCH_SIZE": "96",
-        "HACHIMIMT_BATCH_SIZE": "96",
+        "HACHIMIMT_WEB_BATCH_SIZE": str(batch_size),
+        "HACHIMIMT_BATCH_SIZE": str(batch_size),
         "HACHIMIMT_CT2_BATCH_TYPE": "tokens",
         "HACHIMIMT_CT2_WINDOW_MULTIPLIER": "16",
         "HACHIMIMT_INTER_THREADS": "1",
@@ -322,11 +330,13 @@ def step3_configure_env(Path, gpu_detected, os, repo_dir, site, step2_ready, tts
         "PIPER_DEVICE": "cuda" if gpu_detected else "cpu",
         "PIPER_REQUIRE_CUDA": "1" if gpu_detected else "0",
         "PIPER_CUDNN_ALGO": "DEFAULT",
-        "AUDIO_WORKERS": "2" if gpu_detected else "1",
+        "AUDIO_WORKERS": "1",
         "TTS_CHUNK_MAX_CHARS": "4000" if gpu_detected else "2500",
         "ALLOWED_HOSTS": "*",
         "ALLOW_TUNNEL": "1",
         "COLAB_GPU": "1" if gpu_detected else "0",
+        "NOVEL_SESSION_BUDGET_MINUTES": "690",
+        "NOVEL_WORKER_PYTHON": str(worker_python),
         "NOVEL_DATA": str(repo_dir / "data"),
         "NOVEL_MODELS": str(repo_dir / "models/translation"),
         "TTS_VOICE_DIR": str(repo_dir / "models/voices"),
@@ -350,7 +360,7 @@ def step3_configure_env(Path, gpu_detected, os, repo_dir, site, step2_ready, tts
         discovered_nvidia_libs + ([original_ld] if original_ld else [])
     )
 
-    print(f"   Batch Size: {env_map['HACHIMIMT_BATCH_SIZE']}")
+    print(f"   Batch khởi đầu theo VRAM: {env_map['HACHIMIMT_BATCH_SIZE']}")
     print(f"   Compute Type: {env_map['HACHIMIMT_COMPUTE_TYPE']}")
     print(f"   Piper Device: {env_map['PIPER_DEVICE']}")
     print(f"   NVIDIA Dynamic Libs: Đã nạp {len(discovered_nvidia_libs)} thư mục")
@@ -373,6 +383,7 @@ def step4_models_and_smoke_test(
     voice_selector,
     voice_download_mode,
     step3_ready,
+    worker_python,
     tts_engine_selector,
     vieneu_voice_selector,
 ):
@@ -383,19 +394,19 @@ def step4_models_and_smoke_test(
 
     selected_tts=os.environ["NOVEL_TTS_ENGINE"]
     chosen_voice=os.environ["NOVEL_TTS_VOICE"]
-    tts_command=[sys.executable,str(repo_dir/"scripts/setup_tts.py"),"--engine",selected_tts,"--voice",chosen_voice]
+    tts_command=[str(worker_python),str(repo_dir/"scripts/setup_tts.py"),"--engine",selected_tts,"--voice",chosen_voice]
     if selected_tts=="vieneu":
         tts_command += ["--device",os.environ["VIENEU_DEVICE"],"--install","--preload"]
     elif voice_download_mode.value=="all":
         tts_command += ["--all"]
     subprocess.run(tts_command,cwd=str(repo_dir),env=dict(os.environ),check=True)
 
-    if gpu_detected:
+    if gpu_detected and selected_tts == "piper":
         try:
             clean_env = dict(os.environ)
             ort_test = subprocess.run(
                 [
-                    sys.executable, "-c",
+                    str(worker_python), "-c",
                     "import onnxruntime as ort; "
                     "p = ort.get_available_providers(); "
                     "print('PROVIDERS=' + ','.join(p)); "
@@ -410,12 +421,13 @@ def step4_models_and_smoke_test(
         except Exception as ort_err:
             print(f"⚠️ Kiểm tra ORT: {ort_err}")
 
+    if gpu_detected:
         chosen_model = model_selector.value or "HachimiMT-60-QT"
         print(f"🚀 Chạy GPU smoke-test với model '{chosen_model}'...")
         try:
             smoke_test = subprocess.run(
                 [
-                    sys.executable, "scripts/check_gpu.py",
+                    str(worker_python), "scripts/check_gpu.py",
                     "--model", chosen_model,
                     "--voice", chosen_voice, "--tts-engine", selected_tts
                 ],
@@ -423,12 +435,14 @@ def step4_models_and_smoke_test(
                 cwd=str(repo_dir), env=dict(os.environ)
             )
             if smoke_test.returncode == 0:
-                print("   ✅ GPU Smoke Test THÀNH CÔNG RỰC RỠ!")
+                print("   ✅ GPU smoke test đạt: dịch và TTS đã inference trên GPU.")
             else:
-                print("   ⚠️ GPU Smoke Test trả về thông tin:")
-                print("   " + (smoke_test.stderr or smoke_test.stdout)[-400:].replace("\n", "\n   "))
+                print("   ❌ GPU smoke test thất bại:")
+                print("   " + (smoke_test.stderr or smoke_test.stdout)[-800:].replace("\n", "\n   "))
+                raise RuntimeError("GPU smoke test thất bại; chưa khởi chạy Web vì chưa xác nhận được inference.")
         except Exception as smoke_err:
-            print(f"   ⚠️ Bỏ qua smoke test: {smoke_err}")
+            print(f"   ❌ Không xác nhận được inference GPU: {smoke_err}")
+            raise
     else:
         print("ℹ️ Đang chạy chế độ CPU, bỏ qua kiểm tra CUDA.")
 
@@ -454,6 +468,7 @@ def step5_launch_server(
     time,
     tunnel_selector,
     urllib,
+    worker_python,
 ):
     assert step4_ready
     print("=" * 65)
@@ -499,7 +514,7 @@ def step5_launch_server(
     print("🚀 Đang khởi động máy chủ Uvicorn trên 127.0.0.1:8000...")
     server_process = subprocess.Popen(
         [
-            sys.executable, "-m", "uvicorn", "main:app",
+            str(worker_python), "-m", "uvicorn", "main:app",
             "--host", "127.0.0.1", "--port", "8000",
             "--workers", "1", "--no-access-log",
             "--timeout-graceful-shutdown", "120"

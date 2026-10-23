@@ -15,6 +15,8 @@ from translation.core.pronoun_harmonizer_v9 import harmonize_pronouns_v9
 from translation.core.postprocess_policy import classify_genre, v9_route_for_decision
 from translation.core.text_preprocess import normalize_chinese_text
 from audio import audio_service, merge_service
+from storage import bucket_service
+from storage.bucket_service import BucketSyncWorker
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +92,12 @@ class Job:
         self.target_chapter_ids = None
         self.scope_label = ''
         self.telemetry = TaskTelemetry()
+        self.bucket_sync = BucketSyncWorker(store)
+        try:
+            budget_minutes = max(0, int(os.getenv('NOVEL_SESSION_BUDGET_MINUTES', '0')))
+        except ValueError:
+            budget_minutes = 0
+        self.session_deadline = time.monotonic() + budget_minutes * 60 if budget_minutes else None
 
     @property
     def active(self):
@@ -112,7 +120,9 @@ class Job:
             'done': done,
             'total': total,
             'active': self.active,
-            'scope': self.scope_label
+            'scope': self.scope_label,
+            'cloud_sync': self.bucket_sync.snapshot_status(),
+            'session_seconds_remaining': max(0, int(self.session_deadline - time.monotonic())) if self.session_deadline else None,
         }
 
     async def broadcast(self, event):
@@ -130,7 +140,27 @@ class Job:
                 self.loop
             )
 
+    def queue_cloud_artifact(self, path, kind):
+        try:
+            self.bucket_sync.enqueue_artifact(path, kind)
+        except Exception as exc:
+            log.warning('Không xếp hàng được artifact Bucket (%s): %s', kind, exc)
+            self.emit('cloud_checkpoint_error', error=str(exc)[:240])
+
+    def queue_cloud_snapshot(self, include_audio=False):
+        try:
+            return self.bucket_sync.enqueue_snapshot(include_audio)
+        except Exception as exc:
+            log.warning('Không xếp hàng được checkpoint Bucket: %s', exc)
+            self.emit('cloud_checkpoint_error', error=str(exc)[:240])
+            return False
+
     def checkpoint(self):
+        if self.session_deadline is not None and time.monotonic() >= self.session_deadline:
+            self.stop_flag.set()
+            self.gate.set()
+            self.status = 'stopping'
+            self.message = 'Đã hết ngân sách phiên; đang lưu trạng thái và dừng sau batch hiện tại.'
         while not self.stop_flag.is_set():
             if self.gate.wait(.2):
                 return True
@@ -268,6 +298,7 @@ class Job:
                     cid, position, title, paras, self.store.audio_dir,
                     **audio_service.generation_kwargs(config))
             self.store.update(cid, audio_status='done')
+            self.queue_cloud_artifact(audio_path, 'audio')
             log.info('TIMING audio chapter=%s seconds=%.3f', position, time.perf_counter() - started)
             self.emit('chapter_audio_done', chapter_id=cid, audio_url=f'/api/chapters/{cid}/audio')
             try:
@@ -286,6 +317,7 @@ class Job:
         group_failed = False
         audio_queue = None
         export_dirty = False
+        next_cloud_snapshot = time.monotonic() + 60
         target_id_set = set(target_chapter_ids) if target_chapter_ids else None
         try:
             backend = config.get('backend', 'ct2')
@@ -386,13 +418,17 @@ class Job:
                             paras = [postprocess(p) for p in paras]
                             self.store.update(current, outputs=values, translated_title=title, translated=paras)
                             self.emit('segment_done', chapter_id=current, completed=sum(v is not None for v in values), segments=len(plan))
+                            if config.get('cloud_checkpoint', bucket_service.write_enabled()) and time.monotonic() >= next_cloud_snapshot:
+                                self.queue_cloud_snapshot(config.get('checkpoint_include_audio', False))
+                                next_cloud_snapshot = time.monotonic() + 60
 
                         title, paras = assemble(plan, values, len(chapter['source']))
                         title, paras = apply_postprocess(title, paras, chapter['title'], chapter['source'], config)
                         self.store.update(current, status='done', outputs=values, translated_title=title, translated=paras, error='')
                         export_dirty = True
                         try:
-                            self.store.export_chapter_text(current, title, paras, chapter['position'])
+                            text_path = self.store.export_chapter_text(current, title, paras, chapter['position'])
+                            self.queue_cloud_artifact(text_path, 'text')
                         except Exception as e:
                             log.error("Lỗi xuất file text chương %d: %s", chapter['position'], e)
                         log.info('TIMING translation chapter=%s seconds=%.3f', chapter['position'], time.perf_counter() - chapter_started)
@@ -469,12 +505,9 @@ class Job:
                         errors = group_failed or any(c['status'] == 'error' or c.get('audio_status') == 'error' for c in self.store.list())
                     self.status = 'error' if errors and not self.stop_flag.is_set() else 'ready'
                     self.message = 'Có lỗi dịch hoặc audio. Kiểm tra chương lỗi và thông báo audio.' if self.status == 'error' else ''
-            if config.get('cloud_checkpoint'):
-                try:
-                    from storage.checkpoints import upload_checkpoint
-                    result = upload_checkpoint(self.store, include_audio=config.get('checkpoint_include_audio', False))
-                    self.emit('cloud_checkpoint_done', url=result['url'])
-                except Exception as exc:
-                    log.exception('Không lưu được checkpoint Pixeldrain; checkpoint cục bộ vẫn còn')
-                    self.emit('cloud_checkpoint_error', error=str(exc)[:300])
+            if config.get('cloud_checkpoint', bucket_service.write_enabled()):
+                if self.queue_cloud_snapshot(config.get('checkpoint_include_audio', False)):
+                    self.emit('cloud_checkpoint_queued')
+                elif not bucket_service.write_enabled():
+                    self.emit('cloud_checkpoint_error', error='Chưa cấu hình HF_TOKEN để ghi vào Bucket.')
             self.emit('job_finished')

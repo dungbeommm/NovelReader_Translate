@@ -281,8 +281,10 @@ async function loadHardware() {
     if (currentHardware) {
       const dev = currentHardware.is_gpu ? 'GPU' : (currentHardware.has_discrete_gpu ? 'GPU rời' : 'CPU');
       const devName = currentHardware.gpu_name ? ` (${currentHardware.gpu_name})` : '';
-      $('hw-pill').textContent = `⚡ ${dev}: ${currentHardware.cpu_count} luồng${devName}`;
-      $('hw-pill').title = currentHardware.summary || '';
+      if ($('hw-pill')) {
+        $('hw-pill').textContent = `${dev}: ${currentHardware.cpu_count} luồng${devName}`;
+        $('hw-pill').title = currentHardware.summary || '';
+      }
       if (currentHardware.batch_size && !$('batch').value) {
         $('batch').value = Math.max(1, Math.min(1024, currentHardware.batch_size));
       }
@@ -355,7 +357,7 @@ function updateModelInfo() {
 
   if (m.id === 'space' || m.id.startsWith('space:')) {
     badge.className = 'badge badge-success';
-    badge.textContent = '🌐 Space Online';
+    badge.textContent = ' Space Online';
     if (btnBadge) btnBadge.style.display = 'none';
     if (downloadBox) downloadBox.style.display = 'none';
     $('engine-note-title').textContent = `${m.name} · Trực tuyến HF Space`;
@@ -393,7 +395,7 @@ function updateModelInfo() {
           gpuHint.textContent = `⚡ GPU rời khả dụng: ${gpuLabel}${vramLabel} — Đề xuất tải để tăng tốc!`;
         } else {
           gpuHint.className = 'gpu-hint no-gpu';
-          gpuHint.textContent = `ℹ️ Đang chạy CPU. Bấm nút để tải model offline về máy.`;
+          gpuHint.textContent = `ℹ Đang chạy CPU. Bấm nút để tải model offline về máy.`;
         }
       }
     }
@@ -618,6 +620,7 @@ function openSettingsModal(tabId = 'tab-translation') {
   switchSettingsTab(tabId);
   loadGdriveSettings();
   loadPixeldrainSettings();
+  loadBucketSettings();
   loadMergedGroups();
   $('settings-modal').querySelector('.modal-tab.active')?.focus({preventScroll:true});
 }
@@ -716,6 +719,84 @@ async function loadPixeldrainSettings() {
     }
   }
 }
+
+async function loadBucketSettings() {
+  const status = $('hf-bucket-status');
+  if (!status) return;
+  try {
+    const info = await api('/api/bucket/status');
+    const cloud = state?.progress?.cloud_sync;
+    status.textContent = info.write_enabled
+      ? (cloud?.last_error ? `Đã kết nối · Lỗi đồng bộ: ${cloud.last_error}` : `Đã kết nối · ${info.books.length} truyện · ${cloud?.pending || 0} tệp đang chờ`)
+      : 'Chỉ đọc được Bucket. Nhập token Hugging Face có quyền ghi để bật sao lưu.';
+    status.className = info.write_enabled ? 'bucket-connected' : 'bucket-readonly';
+    const select = $('hf-bucket-books');
+    const selectedValue = select.value;
+    select.replaceChildren(new Option('Chọn truyện để khôi phục', ''));
+    for (const book of info.books) {
+      const option = new Option(`${book.book_id} · ${book.created_at || ''}`, book.book_id);
+      select.add(option);
+    }
+    if ([...select.options].some(option => option.value === selectedValue)) select.value = selectedValue;
+  } catch (error) {
+    status.textContent = `Không kết nối được Bucket: ${error.message}`;
+  }
+}
+
+if ($('btn-hf-bucket-token')) $('btn-hf-bucket-token').onclick = () => safe(async () => {
+  const input = $('hf-bucket-token');
+  const result = await api('/api/bucket/token', {token: input.value.trim()});
+  input.value = '';
+  if ($('cloud-checkpoint-auto')) $('cloud-checkpoint-auto').checked = result.write_enabled;
+  $('hf-bucket-status').textContent = result.write_enabled ? 'Đã kết nối ghi Bucket trong phiên này.' : 'Đã ngắt kết nối ghi Bucket.';
+  await loadBucketSettings();
+});
+if ($('btn-bucket-refresh')) $('btn-bucket-refresh').onclick = () => safe(loadBucketSettings);
+if ($('btn-bucket-save')) $('btn-bucket-save').onclick = () => checkpointAction(async () => {
+  $('checkpoint-status').textContent = 'Đang tạo snapshot và đồng bộ Bucket…';
+  const result = await api('/api/bucket/checkpoint', {include_audio: $('checkpoint-include-audio').checked});
+  $('checkpoint-status').textContent = `Đã lưu checkpoint ${result.created_at}.`;
+  await loadBucketSettings();
+});
+if ($('btn-bucket-restore')) $('btn-bucket-restore').onclick = () => checkpointAction(async () => {
+  const bookId = $('hf-bucket-books').value;
+  if (!bookId) throw new Error('Chọn một truyện trong Bucket trước.');
+  if (!confirm('Thay truyện hiện tại bằng checkpoint trong Bucket? Bản xuất cũ được giữ nguyên.')) return;
+  $('checkpoint-status').textContent = 'Đang tải checkpoint từ Bucket…';
+  const result = await api('/api/bucket/restore', {book_id: bookId});
+  selected = null;
+  await refreshAll();
+  $('checkpoint-status').textContent = `Đã khôi phục ${result.book?.title || bookId}.`;
+});
+if ($('btn-bucket-audio')) $('btn-bucket-audio').onclick = () => checkpointAction(async () => {
+  const bookId = $('hf-bucket-books').value;
+  if (!bookId) throw new Error('Chọn truyện đang mở trong Bucket trước.');
+  $('checkpoint-status').textContent = 'Đang tải audio của truyện…';
+  const result = await api('/api/bucket/audio', {book_id: bookId});
+  $('checkpoint-status').textContent = `Đã nạp ${result.files} file audio (${(result.bytes / 1024 ** 2).toFixed(1)} MB).`;
+});
+if ($('btn-end-session')) $('btn-end-session').onclick = () => safe(async () => {
+  if (!confirm('Dừng tác vụ, đồng bộ checkpoint lên Bucket và kết thúc công việc trong phiên này? Sau đó quay lại Molab để dừng runtime.')) return;
+  const button = $('btn-end-session');
+  button.disabled = true;
+  try {
+    if (state.progress.active) {
+      await api('/api/translate/stop', {});
+      for (let attempt = 0; attempt < 120; attempt++) {
+        const current = await api('/api/state');
+        renderProgress(current.progress);
+        if (!current.progress.active) break;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      if (state.progress.active) throw new Error('Tác vụ chưa dừng sau 2 phút; hãy thử lại khi tác vụ đã dừng.');
+    }
+    const checkpoint = await api('/api/bucket/checkpoint', {include_audio: $('checkpoint-include-audio').checked});
+    notice(`Đã lưu checkpoint ${checkpoint.created_at}. Quay lại Molab để dừng runtime.`);
+    await loadBucketSettings();
+  } finally {
+    button.disabled = false;
+  }
+});
 
 if ($('modal-pixeldrain-key')) {
   $('modal-pixeldrain-key').addEventListener('input', () => {
@@ -1327,6 +1408,20 @@ function renderProgress(progress) {
   $('btn-save-settings').disabled = p.active || busy;
   $('btn-open-export').disabled = !state.book;
   $('save-note').textContent = p.message || 'Tiến độ được lưu tự động trên máy của bạn.';
+  const runtimeStatus = $('runtime-session-status');
+  if (runtimeStatus) {
+    const parts = [];
+    if (Number.isFinite(p.session_seconds_remaining)) {
+      const minutes = Math.floor(p.session_seconds_remaining / 60);
+      parts.push(`Ngân sách phiên còn ${Math.floor(minutes / 60)}h ${minutes % 60}m`);
+    }
+    if (p.cloud_sync) {
+      parts.push(`Bucket: ${p.cloud_sync.pending} đang chờ`);
+      if (p.cloud_sync.last_success) parts.push(`đồng bộ gần nhất ${new Date(p.cloud_sync.last_success).toLocaleTimeString()}`);
+      if (p.cloud_sync.last_error) parts.push(`lỗi: ${p.cloud_sync.last_error}`);
+    }
+    runtimeStatus.textContent = parts.join(' · ');
+  }
   for (const id of ['export-txt', 'export-epub']) {
     $(id).setAttribute('aria-disabled', String(!state.book));
   }
@@ -1396,13 +1491,13 @@ function renderToc() {
     if (c.audio_status === 'done') {
       const audioBadge = document.createElement('span');
       audioBadge.className = 'toc-audio-badge';
-      audioBadge.textContent = '🎧';
+      audioBadge.textContent = '';
       audioBadge.title = 'Đã có audio MP3';
       b.append(n, name, audioBadge, icon);
     } else if (['queued', 'generating'].includes(c.audio_status)) {
       const audioBadge = document.createElement('span');
       audioBadge.className = 'toc-audio-badge generating';
-      audioBadge.textContent = '🎙';
+      audioBadge.textContent = '';
       audioBadge.title = 'Đang tạo audio...';
       b.append(n, name, audioBadge, icon);
     } else {
@@ -1879,7 +1974,7 @@ function renderMergeResult(groups, groupSize) {
       </div>
       <div style="display:flex; gap:6px;">
         <a href="${g.url}" download="${g.filename}" style="font-size:11px; color:#4ade80; text-decoration:none;">⬇ Tải</a>
-        <button type="button" class="btn-play-group-item" data-url="${g.url}" data-name="${g.filename}" style="padding:2px 6px; font-size:10px; background:#1e2d23; border:1px solid #2d4534; border-radius:3px; color:#a7f3d0; cursor:pointer;">🎧 Nghe</button>
+        <button type="button" class="btn-play-group-item" data-url="${g.url}" data-name="${g.filename}" style="padding:2px 6px; font-size:10px; background:#1e2d23; border:1px solid #2d4534; border-radius:3px; color:#a7f3d0; cursor:pointer;"> Nghe</button>
       </div>
     </div>
   `).join('');

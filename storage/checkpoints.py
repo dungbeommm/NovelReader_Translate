@@ -7,6 +7,7 @@ import shutil
 import sqlite3
 import tempfile
 import zipfile
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
@@ -53,16 +54,29 @@ def digest(path):
         return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
+def download_bucket_checkpoint(bucket_id, relative_path, destination, token=None):
+    """Download one object from a Hugging Face Storage Bucket."""
+    from huggingface_hub import download_bucket_files
+    target = Path(destination)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    kwargs = {'token': token} if token else {}
+    download_bucket_files(bucket_id, files=[(relative_path, str(target))], **kwargs)
+    if not target.is_file():
+        raise RuntimeError('Hugging Face không tạo file checkpoint đã yêu cầu.')
+    return target
+
+
 def create_checkpoint(store, destination, include_audio=False):
     if not store.book():
         raise ValueError('Hãy nạp truyện trước khi tạo checkpoint.')
     entries = {}
     with tempfile.TemporaryDirectory(prefix='novel-snapshot-') as temp:
         snap = Path(temp) / 'novel.sqlite3'
-        with store.connect() as source, sqlite3.connect(snap) as target:
+        with store.connect() as source, closing(sqlite3.connect(snap)) as target:
             source.backup(target)
             row = target.execute('SELECT config FROM book LIMIT 1').fetchone()
             target.execute('UPDATE book SET config=?', (json.dumps(clean_config(json.loads(row[0] or '{}')), ensure_ascii=False),))
+            target.commit()
         with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
             def add(path, name):
                 archive.write(path, name)
@@ -174,7 +188,7 @@ def restore_checkpoint(store, archive_path):
                     shutil.copyfileobj(src, out, 1024 * 1024)
                 if digest(dest) != checks[member.filename]:
                     raise ValueError('Checkpoint bị hỏng: SHA256 không khớp.')
-        with sqlite3.connect((stage / 'data/novel.sqlite3').as_uri() + '?mode=ro&immutable=1', uri=True) as db:
+        with closing(sqlite3.connect((stage / 'data/novel.sqlite3').as_uri() + '?mode=ro&immutable=1', uri=True)) as db:
             db.row_factory = sqlite3.Row
             if db.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
                 raise ValueError('SQLite checkpoint bị hỏng.')

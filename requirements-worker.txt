@@ -1,0 +1,21 @@
+# Minimal Web, translation, storage, and import dependencies for the isolated Molab worker.
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+websockets>=13,<16
+python-multipart>=0.0.18,<1
+pydantic>=2.9,<3
+ebooklib>=0.19,<1
+beautifulsoup4>=4.12,<5
+charset-normalizer>=3.4,<4
+huggingface-hub>=1.1,<2
+ctranslate2>=4.5,<5
+sentencepiece>=0.2,<1
+gradio-client>=1.10,<3
+opencc-python-reimplemented>=0.1.7,<1
+transformers>=4.40,<5
+sacremoses>=0.1.1
+safetensors>=0.4
+google-api-python-client>=2.150,<3
+google-auth-oauthlib>=1.2,<2
+google-auth-httplib2>=0.2,<1
+psutil>=5.9,<8

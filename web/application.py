@@ -8,7 +8,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from storage.files import MAX_FILE
 from web import runtime
 from web.access import protect_request, handle_login
-from web.routes import books, translation, audio, gdrive, system, progress, drive_exports, drive_api, pixeldrain_routes, checkpoints
+from web.routes import books, translation, audio, gdrive, system, progress, drive_exports, drive_api, pixeldrain_routes, checkpoints, bucket
 
 @asynccontextmanager
 async def lifespan(app):
@@ -66,7 +66,7 @@ def create_app():
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed)
 
     app.middleware('http')(local_guard)
-    for module in (audio, gdrive, translation, system, progress, drive_exports, drive_api, pixeldrain_routes, checkpoints, books):
+    for module in (audio, gdrive, translation, system, progress, drive_exports, drive_api, pixeldrain_routes, checkpoints, bucket, books):
         app.include_router(module.router)
     static_dir = runtime.ROOT / 'web/static'
     static_dir.mkdir(parents=True, exist_ok=True)

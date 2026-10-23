@@ -5,18 +5,18 @@
   --md-sys-color-on-primary: #00391d;
   --md-sys-color-primary-container: #1b3525;
   --md-sys-color-on-primary-container: #8ae8a7;
-  --md-sys-color-surface: #0e1210;
-  --md-sys-color-surface-dim: #090e0b;
-  --md-sys-color-surface-bright: #1b241e;
-  --md-sys-color-surface-container-lowest: #0c110f;
-  --md-sys-color-surface-container-low: #121915;
-  --md-sys-color-surface-container: #161e19;
-  --md-sys-color-surface-container-high: #1c2621;
-  --md-sys-color-surface-container-highest: #233129;
-  --md-sys-color-on-surface: #eef2ef;
-  --md-sys-color-on-surface-variant: #9aa89e;
-  --md-sys-color-outline: #415347;
-  --md-sys-color-outline-variant: #28372d;
+  --md-sys-color-surface: #000000;
+  --md-sys-color-surface-dim: #000000;
+  --md-sys-color-surface-bright: #1a1a1a;
+  --md-sys-color-surface-container-lowest: #090909;
+  --md-sys-color-surface-container-low: #111111;
+  --md-sys-color-surface-container: #151515;
+  --md-sys-color-surface-container-high: #1c1c1c;
+  --md-sys-color-surface-container-highest: #2a2a2a;
+  --md-sys-color-on-surface: #f2f2f2;
+  --md-sys-color-on-surface-variant: #b4b4b4;
+  --md-sys-color-outline: #383838;
+  --md-sys-color-outline-variant: #242424;
   --md-sys-color-error: #f87171;
   --md-sys-color-error-container: #451516;
   --md-sys-color-on-error: #ffebee;
@@ -28,7 +28,7 @@
   --raised: var(--md-sys-color-surface-container-high);
   --raised-hover: var(--md-sys-color-surface-container-highest);
   --border: var(--md-sys-color-outline-variant);
-  --border-subtle: #1e2822;
+  --border-subtle: #1a1a1a;
   --border-default: var(--md-sys-color-outline-variant);
   --card-bg: var(--md-sys-color-surface-container);
   --input-bg: var(--md-sys-color-surface-container-lowest);
@@ -210,7 +210,7 @@ textarea {
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background: #121714;
+  background: #000000;
   flex-shrink: 0;
   z-index: 20;
 }
@@ -259,8 +259,8 @@ textarea {
 
 .brand-sub {
   display: block;
-  font: 9px/1.4 var(--mono);
-  letter-spacing: 1px;
+  font: 12px/1.4 var(--sans);
+  letter-spacing: 0;
   color: var(--text-muted);
 }
 
@@ -945,20 +945,21 @@ textarea {
 
 
 .primary {
-  background: var(--green);
-  border-color: var(--green);
-  color: #0c1a10;
+  background: #f2f2f2;
+  border-color: #f2f2f2;
+  color: #000;
   width: 100%;
   font-weight: 600;
   font-size: 14px;
   padding: 10px;
-  border-radius: 6px;
-  box-shadow: 0 2px 10px rgba(74, 222, 128, 0.2);
+  border-radius: 999px;
+  min-height: 36px;
+  box-shadow: none;
 }
 
 .primary:hover:not(:disabled) {
-  background: var(--green-hover);
-  border-color: var(--green-hover);
+  background: #d9d9d9;
+  border-color: #d9d9d9;
 }
 
 .controls {
@@ -1164,7 +1165,7 @@ progress::-moz-progress-bar {
 }
 
 .save-note {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-muted);
   margin: 6px 0 0;
 }
@@ -2563,5 +2564,14 @@ button:focus-visible,a:focus-visible,summary:focus-visible,select:focus-visible,
 .export-format-options input[type="radio"]{width:16px;min-width:16px;height:16px;flex:0 0 16px;padding:0}
 .export-format-options label>span{flex:1;min-width:0;overflow-wrap:break-word}
 .settings-card button:not(.modal-close){font-size:14px!important}
+.bucket-card{display:grid;gap:10px;padding:16px;margin-bottom:16px;border:1px solid var(--border-default);border-radius:10px;background:var(--card-bg)}
+.bucket-card>span,.bucket-card p{margin:0;color:var(--text-muted);font-size:13px;overflow-wrap:anywhere}
+.bucket-card .bucket-connected{color:var(--md-sys-color-primary,#86d79d)}
+.bucket-card .bucket-readonly{color:var(--text-muted)}
+.bucket-card label{font-size:13px}
+.bucket-token-row{display:flex;gap:8px;align-items:center}
+.bucket-token-row input,.bucket-token-row select{flex:1;min-width:0;min-height:42px;padding:9px 11px;border:1px solid var(--border-default);border-radius:7px;background:var(--input-bg,#111814);color:var(--text-main)}
+.bucket-token-row button{min-height:42px}
+@media(max-width:650px){.bucket-token-row{align-items:stretch;flex-direction:column}.bucket-token-row button{width:100%}}
 .export-dialog [hidden],.settings-card [hidden]{display:none!important}
 .header-right #btn-open-export{width:auto;flex:0 0 auto;padding:10px 20px;min-width:100px;margin:0}

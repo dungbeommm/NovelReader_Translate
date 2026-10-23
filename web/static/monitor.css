@@ -16,6 +16,15 @@
   z-index: 20;
 }
 
+.monitor-dock .resource-trigger,
+.monitor-popup.resource-popup {
+  display: none !important;
+}
+
+.monitor-dock .task-trigger {
+  margin-left: auto;
+}
+
 .monitor-dock button {
   background: transparent;
   border: 1px solid transparent;

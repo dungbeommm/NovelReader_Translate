@@ -268,37 +268,14 @@ class LocalEngine(TranslatorEngine):
         mode = 'paragraph' if chunk_mode == 'paragraph' else 'sentence'
 
         if self.translator is not None:
-            from translation.core.text_preprocess import normalize_chinese_text
-            all_chunks = []
-            mapping = []
-
-            for t in texts:
-                norm_text = normalize_chinese_text(t, normalize_mode)
-                if not norm_text.strip():
-                    mapping.append((len(all_chunks), len(all_chunks)))
-                    continue
-
-                sub_chunks = self.translator._chunk_text(norm_text, chunk_mode=mode)
-                start_idx = len(all_chunks)
-                all_chunks.extend(sub_chunks if sub_chunks else [norm_text])
-                mapping.append((start_idx, len(all_chunks)))
-
-            if not all_chunks:
-                return ['' for _ in texts]
-
-            from translation.core.translator import Backend
-            if getattr(self.translator, '_backend', Backend.CT2) == Backend.TRANSFORMERS:
-                translated_chunks = self.translator._translate_torch_batch(all_chunks, beam_size=beam)
-            else:
-                translated_chunks = self.translator._translate_chunks_ct2(all_chunks, beam_size=beam)
-
-            outputs = []
-            for start, end in mapping:
-                if start == end:
-                    outputs.append('')
-                else:
-                    outputs.append(' '.join(translated_chunks[start:end]).strip())
-            return outputs
+            from translation.pipeline import TranslationRequest, translate_batch
+            return list(translate_batch(
+                self.translator,
+                TranslationRequest(
+                    texts=tuple(texts), model=self.model_key, backend=self.backend,
+                    beam_size=beam, chunk_mode=mode, normalize_mode=normalize_mode,
+                ),
+            ).texts)
 
         from translation.core.text_preprocess import normalize_chinese_text
         from .core.chunker import split_chunks

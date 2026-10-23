@@ -26,7 +26,7 @@ def test_protect_segment_boundary():
     assert ''.join(ss)==text and any('玄剑宗' in s for s in ss)
 def test_alignment():
     ps=['甲'*250,'乙。'];plan=make_plan('标题',ps)
-    title,merged=assemble(plan,['Tựa','A','B',None],2)
-    assert title=='Tựa' and merged==['A B','']
+    title,merged=assemble(plan,['Tựa','A','B'],2)
+    assert title=='Tựa' and merged==['A','B']
 def test_paragraphs():assert paragraphs('甲\n\n“乙”\n丙')==['甲','"乙"','丙']
 def test_punctuation():assert postprocess('xin chào ， ngươi 。 tiếp tục ！')=='Xin chào, ngươi. Tiếp tục!'

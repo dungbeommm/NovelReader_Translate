@@ -73,17 +73,11 @@ def segment_text(text, limit=200, terms=()):
     return out
 
 def make_plan(title, paras, terms=(), chunk_mode='sentence'):
-    if chunk_mode == 'paragraph':
-        plan = [(-1, seg) for seg in segment_text(title, limit=200, terms=terms)]
-        for i, p in enumerate(paras):
-            if len(p) <= 400:
-                plan.append((i, p))
-            else:
-                for seg in segment_text(p, limit=350, terms=terms):
-                    plan.append((i, seg))
-        return plan
-    return [(-1, seg) for seg in segment_text(title, terms=terms)] + [
-        (i, seg) for i, p in enumerate(paras) for seg in segment_text(p, terms=terms)]
+    # The Hachimi core owns token-aware splitting. Persist logical source lines
+    # here so that long paragraphs are never split by an unrelated char limit.
+    return ([(-1, title)] if title.strip() else []) + [
+        (i, paragraph) for i, paragraph in enumerate(paras) if paragraph.strip()
+    ]
 
 
 def assemble(plan, values, count):

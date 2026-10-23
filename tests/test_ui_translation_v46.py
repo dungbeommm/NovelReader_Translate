@@ -66,16 +66,17 @@ def test_legacy_engine_signature_explicit_warning(caplog):
 
 
 def test_primary_engine_forwards_beam_chunk_normalize():
- from translation.core.chunker import split_chunks
- engine=LocalEngine();chunks=[];seen=[]
+ engine=LocalEngine();seen=[]
  class Core:
+  _model_key='HachimiMT-60-QT'
+  _backend='ct2'
   @staticmethod
-  def clamp_beam(v):return max(1,min(4,v))
-  def _chunk_text(self,text,chunk_mode):seen.append((text,chunk_mode));return split_chunks(text,chunk_mode)
-  def _translate_chunks_ct2(self,items,beam_size):chunks.append((items,beam_size));return items
+  def clamp_beam(value):return max(1,min(4,value))
+  def translate_text(self,text,*,chunk_mode,beam_size):
+   seen.append((text,chunk_mode,beam_size));return [],text
  engine.translator=Core()
  assert engine.translate_raw(['學校。世界！'],beam_size=3,chunk_mode='paragraph',normalize_mode='t2s')==['学校。世界！']
- assert seen==[('学校。世界！','paragraph')] and chunks[0][1]==3
+ assert seen==[('学校。世界！','paragraph',3)]
 
 
 def test_export_options_and_zip_exclude_partial_files(client):
