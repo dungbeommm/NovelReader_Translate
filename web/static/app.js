@@ -242,36 +242,39 @@ async function loadExportDestination() {
 }
 
 let driveExportBusy = false;
-for (const [id, format] of [['export-txt', 'txt'], ['export-epub', 'epub'], ['export-audio', 'audio']]) {
-  $(id).addEventListener('click', event => {
-    const dest = $('export-destination')?.value;
-    if (dest === 'pixeldrain') {
-      event.preventDefault();
-      exportToPixeldrain(format);
-      return;
-    }
-    if (dest !== 'gdrive') return;
-    event.preventDefault();
-    if (driveExportBusy) { notice('Đang xuất lên Drive. Vui lòng đợi.'); return; }
-    safe(async () => {
-      driveExportBusy = true;
-      try {
-        if (!await ensureDriveApiConnection()) return;
-        const task = await api('/api/export/drive/' + format, {}, 'POST');
-        notice(driveBackend === 'api' ? 'Đang xuất qua Drive API…' : 'Đang chuẩn bị. Nếu được hỏi, quay lại tab Colab để cấp quyền Google Drive.');
-        for (let i = 0; i < 3600; i++) {
-          const result = await api('/api/export/drive/status/' + task.id);
-          if (result.status === 'done') {
-            notice('✓ Đã lưu trong My Drive/' + result.drive_path + (format === 'audio' ? ` (${result.uploaded_files || result.total_files} file audio, không ZIP).` : '.') + ' Bản gốc vẫn giữ tại máy chạy.');
-            return;
-          }
-          if (result.status === 'error' || result.status === 'auth_error') throw new Error(result.message);
-          notice(result.message || 'Đang xuất Google Drive…');
-          await new Promise(resolve => setTimeout(resolve, 1000));
+function exportBook(format) {
+  const dest = $('export-destination').value;
+  if (dest === 'pixeldrain') {
+    exportToPixeldrain(format);
+    return;
+  }
+  if (dest === 'download') {
+    const link = document.createElement('a');
+    link.href = '/api/export/' + format;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    return;
+  }
+  if (driveExportBusy) { notice('Đang xuất lên Drive. Vui lòng đợi.'); return; }
+  safe(async () => {
+    driveExportBusy = true;
+    try {
+      if (!await ensureDriveApiConnection()) return;
+      const task = await api('/api/export/drive/' + format, {}, 'POST');
+      notice(driveBackend === 'api' ? 'Đang xuất qua Drive API…' : 'Đang chuẩn bị. Nếu được hỏi, quay lại tab Colab để cấp quyền Google Drive.');
+      for (let i = 0; i < 3600; i++) {
+        const result = await api('/api/export/drive/status/' + task.id);
+        if (result.status === 'done') {
+          notice('✓ Đã lưu trong My Drive/' + result.drive_path + (format === 'audio' ? ` (${result.uploaded_files || result.total_files} file audio, không ZIP).` : '.') + ' Bản gốc vẫn giữ tại máy chạy.');
+          return;
         }
-        throw new Error('Chưa nhận được kết quả. Kiểm tra thư mục NovelReader_Exports trong Drive trước khi xuất lại.');
-      } finally { driveExportBusy = false; }
-    });
+        if (result.status === 'error' || result.status === 'auth_error') throw new Error(result.message);
+        notice(result.message || 'Đang xuất Google Drive…');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      throw new Error('Chưa nhận được kết quả. Kiểm tra thư mục NovelReader_Exports trong Drive trước khi xuất lại.');
+    } finally { driveExportBusy = false; }
   });
 }
 
@@ -1386,7 +1389,8 @@ function renderProgress(progress) {
   $('status').classList.toggle('error', p.status === 'error');
 
   const percent = p.total ? Math.floor(p.done / p.total * 100) : 0;
-  $('progress-text').textContent = p.scope ? `${p.done} / ${p.total} chương (${p.scope})` : `${p.done} / ${p.total} chương`;
+  $('progress-text').textContent = `${p.done}/${p.total}`;
+  $('progress-text').title = p.scope ? `Phạm vi: ${p.scope}` : 'Toàn bộ truyện';
   $('percent').textContent = percent + '%';
   $('progress').value = percent;
 
@@ -1422,9 +1426,6 @@ function renderProgress(progress) {
     }
     runtimeStatus.textContent = parts.join(' · ');
   }
-  for (const id of ['export-txt', 'export-epub']) {
-    $(id).setAttribute('aria-disabled', String(!state.book));
-  }
 }
 
 function updateBook(book) {
@@ -1445,8 +1446,6 @@ function updateBook(book) {
     $('chapter-single-ops').hidden = true;
   }
 }
-
-function updateBatchCount() {}
 
 function renderToc() {
   const query = $('search').value.toLowerCase();
@@ -1471,7 +1470,6 @@ function renderToc() {
         e.stopPropagation();
         if (cb.checked) selectedChapterIds.add(c.id);
         else selectedChapterIds.delete(c.id);
-        updateBatchCount();
       };
       b.append(cb);
     }
@@ -2349,7 +2347,8 @@ document.querySelectorAll('input[name="export-kind"]').forEach(el=>el.onchange=u
 $('btn-confirm-export').onclick=()=>{
  if($('btn-confirm-export').disabled)return;
  const kind=document.querySelector('input[name="export-kind"]:checked').value;
- $('export-dialog').close();$(`export-${kind}`).click();
+ $('export-dialog').close();
+ exportBook(kind);
 };
 $('export-storage-settings').onclick=()=>{$('export-dialog').close();openSettingsModal('tab-cloud');};
 $('settings-modal').addEventListener('keydown',event=>{

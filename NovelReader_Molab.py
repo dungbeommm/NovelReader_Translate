@@ -1,5 +1,7 @@
 # /// script
-# dependencies = ["marimo>=0.19,<1"]
+# dependencies = [
+#     "marimo>=0.23.3",
+# ]
 # ///
 """NovelReader running as an interactive, notebook-native Molab app."""
 
@@ -42,11 +44,11 @@ def _intro():
         value="HachimiMT-60-QT",
         label="Mô hình dịch",
     )
-    return mo, engine, piper_voice, vieneu_voice, model
+    return engine, mo, model, piper_voice, vieneu_voice
 
 
 @app.cell
-def _prepare(mo):
+def _prepare():
     import os
     import subprocess
     import sys
@@ -97,11 +99,20 @@ def _prepare(mo):
     gpu_line = gpu.stdout.strip().splitlines()[0] if gpu and gpu.returncode == 0 and gpu.stdout.strip() else ""
     gpu_name, vram_mb = (part.strip() for part in gpu_line.split(",", 1)) if gpu_line else ("CPU", "0")
     device_note = f"**Máy:** {gpu_name} · **VRAM:** {int(vram_mb) / 1024:.1f} GB"
-    return mo, os, subprocess, sys, root, gpu_line, device_note
+    return device_note, gpu_line, os, root, subprocess, sys
 
 
 @app.cell
-def _install(engine, piper_voice, vieneu_voice, gpu_line, mo, os, root, subprocess, sys):
+def _install(
+    engine,
+    gpu_line,
+    os,
+    piper_voice,
+    root,
+    subprocess,
+    sys,
+    vieneu_voice,
+):
     import hashlib
 
     worker_dir = root / ".worker-venv"
@@ -149,7 +160,7 @@ def _install(engine, piper_voice, vieneu_voice, gpu_line, mo, os, root, subproce
     if engine.value == "vieneu":
         voice_args += ["--device", os.environ["VIENEU_DEVICE"], "--install", "--preload"]
     subprocess.run(voice_args, cwd=root, check=True)
-    return mo, os, python, root
+    return (python,)
 
 
 @app.cell
@@ -215,11 +226,11 @@ def _launch(mo, os, python, root, subprocess):
             raise RuntimeError(f"Lỗi máy chủ ({exc.code}): {detail}") from exc
 
     mo.output.replace(mo.callout(mo.md("✅ Backend đã chạy. Giao diện dịch truyện nằm ngay trong notebook bên dưới; không cần tunnel hoặc mở tab khác."), kind="success"))
-    return api_request, mo, root
+    return (api_request,)
 
 
 @app.cell
-def _controls(mo, engine, piper_voice, vieneu_voice, model):
+def _controls(engine, mo, model, piper_voice, vieneu_voice):
     book_file = mo.ui.file(filetypes=[".txt", ".epub"], kind="area", label="Kéo thả hoặc chọn truyện TXT/EPUB", max_size=50 * 1024 * 1024)
     upload_button = mo.ui.run_button(label="Nạp truyện", kind="neutral")
     audio_enabled = mo.ui.checkbox(value=True, label="Tự động tạo audio sau khi dịch mỗi chương")
@@ -245,12 +256,40 @@ def _controls(mo, engine, piper_voice, vieneu_voice, model):
         refresh,
     ], gap=1.1)
     mo.output.replace(controls)
-    return (audio_enabled, book_file, upload_button, start_button, pause_button, resume_button, stop_button,
-            export_txt_button, export_epub_button, export_audio_button, refresh)
+    return (
+        audio_enabled,
+        book_file,
+        export_audio_button,
+        export_epub_button,
+        export_txt_button,
+        pause_button,
+        refresh,
+        resume_button,
+        start_button,
+        stop_button,
+        upload_button,
+    )
 
 
 @app.cell
-def _actions(api_request, audio_enabled, book_file, engine, model, piper_voice, vieneu_voice, upload_button, start_button, pause_button, resume_button, stop_button, export_txt_button, export_epub_button, export_audio_button, mo):
+def _actions(
+    api_request,
+    audio_enabled,
+    book_file,
+    engine,
+    export_audio_button,
+    export_epub_button,
+    export_txt_button,
+    mo,
+    model,
+    pause_button,
+    piper_voice,
+    resume_button,
+    start_button,
+    stop_button,
+    upload_button,
+    vieneu_voice,
+):
     try:
         if upload_button.value:
             if not book_file.value:
@@ -296,7 +335,7 @@ def _actions(api_request, audio_enabled, book_file, engine, model, piper_voice, 
 
 
 @app.cell
-def _dashboard(api_request, refresh, mo, device_note):
+def _dashboard(api_request, device_note, mo, refresh):
     import html
 
     refresh.value

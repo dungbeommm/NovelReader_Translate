@@ -16,14 +16,8 @@
   z-index: 20;
 }
 
-.monitor-dock .resource-trigger,
-.monitor-popup.resource-popup {
-  display: none !important;
-}
-
-.monitor-dock .task-trigger {
-  margin-left: auto;
-}
+.resource-trigger-label { font-weight: 600; }
+.dock-percent { color: var(--md-sys-color-on-surface-variant); }
 
 .monitor-dock button {
   background: transparent;
@@ -78,13 +72,6 @@
   color: var(--md-sys-color-on-surface-variant, #a0a6a2);
 }
 
-.resource-pill .resource-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--hue, #5e9fe8);
-}
-
 .resource-pill .resource-name {
   font-weight: 600;
   color: var(--md-sys-color-on-surface, #eef2ef);
@@ -92,7 +79,7 @@
 
 .resource-pill .resource-val {
   font-weight: 500;
-  color: var(--hue, #5e9fe8);
+  color: var(--md-sys-color-on-surface, #f2f2f2);
 }
 
 .dock-expand {
@@ -246,7 +233,6 @@ progress::-webkit-progress-value {
   align-items: center;
   padding: 10px 14px;
   border: 1px solid var(--md-sys-color-outline-variant, #2a352e);
-  border-left: 3px solid var(--hue, #5e9fe8);
   background: var(--md-sys-color-surface-container, #181f1a);
   border-radius: var(--md-shape-corner-m, 12px);
 }
@@ -267,7 +253,7 @@ progress::-webkit-progress-value {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   margin: 0;
-  color: var(--hue, #5e9fe8);
+  color: var(--md-sys-color-on-surface, #f2f2f2);
 }
 
 .resource-card p {
@@ -334,8 +320,10 @@ progress::-webkit-progress-value {
     gap: 8px;
   }
   .resource-rings {
-    gap: 4px;
+    display: none;
   }
+  .monitor-dock .task-trigger { margin-left: auto; }
+  .dock-task progress, .dock-percent { display: none; }
   .resource-pill {
     padding: 2px 5px;
     font-size: 10px;

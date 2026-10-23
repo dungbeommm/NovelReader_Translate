@@ -6,8 +6,8 @@
 <title>NovelReader</title>
 <link href="/static/fonts/inter.css" rel="stylesheet"/>
 <link href="/static/fonts/jetbrains-mono.css" rel="stylesheet"/>
-<link href="/static/style.css?v=20261023-2" rel="stylesheet"/>
-<link href="/static/monitor.css?v=20261023-2" rel="stylesheet"/>
+<link href="/static/style.css?v=20261023-3" rel="stylesheet"/>
+<link href="/static/monitor.css?v=20261023-3" rel="stylesheet"/>
 </head>
 <body>
 <header class="topbar">
@@ -286,74 +286,13 @@
         <button disabled="" id="stop">□ Dừng</button>
       </div>
 
-      <!-- WORKFLOW PROGRESS CARD (Top: Translation, Bottom: Audio TTS) -->
-      <div class="workflow-card" id="workflow-card">
-        <!-- Row 1: Tiến trình Dịch -->
-        <div class="workflow-section trans-flow">
-          <div class="workflow-header">
-            <div class="workflow-title-group">
-              <span class="workflow-icon">文</span>
-              <span class="workflow-title">Dịch thuật</span>
-              <span class="workflow-badge" id="workflow-trans-state">Sẵn sàng</span>
-            </div>
-            <div class="workflow-progress-meta">
-              <span class="workflow-counter" id="progress-text">0 / 0 chương</span>
-              <strong class="workflow-pct" id="percent">0%</strong>
-            </div>
-          </div>
-          <progress aria-label="Tiến độ dịch" id="progress" max="100" value="0"></progress>
-          <div class="workflow-metrics">
-            <div class="workflow-stat">
-              <span class="stat-lbl">Thời gian</span>
-              <span class="stat-val" id="trans-elapsed-time">00:00</span>
-            </div>
-            <div class="workflow-stat">
-              <span class="stat-lbl">Tốc độ</span>
-              <span class="stat-val" id="trans-speed-rate">—</span>
-            </div>
-            <div class="workflow-stat">
-              <span class="stat-lbl">Dự kiến (ETA)</span>
-              <span class="stat-val" id="trans-eta-time">—</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Row 2: Tiến trình Tạo Audio -->
-        <div class="workflow-section audio-flow">
-          <div class="workflow-header">
-            <div class="workflow-title-group">
-              <span class="workflow-icon"></span>
-              <span class="workflow-title">Tạo Audio</span>
-              <span class="workflow-badge" id="workflow-audio-state">Chưa có</span>
-            </div>
-            <div class="workflow-progress-meta">
-              <span class="workflow-counter" id="audio-progress-text">0 / 0 chương audio</span>
-              <strong class="workflow-pct" id="audio-percent">0%</strong>
-            </div>
-          </div>
-          <progress aria-label="Tiến độ audio" id="audio-progress-bar" max="100" value="0"></progress>
-          <div class="workflow-metrics">
-            <div class="workflow-stat">
-              <span class="stat-lbl">Tốc độ</span>
-              <span class="stat-val" id="audio-speed-rate">—</span>
-            </div>
-            <div class="workflow-stat">
-              <span class="stat-lbl">Thời gian</span>
-              <span class="stat-val" id="audio-elapsed-time">00:00</span>
-            </div>
-            <div class="workflow-stat">
-              <span class="stat-lbl">Dự kiến (ETA)</span>
-              <span class="stat-val" id="audio-eta-time">—</span>
-            </div>
-          </div>
-        </div>
-
+      <div class="job-feedback" aria-live="polite">
         <div class="output-dirs-hint">
           <span> Văn bản: <code id="output-text-path">output_text/</code></span>
           <span> Audio: <code id="output-audio-path">output_audio/</code></span>
         </div>
         <p class="save-note" id="runtime-session-status" aria-live="polite"></p>
-        <p class="save-note" id="save-note" style="display:none;"></p>
+        <p class="save-note" id="save-note"></p>
         <div aria-live="polite" class="merge-result-card" id="merge-audio-result" style="display:none; margin-top:8px;"></div>
       </div>
     </section>
@@ -463,16 +402,16 @@
   </section>
 </main>
 
-<!-- COMPACT MONITOR STATUS DOCK (MD3 Status Bar: 38px) -->
 <footer class="monitor-dock" aria-label="Giám sát hệ thống">
-  <button id="open-resources" class="resource-trigger" type="button" aria-haspopup="dialog" aria-controls="resource-popup" title="Xem chi tiết tài nguyên">
+  <button id="open-resources" class="resource-trigger" type="button" aria-haspopup="dialog" aria-controls="resource-popup" aria-label="Xem tài nguyên CPU, GPU, bộ nhớ và ổ đĩa" title="Xem chi tiết tài nguyên">
+    <span class="resource-trigger-label">Tài nguyên</span>
     <span id="resource-rings" class="resource-rings"></span>
     <span class="dock-expand" aria-hidden="true">⌃</span>
   </button>
   <button id="open-task-monitor" class="task-trigger" type="button" aria-haspopup="dialog" aria-controls="task-popup">
     <span class="dock-task">
-      <span>Dịch <b id="dock-translation">—</b></span>
-      <progress id="dock-translation-bar" max="100" value="0" aria-label="Tiến trình dịch"></progress>
+      <span>Dịch <b id="progress-text">0/0</b> <span id="percent" class="dock-percent">0%</span></span>
+      <progress id="progress" max="100" value="0" aria-label="Tiến trình dịch toàn truyện"></progress>
     </span>
     <span class="dock-task">
       <span>Audio <b id="dock-audio">—</b></span>
@@ -855,13 +794,6 @@
   </div>
 </dialog>
 
-<!-- Legacy hidden export anchors -->
-<div hidden="" id="legacy-export-actions">
-  <a class="button export" href="/api/export/txt" id="export-txt" title="Tải về file TXT">↓ <span>Xuất TXT</span></a>
-  <a class="button export" href="/api/export/epub" id="export-epub" title="Tải về file EPUB">↓ <span>Xuất EPUB</span></a>
-  <a class="button export" href="/api/export/audio" id="export-audio" title="Tải về Audio"> <span>Xuất Audio</span></a>
-</div>
-
 <!-- DIALOG: Xuất truyện -->
 <dialog aria-labelledby="export-heading" class="export-dialog" id="export-dialog">
   <div class="export-dialog-header">
@@ -959,7 +891,7 @@
   </div>
 </dialog>
 
-<script defer src="/static/app.js?v=20261023-2"></script>
-<script defer src="/static/monitor.js?v=20261023-2"></script>
+<script defer src="/static/app.js?v=20261023-3"></script>
+<script defer src="/static/monitor.js?v=20261023-3"></script>
 </body>
 </html>
