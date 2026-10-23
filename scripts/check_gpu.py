@@ -66,7 +66,12 @@ def main():
                  ('người lữ hành bước qua khu rừng và nhìn về phía chân trời ' * 20).strip()):
         buffer = io.BytesIO()
         with wave.open(buffer, 'wb') as wav:
-            synthesize_wav(voice, text, wav)
+            # Set the header before inference so an ONNX/CUDA exception remains
+            # visible instead of being replaced by wave.Error on close.
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(int(voice.config.sample_rate))
+            synthesize_wav(voice, text, wav, set_wav_format=False)
         with wave.open(io.BytesIO(buffer.getvalue()), 'rb') as wav:
             durations.append(wav.getnframes() / wav.getframerate())
     duration = sum(durations)

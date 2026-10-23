@@ -249,13 +249,29 @@ def step2_install_libraries(
             check=True,
         )
     pip_executable = [str(worker_python), "-m", "pip"]
-    requirements = [repo_dir / "requirements-worker.txt"]
+    worker_requirements = repo_dir / "requirements-worker.txt"
+    if not worker_requirements.is_file():
+        worker_requirements.write_text(
+            "\n".join([
+                "fastapi>=0.115,<1", "uvicorn>=0.30,<1", "websockets>=13,<16",
+                "python-multipart>=0.0.18,<1", "pydantic>=2.9,<3", "ebooklib>=0.19,<1",
+                "beautifulsoup4>=4.12,<5", "charset-normalizer>=3.4,<4",
+                "huggingface-hub>=1.1,<2", "ctranslate2>=4.5,<5", "sentencepiece>=0.2,<1",
+                "gradio-client>=1.10,<3", "opencc-python-reimplemented>=0.1.7,<1",
+                "sacremoses>=0.1.1", "safetensors>=0.4",
+                "google-api-python-client>=2.150,<3", "google-auth-oauthlib>=1.2,<2",
+                "google-auth-httplib2>=0.2,<1", "psutil>=5.9,<8",
+            ]) + "\n",
+            encoding="utf-8",
+        )
+        print("Generated compatible worker requirements for this legacy checkout.")
+    requirements = [worker_requirements]
     requirements.append(repo_dir / ("requirements-vieneu.txt" if tts_engine_selector.value == "vieneu" else "tts/requirements.txt"))
     for req_path in requirements:
         if not req_path.is_file():
             raise FileNotFoundError(f"Thiếu tệp phụ thuộc: {req_path}")
-    signature = _hashlib.sha256(
-        ("|".join([str(tts_engine_selector.value), str(gpu_detected)] + [_hashlib.sha256(path.read_bytes()).hexdigest() for path in requirements])).encode()
+    signature = hashlib.sha256(
+        ("|".join([str(tts_engine_selector.value), str(gpu_detected)] + [hashlib.sha256(path.read_bytes()).hexdigest() for path in requirements])).encode()
     ).hexdigest()
     marker = worker_dir / ".requirements-signature"
     if not marker.is_file() or marker.read_text("utf-8") != signature:
@@ -435,11 +451,29 @@ def step4_models_and_smoke_test(
                 cwd=str(repo_dir), env=dict(os.environ)
             )
             if smoke_test.returncode == 0:
-                print("   ✅ GPU smoke test đạt: dịch và TTS đã inference trên GPU.")
+                print("GPU smoke test passed: CT2 translation and Piper CUDA inference succeeded.")
+            elif selected_tts == "piper":
+                failure_text = (smoke_test.stderr or "") + (smoke_test.stdout or "")
+                if "piper/voice.py" not in failure_text and "tts/synthesis.py" not in failure_text and "Piper session" not in failure_text:
+                    print((smoke_test.stderr or smoke_test.stdout)[-1200:])
+                    raise RuntimeError("GPU translation smoke test failed; Web was not started.")
+                print("Piper CUDA inference failed; checking CPU Piper while keeping CT2 translation on GPU.")
+                cpu_env = dict(os.environ)
+                cpu_env["PIPER_DEVICE"] = "cpu"
+                cpu_env["PIPER_REQUIRE_CUDA"] = "0"
+                cpu_code = "import io,os,wave; from audio.audio_service import _voice_instances,get_voice; from tts.synthesis import synthesize_wav; _voice_instances.clear(); v=get_voice(os.environ['NOVEL_TTS_VOICE']); b=io.BytesIO(); w=wave.open(b,'wb'); synthesize_wav(v,'Hello, this is an online voice test.',w); w.close(); print('CPU_TTS_OK')"
+                cpu_smoke = subprocess.run(
+                    [str(worker_python), "-c", cpu_code], cwd=str(repo_dir), env=cpu_env,
+                    capture_output=True, text=True, timeout=120
+                )
+                if cpu_smoke.returncode != 0 or "CPU_TTS_OK" not in cpu_smoke.stdout:
+                    print((cpu_smoke.stderr or cpu_smoke.stdout)[-1200:])
+                    raise RuntimeError("Piper CPU fallback smoke test failed; Web was not started.")
+                os.environ.update({"PIPER_DEVICE": "cpu", "PIPER_REQUIRE_CUDA": "0"})
+                print("CT2 translation remains on GPU; Piper TTS will run on CPU for this Molab session.")
             else:
-                print("   ❌ GPU smoke test thất bại:")
-                print("   " + (smoke_test.stderr or smoke_test.stdout)[-800:].replace("\n", "\n   "))
-                raise RuntimeError("GPU smoke test thất bại; chưa khởi chạy Web vì chưa xác nhận được inference.")
+                print((smoke_test.stderr or smoke_test.stdout)[-1200:])
+                raise RuntimeError("GPU smoke test failed; Web was not started.")
         except Exception as smoke_err:
             print(f"   ❌ Không xác nhận được inference GPU: {smoke_err}")
             raise
