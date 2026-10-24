@@ -146,20 +146,6 @@ class SystemPurgeInput(BaseModel):
     purge_cache: bool = True
 
 
-class GDriveConfigInput(BaseModel):
-    enabled: bool = False
-    mode: str = Field(default='local_folder', pattern=r'^(local_folder|api)$')
-    local_path: str = ''
-    client_id: str = ''
-    client_secret: str = ''
-    access_token: str = ''
-    refresh_token: str = ''
-    account_email: str = ''
-    folder_id: str = ''
-    folder_name: str = 'Novel_Audio'
-    auto_upload: bool = False
-
-
 class BookTitleInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
 

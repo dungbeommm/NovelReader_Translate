@@ -82,7 +82,7 @@ def test_rename_moves_both_outputs_without_loss(tmp_path):
     assert store.text_dir.name == store.audio_dir.name == 'Tên truyện đã dịch'
     assert not old_text.exists()
     assert (store.audio_dir/'chuong_0001.mp3').read_bytes() == b'audio'
-    assert 'TÊN TRUYỆN ĐÃ DỊCH' in (store.text_dir/'toan_bo_truyen.txt').read_text()
+    assert 'TÊN TRUYỆN ĐÃ DỊCH' in (store.text_dir/'toan_bo_truyen.txt').read_text(encoding='utf-8')
 
 
 @pytest.mark.parametrize('name', ['../abc', '..', 'CON', 'nul.txt', 'Truyện:/A?', '  Tên. ', 'a'*200])

@@ -7,10 +7,13 @@ from paths import data_dir
 
 
 def key_path():
-    return data_dir() / 'private' / 'pixeldrain.json'
+    return data_dir() / 'private' / 'huggingface.json'
 
 
 def load_key():
+    token = os.getenv('HF_TOKEN', '').strip()
+    if token:
+        return token
     try:
         return str(json.loads(key_path().read_text(encoding='utf-8')).get('api_key', '')).strip()
     except (OSError, ValueError):
@@ -23,7 +26,7 @@ def save_key(key):
     if not key:
         target.unlink(missing_ok=True)
         return
-    fd, name = tempfile.mkstemp(dir=target.parent, prefix='.pd-')
+    fd, name = tempfile.mkstemp(dir=target.parent, prefix='.hf-')
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             json.dump({'api_key': key.strip()}, f)

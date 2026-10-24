@@ -13,6 +13,8 @@ services:
       - ./output_text:/app/output_text
       - ./output_audio:/app/output_audio
       - cache:/cache
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
     stop_grace_period: 120s
     logging:
       driver: json-file

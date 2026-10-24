@@ -98,7 +98,7 @@ def test_draft_normalization_round_trip(client):
 
 
 def test_html_single_export_and_simple_sections():
- html=BeautifulSoup((Path(__file__).resolve().parents[1]/'web/static/index.html').read_text(),'html.parser')
+ html=BeautifulSoup((Path(__file__).resolve().parents[1]/'web/static/index.html').read_text(encoding='utf-8'),'html.parser')
  assert html.select_one('.header-right #btn-open-export')
  assert not html.select('.header-right #export-txt,.header-right #export-epub,.header-right #export-audio')
  assert html.select_one('#legacy-export-actions').has_attr('hidden')
@@ -116,25 +116,12 @@ def test_audio_filter_preserves_formats_and_rejects_linked_dirs(tmp_path):
  for ext in ('mp3','wav','m4b','m4a','opus','aac','ogg'):(root/f'good.{ext}').write_bytes(b'a')
  hidden=root/'.partial';hidden.mkdir();(hidden/'scratch.wav').write_bytes(b'a')
  outside=tmp_path/'other';outside.mkdir();(outside/'external.mp3').write_bytes(b'a')
- (root/'linked').symlink_to(outside,target_is_directory=True)
+ try:
+  (root/'linked').symlink_to(outside,target_is_directory=True)
+ except OSError as exc:
+  if getattr(exc, 'winerror', None) == 1314: pytest.skip('Windows requires symlink privilege')
+  raise
  (root/'direct.mp3').symlink_to(outside/'external.mp3')
  files=exportable_audio_files(root)
  assert {p.suffix for p in files}=={'.mp3','.wav','.m4b','.m4a','.opus','.aac','.ogg'}
  assert len(files)==7 and all(p.name.startswith('good.') for p in files)
-
-
-def test_pixeldrain_audio_uses_completed_files_only(tmp_path,monkeypatch):
- from storage.store import Store
- from storage import pixeldrain_service as pd
- store=Store(tmp_path/'book.sqlite3',text_dir=tmp_path/'text',audio_dir=tmp_path/'audio')
- # Use the same book creation path as the existing API tests.
- from storage.files import parse_file
- parsed=parse_file('test.txt','第一章\n你好。'.encode())
- store.replace("test.txt",parsed[1],parsed[0])
- (store.audio_dir/'good.aac').write_bytes(b'audio')
- hidden=store.audio_dir/'.partial';hidden.mkdir();(hidden/'scratch.wav').write_bytes(b'partial')
- def upload(path,filename,api_key=None):
-  with zipfile.ZipFile(path) as z:assert z.namelist()==['good.aac']
-  return {'url':'https://pixeldrain.com/u/MockFile'}
- monkeypatch.setattr(pd,'upload_to_pixeldrain',upload)
- assert pd.export_book_to_pixeldrain(store,'audio')['url'].endswith('MockFile')

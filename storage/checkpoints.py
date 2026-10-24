@@ -2,15 +2,13 @@
 import hashlib
 import json
 import os
-import re
 import shutil
 import sqlite3
 import tempfile
 import zipfile
 from datetime import datetime, timezone
+from contextlib import closing
 from pathlib import Path, PurePosixPath
-from urllib.parse import urlsplit
-import urllib.request
 from paths import data_dir
 from storage.store import _safe_filename
 
@@ -59,7 +57,7 @@ def create_checkpoint(store, destination, include_audio=False):
     entries = {}
     with tempfile.TemporaryDirectory(prefix='novel-snapshot-') as temp:
         snap = Path(temp) / 'novel.sqlite3'
-        with store.connect() as source, sqlite3.connect(snap) as target:
+        with store.connect() as source, closing(sqlite3.connect(snap)) as target, target:
             source.backup(target)
             # Ignore unknown fields even if an old config contains credentials.
             row = target.execute('SELECT config FROM book LIMIT 1').fetchone()
@@ -90,50 +88,25 @@ def create_checkpoint(store, destination, include_audio=False):
     return Path(destination)
 
 
-def upload_checkpoint(store, include_audio=False, api_key=None):
-    from storage.pixeldrain_service import upload_to_pixeldrain
+def upload_checkpoint(store, include_audio=False):
+    from storage.huggingface_service import upload_file
     stamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
     name = f'{_safe_filename(store.book()["title"] if store.book() else "novel")}_checkpoint_{stamp}.zip'
     with tempfile.TemporaryDirectory(prefix='novel-cloud-') as temp:
         path = create_checkpoint(store, Path(temp) / name, include_audio)
         if path.stat().st_size > MAX_ARCHIVE:
             raise ValueError('Checkpoint vượt 2 GB; bỏ chọn kèm audio và xuất audio riêng.')
-        result = upload_to_pixeldrain(path, name, api_key=api_key)
+        result = upload_file(path, name, category='checkpoints', title=store.book()["title"])
+    data_dir().mkdir(parents=True, exist_ok=True)
     (data_dir() / 'cloud_checkpoint_last.json').write_text(json.dumps({
         'url': result['url'], 'id': result['id'], 'created_at': datetime.now(timezone.utc).isoformat()
     }), 'utf-8')
     return result
 
 
-def parse_pixeldrain_id(value):
-    value = value.strip()
-    if value.startswith('https://'):
-        parsed = urlsplit(value)
-        if parsed.netloc != 'pixeldrain.com' or parsed.query or parsed.fragment:
-            raise ValueError('Chỉ nhận link https://pixeldrain.com/u/ID hoặc ID file.')
-        match = re.fullmatch(r'/(?:u|api/file)/([A-Za-z0-9_-]{4,64})', parsed.path)
-        value = match.group(1) if match else ''
-    if not re.fullmatch(r'[A-Za-z0-9_-]{4,64}', value):
-        raise ValueError('ID Pixeldrain không hợp lệ.')
-    return value
-
-
 def download_checkpoint(value, destination):
-    file_id = parse_pixeldrain_id(value)
-    # No arbitrary URLs, no redirects to other hosts (SSRF).
-    class NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, *args, **kwargs):
-            raise ValueError('Không cho phép chuyển hướng khi tải checkpoint.')
-    opener = urllib.request.build_opener(NoRedirect)
-    req = urllib.request.Request(f'https://pixeldrain.com/api/file/{file_id}', headers={'User-Agent': 'NovelReader/4.4'})
-    with opener.open(req, timeout=120) as response, Path(destination).open('wb') as out:
-        total = 0
-        while chunk := response.read(1024 * 1024):
-            total += len(chunk)
-            if total > MAX_ARCHIVE:
-                raise ValueError('Checkpoint vượt giới hạn 2 GB.')
-            out.write(chunk)
-    return Path(destination)
+    from storage.huggingface_service import download_checkpoint as download
+    return download(value, destination, MAX_ARCHIVE)
 
 
 def restore_checkpoint(store, archive_path):
@@ -176,7 +149,7 @@ def restore_checkpoint(store, archive_path):
                     shutil.copyfileobj(src, out, 1024 * 1024)
                 if digest(dest) != checks[member.filename]:
                     raise ValueError('Checkpoint bị hỏng: SHA256 không khớp.')
-        with sqlite3.connect((stage / 'data/novel.sqlite3').as_uri() + '?mode=ro&immutable=1', uri=True) as db:
+        with closing(sqlite3.connect((stage / 'data/novel.sqlite3').as_uri() + '?mode=ro&immutable=1', uri=True)) as db:
             db.row_factory = sqlite3.Row
             if db.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
                 raise ValueError('SQLite checkpoint bị hỏng.')

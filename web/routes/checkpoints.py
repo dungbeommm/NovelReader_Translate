@@ -1,4 +1,4 @@
-"""Checkpoint, scratch workspace and backend Pixeldrain settings routes."""
+"""Checkpoint, scratch workspace and Hugging Face storage routes."""
 import json
 import shutil
 import tempfile
@@ -8,15 +8,11 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 from paths import data_dir
-from storage import checkpoints as service, cloud_settings, pixeldrain_service
+from storage import checkpoints as service
 from web import runtime
 from web.schemas import Config
 
 router = APIRouter()
-
-
-class CloudKey(BaseModel):
-    api_key: str = Field(default='', max_length=4096)
 
 
 class CheckpointOptions(BaseModel):
@@ -24,23 +20,7 @@ class CheckpointOptions(BaseModel):
 
 
 class RestoreCloud(BaseModel):
-    file_id: str = Field(min_length=4, max_length=256)
-
-
-@router.post('/api/settings/pixeldrain')
-def save_key(payload: CloudKey):
-    cloud_settings.save_key(payload.api_key)
-    return {'ok': True, 'has_key': bool(pixeldrain_service.get_pixeldrain_api_key())}
-
-
-@router.post('/api/settings/pixeldrain/test')
-def test_connection():
-    try:
-        return pixeldrain_service.check_connection()
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(502, str(exc))
+    file_id: str = Field(min_length=4, max_length=2048)
 
 
 @router.get('/api/checkpoints/status')
@@ -85,7 +65,7 @@ def download(payload: CheckpointOptions):
         raise HTTPException(400, f'Không tạo được checkpoint: {exc}')
 
 
-@router.post('/api/checkpoints/pixeldrain')
+@router.post('/api/checkpoints/huggingface')
 def upload_cloud(payload: CheckpointOptions):
     try:
         with runtime.job.lock:
@@ -96,7 +76,7 @@ def upload_cloud(payload: CheckpointOptions):
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:
-        raise HTTPException(502, f'Không lưu được Pixeldrain: {exc}')
+        raise HTTPException(502, f'Không lưu được Hugging Face: {exc}')
 
 
 def apply_restore(path):
@@ -132,7 +112,7 @@ def restore_file(file: UploadFile):
         file.file.close()
 
 
-@router.post('/api/checkpoints/restore-pixeldrain')
+@router.post('/api/checkpoints/restore-huggingface')
 def restore_cloud(payload: RestoreCloud):
     try:
         with runtime.job.lock:
@@ -143,4 +123,4 @@ def restore_cloud(payload: RestoreCloud):
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(400, f'Không khôi phục được từ Pixeldrain: {exc}')
+        raise HTTPException(400, f'Không khôi phục được từ Hugging Face: {exc}')

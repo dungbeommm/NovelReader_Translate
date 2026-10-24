@@ -277,12 +277,6 @@ class Job:
             self.store.update(cid, audio_status='done')
             log.info('TIMING audio chapter=%s seconds=%.3f', position, time.perf_counter() - started)
             self.emit('chapter_audio_done', chapter_id=cid, audio_url=f'/api/chapters/{cid}/audio')
-            try:
-                from gdrive import gdrive_service
-                if gdrive_service.get_gdrive_config().get('auto_upload'):
-                    threading.Thread(target=gdrive_service.upload_audio_file, args=(audio_path,), daemon=True).start()
-            except Exception:
-                log.exception('Không thể khởi tạo upload Drive')
         except Exception as exc:
             log.exception('Lỗi tạo audio cho chương %s', cid)
             self.store.update(cid, audio_status='error')
@@ -486,6 +480,6 @@ class Job:
                     result = upload_checkpoint(self.store, include_audio=config.get('checkpoint_include_audio', False))
                     self.emit('cloud_checkpoint_done', url=result['url'])
                 except Exception as exc:
-                    log.exception('Không lưu được checkpoint Pixeldrain; checkpoint cục bộ vẫn còn')
+                    log.exception('Không lưu được checkpoint Hugging Face; checkpoint cục bộ vẫn còn')
                     self.emit('cloud_checkpoint_error', error=str(exc)[:300])
             self.emit('job_finished')

@@ -519,33 +519,13 @@
 <span class="pill" id="noise-w-val" style="min-width:40px; text-align:center;">0.80</span>
 </div>
 </div><div class="tts-advanced-card" hidden="" id="vieneu-controls"><h3>Lấy mẫu VieNeu</h3><p class="form-hint">Temperature / Top-p tác động lấy mẫu, không phải nhãn cảm xúc. Dùng một model chung; batch gộp các đoạn trong chương trên GPU. CPU/ONNX không hỗ trợ batch này.</p><div class="tts-param-grid"><label for="vieneu-temperature">Temperature<input class="form-input" id="vieneu-temperature" max="1.5" min="0.1" step="0.05" type="number" value="0.8"/></label><label for="vieneu-top-p">Top-p<input class="form-input" id="vieneu-top-p" max="1" min="0.1" step="0.05" type="number" value="0.95"/></label><label for="vieneu-batch-size">Batch đoạn / GPU<input class="form-input" id="vieneu-batch-size" max="64" min="1" type="number" value="8"/></label></div></div><div class="form-group"><label for="audio-sample-rate">Tần số lấy mẫu đầu ra</label><select class="form-select" id="audio-sample-rate"><option value="0">Gốc theo model</option><option value="22050">22.05 kHz</option><option value="24000">24 kHz</option><option value="44100">44.1 kHz</option><option value="48000">48 kHz</option></select><p class="form-hint" id="audio-output-hint"></p></div></div></details></div>
-<!-- TAB: Lưu trữ Đám mây & Pixeldrain -->
-<div aria-labelledby="settings-nav-cloud" class="tab-pane" id="pane-tab-cloud" role="tabpanel" style="display:none"><div class="settings-section"><h3>Lưu trữ</h3><p class="section-hint">Thiết lập nơi nhận bản xuất. API key được giữ ở backend, không đưa vào checkpoint.</p></div>
-<div class="form-group">
-<label for="modal-pixeldrain-key" style="font-weight:600; display:block; margin-bottom:6px;">Pixeldrain API Key:</label>
-<div style="display:flex; gap:10px; align-items:center;">
-<input class="form-input" id="modal-pixeldrain-key" placeholder="Nhập API Key Pixeldrain của bạn..." style="flex:1; padding:8px 12px; background:#1a231d; border:1px solid #2d4033; color:#e2e8f0; border-radius:6px;" type="password"/>
-<button class="button primary" id="btn-save-pixeldrain-key" style="white-space:nowrap; padding:8px 16px;" type="button">Lưu Key</button>
-</div>
-<small class="form-hint" style="display:block; margin-top:8px; color:#888; font-size:12px; line-height:1.5;">
-            Lưu TXT, EPUB, audio và checkpoint lên Pixeldrain. Giới hạn dung lượng/tốc độ phụ thuộc tài khoản.
-            <br/>
-            👉 Lấy API key miễn phí tại: <a href="https://pixeldrain.com/user/api_keys" rel="noopener noreferrer" style="color:var(--accent,#4ade80); text-decoration:underline; font-weight:600;" target="_blank">pixeldrain.com/user/api_keys</a>
-</small>
-</div>
-<div id="pixeldrain-status-box" style="margin-top:16px; padding:12px; background:#131a15; border:1px solid #28372d; border-radius:6px; font-size:13px;">
-<div style="display:flex; justify-content:space-between; align-items:center;">
-<span>Trạng thái Pixeldrain:</span>
-<span class="chip" id="pixeldrain-key-status">Đang kiểm tra...</span>
-</div>
-</div>
-<div class="cloud-actions">
-<button id="btn-test-pixeldrain" type="button">Kiểm tra kết nối</button>
-<span class="form-hint">Key lưu riêng tại backend, không đưa vào checkpoint.</span>
-</div>
-
-
-<div class="storage-help"><h4>Google Drive</h4><p>Khi xuất, chọn Google Drive. Nếu cần cấp quyền, tool sẽ hướng dẫn kết nối; trên Colab hãy quay lại notebook khi được hỏi.</p><button id="settings-drive-connect" type="button">Quản lý kết nối Drive</button></div></div>
+<!-- TAB: Lưu trữ Đám mây & Hugging Face -->
+<div aria-labelledby="settings-nav-cloud" class="tab-pane" id="pane-tab-cloud" role="tabpanel" style="display:none">
+<div class="settings-section"><h3>Hugging Face</h3><p class="section-hint">Xuất và sao lưu mặc định vào kho cố định.</p></div>
+<p><a href="https://huggingface.co/datasets/uri410/novelreader-storage" target="_blank" rel="noopener noreferrer">uri410/novelreader-storage</a></p>
+<p>Token được cấu hình phía máy chủ bằng HF_TOKEN hoặc tệp thông tin đăng nhập riêng; không nằm trong checkpoint.</p>
+<p id="huggingface-key-status" role="status">Đang kiểm tra…</p>
+<button id="btn-test-huggingface" type="button">Kiểm tra kết nối</button></div>
 <!-- TAB 2: Xử lý Mục lục & Dọn dẹp -->
 
 <!-- TAB 3: Xóa Cache & Data của mọi thứ -->
@@ -591,20 +571,20 @@
 </div>
 <div aria-labelledby="settings-nav-backup" class="tab-pane" id="pane-tab-backup" role="tabpanel" style="display:none"><div class="settings-section"><h3>Sao lưu &amp; khôi phục</h3><p class="section-hint">Lưu tiến độ và cấu hình để tiếp tục trên runtime khác. Dừng job trước khi thao tác.</p></div><section aria-labelledby="checkpoint-heading" class="checkpoint-card">
 <h3 id="checkpoint-heading">Tiến độ &amp; bảng tạm</h3>
-<p class="form-hint">Gồm tiến độ SQLite, bản dịch và cấu hình bảng tạm đã lưu. Không chứa API key, token Drive hay model. Ai có link Pixeldrain có thể tải dữ liệu. Dừng job trước khi sao lưu/khôi phục thủ công.</p>
+<p class="form-hint">Gồm tiến độ SQLite, bản dịch và cấu hình bảng tạm đã lưu; không chứa token hay model. Quyền tải dữ liệu phụ thuộc cài đặt công khai/riêng tư của kho Hugging Face. Dừng job trước khi sao lưu/khôi phục thủ công.</p>
 <label class="toggle-row"><input id="checkpoint-include-audio" type="checkbox"/><span>Kèm audio (file có thể lớn)</span></label>
-<label class="toggle-row"><input id="cloud-checkpoint-auto" type="checkbox"/><span>Tự lưu Pixeldrain khi job kết thúc / dừng có kiểm soát</span></label>
+<label class="toggle-row"><input id="cloud-checkpoint-auto" type="checkbox"/><span>Tự lưu Hugging Face khi job kết thúc / dừng có kiểm soát</span></label>
 <div class="cloud-actions">
 <button id="btn-save-draft" type="button">Lưu bảng tạm</button>
 <button id="btn-load-draft" type="button">Nạp bảng tạm</button>
 <button id="btn-checkpoint-download" type="button">Tải checkpoint ZIP</button>
-<button class="primary" id="btn-checkpoint-cloud" type="button">Lưu Pixeldrain</button>
+<button class="primary" id="btn-checkpoint-cloud" type="button">Lưu Hugging Face</button>
 </div>
 <label class="restore-label" for="checkpoint-file">Khôi phục từ ZIP (thay truyện hiện tại)</label>
 <input accept=".zip,application/zip" id="checkpoint-file" type="file"/>
-<label class="restore-label" for="checkpoint-id">Hoặc link / ID checkpoint Pixeldrain</label>
+<label class="restore-label" for="checkpoint-id">Hoặc link / ID checkpoint Hugging Face</label>
 <div class="cloud-actions">
-<input autocomplete="off" id="checkpoint-id" placeholder="https://pixeldrain.com/u/…" type="text"/>
+<input autocomplete="off" id="checkpoint-id" placeholder="checkpoints/truyen/luot-xuat/checkpoint.zip" type="text"/>
 <button id="btn-checkpoint-restore" type="button">Khôi phục</button>
 </div>
 <p aria-live="polite" class="form-hint" id="checkpoint-status" role="status"></p>
@@ -617,39 +597,21 @@
 </div>
 </div>
 </div>
-<dialog id="drive-api-dialog" style="width:min(560px,calc(100vw - 32px));max-height:88vh;box-sizing:border-box;overflow:auto;background:#141e17;color:#e5f0e8;border:1px solid #375140;border-radius:12px;padding:22px;">
-<h2 style="margin-top:0;">Kết nối Google Drive trên Kaggle</h2>
-<p>Kaggle không hỗ trợ mount Drive của Colab. Kết nối này dùng Drive API, chỉ xin quyền với tệp do ứng dụng tạo.</p>
-<p><b>1.</b> Trong Google Cloud, bật Google Drive API, cấu hình OAuth consent và thêm tài khoản của bạn làm Test user nếu app đang Testing. Tạo OAuth client loại <b>Desktop app</b>, tải JSON về.</p>
-<label for="drive-api-client">Chọn JSON Desktop OAuth (không chia sẻ file này)</label>
-<input accept="application/json,.json" id="drive-api-client" style="display:block;max-width:100%;margin:12px 0;" type="file"/>
-<button id="drive-api-begin" type="button">2. Tạo link đăng nhập Google</button>
-<p><a hidden="" id="drive-api-auth-link" rel="noopener noreferrer" target="_blank">Mở Google để cấp quyền</a></p>
-<p><b>3.</b> Sau khi đồng ý, Google chuyển về <code>127.0.0.1:8765</code> trên máy bạn. Trang có thể báo không kết nối được — đây là bước chuyển mã, không phải lỗi Kaggle. Sao chép <b>toàn bộ URL trên thanh địa chỉ</b> và dán bên dưới, không gửi vào chat.</p>
-<label for="drive-api-return">URL trả về từ Google</label>
-<input autocomplete="off" id="drive-api-return" placeholder="http://127.0.0.1:8765/?state=…&amp;code=…" style="box-sizing:border-box;width:100%;margin:10px 0;padding:10px;" type="password"/>
-<p id="drive-api-message" role="status" style="overflow-wrap:anywhere;"></p>
-<div style="display:flex;gap:8px;flex-wrap:wrap;">
-<button id="drive-api-finish" type="button">Hoàn tất kết nối</button>
-<button id="drive-api-disconnect" type="button">Ngắt kết nối</button>
-<button id="drive-api-close" type="button">Đóng</button>
-</div>
-<p style="font-size:12px;">Giữ notebook và link Web riêng tư. Quyền kết nối được giữ tạm ngoài thư mục output và mất khi runtime bị xóa. Nếu không muốn cấu hình OAuth, chọn Lưu: Tải về máy.</p>
-</dialog>
+
 <script defer="" src="/static/app.js"></script>
-<dialog id="pixeldrain-result-dialog" style="width:min(520px,calc(100vw - 32px));background:#141e17;color:#e5f0e8;border:1px solid #375140;border-radius:12px;padding:22px;">
-<h2 style="margin-top:0;display:flex;align-items:center;gap:8px;">☁ Tải lên Pixeldrain thành công!</h2>
-<p id="pd-dialog-filename" style="font-size:13px;color:#cbd5e1;"></p>
+<dialog id="huggingface-result-dialog" style="width:min(520px,calc(100vw - 32px));background:#141e17;color:#e5f0e8;border:1px solid #375140;border-radius:12px;padding:22px;">
+<h2 style="margin-top:0;display:flex;align-items:center;gap:8px;">☁ Tải lên Hugging Face thành công!</h2>
+<p id="hf-dialog-filename" style="font-size:13px;color:#cbd5e1;"></p>
 <div style="margin:16px 0;background:#0d1410;padding:12px;border-radius:8px;border:1px solid #24382a;">
 <label style="font-size:12px;color:#888;display:block;margin-bottom:6px;">Link xem &amp; tải tệp:</label>
 <div style="display:flex;gap:8px;">
-<input id="pd-dialog-url" readonly="" style="flex:1;background:#18261e;border:1px solid #324c3a;color:#4ade80;padding:8px 10px;border-radius:6px;font-family:monospace;font-size:13px;" type="text"/>
-<button class="button" id="pd-btn-copy" style="white-space:nowrap;" type="button">📋 Sao chép</button>
+<input id="hf-dialog-url" readonly="" style="flex:1;background:#18261e;border:1px solid #324c3a;color:#4ade80;padding:8px 10px;border-radius:6px;font-family:monospace;font-size:13px;" type="text"/>
+<button class="button" id="hf-btn-copy" style="white-space:nowrap;" type="button">📋 Sao chép</button>
 </div>
 </div>
 <div style="display:flex;gap:10px;justify-content:flex-end;">
-<a class="button primary" href="#" id="pd-dialog-open-link" rel="noopener noreferrer" style="text-decoration:none;" target="_blank">Mở trang Pixeldrain ↗</a>
-<button class="button btn-ghost" id="pd-dialog-close" type="button">Đóng</button>
+<a class="button primary" href="#" id="hf-dialog-open-link" rel="noopener noreferrer" style="text-decoration:none;" target="_blank">Mở trang Hugging Face ↗</a>
+<button class="button btn-ghost" id="hf-dialog-close" type="button">Đóng</button>
 </div>
 </dialog>
 <div hidden="" id="legacy-export-actions"><a class="button export" href="/api/export/txt" id="export-txt" title="Tải về file TXT bản dịch">↓ <span>Xuất TXT</span></a><a class="button export" href="/api/export/epub" id="export-epub" title="Tải về file EPUB đầy đủ">↓ <span>Xuất EPUB</span></a><a class="button export" href="/api/export/audio" id="export-audio" title="Google Drive: lưu từng file audio; Tải về máy: nhận ZIP audio">🎧 <span>Xuất Audio</span></a></div><dialog aria-labelledby="export-heading" class="export-dialog" id="export-dialog">
@@ -659,14 +621,14 @@
 <label><input checked="" name="export-kind" type="radio" value="txt"/><span><strong>Văn bản TXT</strong><small>Nhẹ, dễ chỉnh sửa</small></span></label>
 <label><input name="export-kind" type="radio" value="epub"/><span><strong>Sách EPUB</strong><small>Đọc trên ứng dụng sách</small></span></label>
 <label><input name="export-kind" type="radio" value="audio"/><span><strong>Audio</strong><small>Xuất các tệp đã tạo</small></span></label></fieldset>
-<div id="export-location-slot"><label class="export-location-field" title="Lưu bản sao lên Drive hoặc tải về máy">
+<div id="export-location-slot"><label class="export-location-field" title="Lưu lên Hugging Face hoặc tải về máy">
 <span>2. Nơi lưu</span>
 <select aria-label="Nơi lưu bản xuất" id="export-destination">
 <option value="download">Tải về máy</option>
-<option value="gdrive">Google Drive</option>
-<option value="pixeldrain">Pixeldrain</option>
+
+<option selected="" value="huggingface">Hugging Face · uri410/novelreader-storage</option>
 </select>
-<button hidden="" id="drive-api-open" type="button">Kết nối Drive</button>
+
 </label></div>
 <section aria-labelledby="export-review-heading" class="export-review"><h3 id="export-review-heading">3. Kiểm tra trước khi xuất</h3><dl><div><dt>Phạm vi</dt><dd>Toàn bộ truyện hiện tại</dd></div><div><dt>Tiến độ</dt><dd id="export-progress-summary">Đang kiểm tra…</dd></div><div><dt>Kết quả nhận</dt><dd id="export-result-summary"></dd></div></dl><p id="export-format-hint"></p></section>
 <p aria-live="polite" id="export-inline-status" role="status"></p>

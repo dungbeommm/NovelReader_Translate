@@ -131,8 +131,8 @@ def test_ram_prefers_container_allowance(monkeypatch):
  monkeypatch.setattr(resources,'psutil',SimpleNamespace(virtual_memory=lambda:SimpleNamespace(total=1000,available=800)))
  original=Path.read_text
  def read(p,*a,**k):
-  if str(p)=='/sys/fs/cgroup/memory.max':return '400'
-  if str(p)=='/sys/fs/cgroup/memory.current':return '100'
+  if p.as_posix()=='/sys/fs/cgroup/memory.max':return '400'
+  if p.as_posix()=='/sys/fs/cgroup/memory.current':return '100'
   return original(p,*a,**k)
  monkeypatch.setattr(Path,'read_text',read)
  m=resources.memory_usage();assert m['total_bytes']==400 and m['used_bytes']==100 and m['percent']==25 and m['scope']=='container'

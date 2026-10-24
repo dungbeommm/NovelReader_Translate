@@ -164,7 +164,7 @@ def test_aggregate_and_group_run_once_after_all_audio(tmp_path, monkeypatch):
     job.start(config(auto_group_audio=True))
     finish(job)
     assert len(exports) == len(merges) == 1
-    assert 'Bản dịch' in (store.text_dir/'toan_bo_truyen.txt').read_text()
+    assert 'Bản dịch' in (store.text_dir/'toan_bo_truyen.txt').read_text(encoding='utf-8')
 
 
 def test_final_merge_failure_sets_job_error(tmp_path, monkeypatch):
