@@ -125,5 +125,8 @@ def set_book_title(payload: BookTitleInput):
             book = runtime.store.set_title(payload.title)
         except ValueError as exc:
             raise HTTPException(400, str(exc))
+    if runtime.job.bucket_sync.snapshot_status()['write_enabled']:
+        runtime.store.export_full_book_epub()
+        runtime.job.bucket_sync.enqueue_existing()
     runtime.job.emit('book_updated')
     return {'ok': True, 'book': book}

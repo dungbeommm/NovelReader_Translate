@@ -173,7 +173,6 @@ def _launch(mo, os, python, root, subprocess):
 
     token = os.environ.get("NOVEL_WEB_ACCESS_TOKEN") or secrets.token_urlsafe(32)
     os.environ["NOVEL_WEB_ACCESS_TOKEN"] = token
-    os.environ["NOVEL_EXPORT_SESSION_ID"] = os.environ.get("NOVEL_EXPORT_SESSION_ID") or secrets.token_hex(16)
     os.environ["ALLOW_TUNNEL"] = "0"
     server_log = root / "data/logs/molab-server.log"
     _handle = server_log.open("a", encoding="utf-8", buffering=1)

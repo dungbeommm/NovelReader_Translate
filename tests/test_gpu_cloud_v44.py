@@ -8,14 +8,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from storage.store import Store
-from storage import checkpoints, pixeldrain_service, cloud_settings
+from storage import checkpoints
 from web.schemas import Config
 
 
 @pytest.fixture
 def book(tmp_path, monkeypatch):
     monkeypatch.setenv('NOVEL_DATA', str(tmp_path / 'data'))
-    monkeypatch.delenv('PIXELDRAIN_API_KEY', raising=False)
     store = Store(tmp_path / 'book.sqlite3')
     store.replace('sample.txt', 'utf-8', [('第一章', '你好'), ('第二章', '世界')])
     store.configure(Config(batch_size=1024, audio_workers=3).model_dump())
@@ -28,7 +27,9 @@ def book(tmp_path, monkeypatch):
 
 def test_snapshot_restore_text_and_draft(book, tmp_path):
     checkpoints.save_draft({'batch_size': 512, 'audio_workers': 4, 'api_key': 'never include'})
-    cloud_settings.save_key('secret-not-in-backup')
+    private = tmp_path / 'data/private'
+    private.mkdir(parents=True)
+    (private / 'hf_token.txt').write_text('secret-not-in-backup', encoding='utf-8')
     archive = checkpoints.create_checkpoint(book, tmp_path / 'checkpoint.zip')
     with zipfile.ZipFile(archive) as z:
         assert not any('private' in n or 'audio/' in n for n in z.namelist())
@@ -64,10 +65,6 @@ def test_reject_tamper_traversal_and_arbitrary_urls(book, tmp_path):
     with pytest.raises(ValueError):
         checkpoints.restore_checkpoint(book, archive)
     assert book.book() == original
-    for value in ['http://127.0.0.1', 'https://evil.com/u/abcd', 'https://pixeldrain.com@127.0.0.1/u/abcd', '../../data', 'https://pixeldrain.com/u/abcd?x=1']:
-        with pytest.raises(ValueError):
-            checkpoints.parse_pixeldrain_id(value)
-    assert checkpoints.parse_pixeldrain_id('https://pixeldrain.com/u/Abc12345') == 'Abc12345'
 
 
 def test_reject_checksum_damage_before_db_mutation(book, tmp_path):
@@ -80,32 +77,6 @@ def test_reject_checksum_damage_before_db_mutation(book, tmp_path):
     with pytest.raises(ValueError, match='SHA256'):
         checkpoints.restore_checkpoint(book, bad)
     assert book.book()['title'] == title
-
-
-def test_cloud_key_saved_private_and_never_returned(book):
-    cloud_settings.save_key('private-key')
-    assert pixeldrain_service.get_pixeldrain_api_key() == 'private-key'
-    if os.name != 'nt':
-        assert cloud_settings.key_path().stat().st_mode & 0o777 == 0o600
-    cloud_settings.save_key('')
-    assert pixeldrain_service.get_pixeldrain_api_key() is None
-
-
-def test_pixeldrain_path_upload_is_streamed(book, tmp_path, monkeypatch):
-    path = tmp_path / 'file.zip'
-    path.write_bytes(b'payload')
-    class Response:
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-        def read(self): return b'{"success":true,"id":"abc12345"}'
-    def open_request(req, timeout):
-        assert hasattr(req.data, 'read')
-        assert req.data.read() == b'payload'
-        assert req.get_header('Content-length') == '7'
-        assert req.full_url.endswith('/a%2Fb.zip') is False
-        return Response()
-    monkeypatch.setattr(pixeldrain_service.urllib.request, 'urlopen', open_request)
-    assert pixeldrain_service.upload_to_pixeldrain(path, 'a/b.zip')['ok']
 
 
 @pytest.mark.parametrize('workers', [1, 2, 4, 8])
@@ -155,10 +126,8 @@ def test_checkpoint_routes_and_idle_guard(book, monkeypatch):
     runtime.job.store = book
     headers = {'X-App-Request': 'novel-translator'}
     with TestClient(app) as client:
-        response = client.post('/api/settings/pixeldrain', json={'api_key': 'private-value'}, headers=headers)
-        assert response.json()['has_key']
-        status = client.get('/api/export/pixeldrain/status')
-        assert 'private-value' not in status.text and status.json()['has_saved_key']
+        for path in ('/api/settings/pixeldrain', '/api/settings/gdrive', '/api/export/pixeldrain/status', '/api/export/drive/capabilities'):
+            assert client.get(path).status_code == 404
         assert client.post('/api/checkpoints/draft', json={'batch_size': 1024, 'audio_workers': 4}, headers=headers).status_code == 200
         assert client.get('/api/checkpoints/draft').json()['config']['audio_workers'] == 4
         download = client.post('/api/checkpoints/download', json={'include_audio': True}, headers=headers)
@@ -174,20 +143,6 @@ def test_checkpoint_routes_and_idle_guard(book, monkeypatch):
             assert client.post('/api/checkpoints/restore', files={'file': ('test.zip', download.content)}, headers=headers).status_code == 409
         finally:
             stop.set(); t.join()
-
-
-def test_saving_drive_preferences_keeps_oauth_tokens(book):
-    from web.application import create_app
-    from gdrive import gdrive_service
-    gdrive_service.save_gdrive_config({'access_token': 'access-private', 'refresh_token': 'refresh-private', 'client_secret': 'client-private', 'enabled': True})
-    with TestClient(create_app()) as client:
-        result = client.post('/api/settings/gdrive', json={'mode': 'api', 'enabled': True, 'auto_upload': True}, headers={'X-App-Request': 'novel-translator'})
-        assert result.status_code == 200
-        assert 'access-private' not in result.text and 'client-private' not in result.text
-        assert client.get('/api/settings/gdrive').json()['connected']
-    saved = gdrive_service.get_gdrive_config()
-    assert saved['refresh_token'] == 'refresh-private' and saved['client_secret'] == 'client-private'
-    assert gdrive_service.config_path().stat().st_mode & 0o777 == 0o600
 
 
 def test_each_audio_worker_uses_its_own_voice_session(tmp_path, monkeypatch):

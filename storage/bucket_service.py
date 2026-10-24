@@ -15,9 +15,14 @@ from pathlib import Path, PurePosixPath
 from storage.checkpoints import create_checkpoint, download_bucket_checkpoint, restore_checkpoint
 from paths import data_dir
 
-BUCKET_ID = os.getenv("NOVEL_HF_BUCKET", "uri410/NovelReader_Cloud_Audio")
+DEFAULT_BUCKET_ID = "uri410/NovelReader_Cloud_Audio"
+BUCKET_ID = os.getenv("NOVEL_HF_BUCKET", DEFAULT_BUCKET_ID)
 BUCKET_URI = f"hf://buckets/{BUCKET_ID}"
 _runtime_token: str | None = None
+
+
+class StaleBookError(RuntimeError):
+    """A checkpoint was superseded while its archive was being prepared."""
 
 
 def _token() -> str | None:
@@ -55,7 +60,7 @@ def _book_id(store) -> str:
 
 def status() -> dict:
     return {"bucket_id": BUCKET_ID, "uri": BUCKET_URI, "configured": True,
-            "write_enabled": bool(_token()), "visibility": "public"}
+            "write_enabled": bool(_token()), "visibility": "public" if BUCKET_ID == DEFAULT_BUCKET_ID else "unknown"}
 
 
 def write_enabled() -> bool:
@@ -73,19 +78,19 @@ def _api():
     return api
 
 
-def upload_artifact(store, path: Path, kind: str) -> str:
+def upload_artifact(store, path: Path, kind: str, book_id: str | None = None, relative_path: str | None = None) -> str:
     if not path.is_file():
         raise FileNotFoundError(path)
     if kind not in {"text", "audio"}:
         raise ValueError("Loại tệp không hợp lệ.")
     book = store.book()
-    if not book:
+    if not book and not book_id:
         raise ValueError("Chưa nạp truyện.")
     token = _token()
     if not token:
         raise RuntimeError("Chưa cấu hình HF_TOKEN để ghi vào Bucket.")
-    relative = path.relative_to(store.text_dir if kind == "text" else store.audio_dir)
-    destination = f"books/{_book_id(store)}/{kind}/{relative.as_posix()}"
+    relative = relative_path or path.relative_to(store.text_dir if kind == "text" else store.audio_dir).as_posix()
+    destination = f"books/{book_id or _book_id(store)}/{kind}/{relative}"
     _api().batch_bucket_files(BUCKET_ID, add=[(str(path), destination)])
     return destination
 
@@ -99,6 +104,8 @@ def publish_checkpoint(store, *, include_audio: bool = True) -> dict:
     name = f"{stamp}-{os.urandom(3).hex()}.zip"
     with tempfile.TemporaryDirectory(prefix="novel-hf-bucket-") as temp:
         archive = create_checkpoint(store, Path(temp) / name, include_audio=include_audio)
+        if _book_id(store) != book_id:
+            raise StaleBookError("Truyện đã thay đổi trong lúc tạo checkpoint.")
         with archive.open("rb") as source:
             digest = hashlib.file_digest(source, "sha256").hexdigest()
         archive_path = f"{prefix}/{name}"
@@ -237,8 +244,8 @@ class BucketSyncWorker:
     @staticmethod
     def _task_from_record(item: dict):
         if item.get("kind") == "snapshot":
-            return ("snapshot", bool(item.get("include_audio", False)), item["id"], int(item.get("attempts", 0)))
-        return ("artifact", Path(item["path"]), item["kind"], item["id"], int(item.get("attempts", 0)))
+            return ("snapshot", bool(item.get("include_audio", False)), item.get("book_id"), item["id"], int(item.get("attempts", 0)))
+        return ("artifact", Path(item["path"]), item["kind"], item.get("book_id"), item.get("relative_path"), item["id"], int(item.get("attempts", 0)))
 
     def _fill_queue(self) -> None:
         queued_ids = {task[-2] for task in list(self._queue.queue) if task}
@@ -252,7 +259,10 @@ class BucketSyncWorker:
 
     def _enqueue_record(self, item: dict) -> bool:
         with self._lock:
-            if item["kind"] == "snapshot" and any(record.get("kind") == "snapshot" for record in self._outbox):
+            if item["kind"] == "snapshot" and any(
+                record.get("kind") == "snapshot" and record.get("book_id") == item.get("book_id")
+                for record in self._outbox
+            ):
                 return False
             self._outbox.append(item)
             self._persist_outbox()
@@ -265,19 +275,55 @@ class BucketSyncWorker:
 
     @property
     def pending(self):
-        return self._queue.qsize()
+        with self._lock:
+            return len(self._outbox)
 
     def enqueue_artifact(self, path: Path, kind: str):
         if _token():
             if kind not in {"text", "audio"}:
                 raise ValueError("Loại tệp không hợp lệ.")
-            self._enqueue_record({"id": os.urandom(8).hex(), "kind": kind, "path": str(Path(path).resolve())})
+            root = Path(self.store.text_dir if kind == 'text' else self.store.audio_dir).resolve()
+            source = Path(path).resolve()
+            relative = source.relative_to(root).as_posix()
+            self._enqueue_record({"id": os.urandom(8).hex(), "kind": kind, "path": str(source),
+                                  "book_id": _book_id(self.store), "relative_path": relative})
+
+    def enqueue_existing(self) -> int:
+        """Queue finished files from the current book when a token becomes available."""
+        if not _token() or not self.store.book():
+            return 0
+        from audio.audio_service import exportable_audio_files
+
+        if hasattr(self.store, 'export_full_book_epub'):
+            self.store.export_full_book_epub()
+
+        text_root = Path(self.store.text_dir).resolve()
+        text_files = (
+            path for path in sorted(text_root.iterdir())
+            if path.is_file() and not path.is_symlink() and path.suffix.lower() in {'.txt', '.epub'}
+        )
+        audio_files = exportable_audio_files(Path(self.store.audio_dir))
+        with self._lock:
+            pending_paths = {item.get('path') for item in self._outbox if item.get('kind') in {'text', 'audio'}}
+        queued = 0
+        for kind, paths in (('text', text_files), ('audio', audio_files)):
+            for path in paths:
+                absolute = str(path.resolve())
+                if absolute in pending_paths:
+                    continue
+                self.enqueue_artifact(path, kind)
+                pending_paths.add(absolute)
+                queued += 1
+        self.enqueue_snapshot()
+        return queued
 
     def enqueue_snapshot(self, include_audio: bool = False):
         if not _token():
             return False
         # Coalesce periodic snapshots rather than queueing a stale backlog.
-        return self._enqueue_record({"id": os.urandom(8).hex(), "kind": "snapshot", "include_audio": bool(include_audio)})
+        if not self.store.book():
+            return False
+        return self._enqueue_record({"id": os.urandom(8).hex(), "kind": "snapshot", "include_audio": bool(include_audio), "book_id": _book_id(self.store)})
 
     def _remove_outbox_record(self, record_id: str) -> None:
         with self._lock:
@@ -291,8 +337,13 @@ class BucketSyncWorker:
                 if task is None:
                     return
                 if task[0] == "artifact":
-                    upload_artifact(self.store, task[1], task[2])
+                    upload_artifact(self.store, task[1], task[2], book_id=task[3], relative_path=task[4])
                 else:
+                    if task[2] and task[2] != _book_id(self.store):
+                        self._remove_outbox_record(task[-2])
+                        with self._lock:
+                            self.last_error = "Checkpoint cũ không còn khớp với truyện đang mở."
+                        continue
                     publish_checkpoint(self.store, include_audio=task[1])
                 self._remove_outbox_record(task[-2])
                 with self._lock:
@@ -302,6 +353,10 @@ class BucketSyncWorker:
                     temp.write_text(self.last_success, "utf-8")
                     os.replace(temp, self._last_success_path)
                     self.last_error = None
+            except (FileNotFoundError, StaleBookError) as exc:
+                self._remove_outbox_record(task[-2])
+                with self._lock:
+                    self.last_error = str(exc)[:240]
             except Exception as exc:
                 with self._lock:
                     self.last_error = str(exc)[:240]
@@ -326,5 +381,5 @@ class BucketSyncWorker:
 
     def snapshot_status(self):
         with self._lock:
-            return {"pending": self.pending, "last_success": self.last_success,
+            return {"pending": len(self._outbox), "last_success": self.last_success,
                     "last_error": self.last_error, "write_enabled": bool(_token())}

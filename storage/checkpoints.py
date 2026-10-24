@@ -2,7 +2,6 @@
 import hashlib
 import json
 import os
-import re
 import shutil
 import sqlite3
 import tempfile
@@ -10,8 +9,6 @@ import zipfile
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from urllib.parse import urlsplit
-import urllib.request
 from paths import data_dir
 from storage.store import _safe_filename
 
@@ -100,51 +97,6 @@ def create_checkpoint(store, destination, include_audio=False):
     if Path(destination).stat().st_size > MAX_ARCHIVE:
         Path(destination).unlink(missing_ok=True)
         raise ValueError('Checkpoint vượt 2 GB; bỏ chọn kèm audio và xuất audio riêng.')
-    return Path(destination)
-
-
-def upload_checkpoint(store, include_audio=False, api_key=None):
-    from storage.pixeldrain_service import upload_to_pixeldrain
-    stamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
-    name = f'{_safe_filename(store.book()["title"] if store.book() else "novel")}_checkpoint_{stamp}.zip'
-    with tempfile.TemporaryDirectory(prefix='novel-cloud-') as temp:
-        path = create_checkpoint(store, Path(temp) / name, include_audio)
-        if path.stat().st_size > MAX_ARCHIVE:
-            raise ValueError('Checkpoint vượt 2 GB; bỏ chọn kèm audio và xuất audio riêng.')
-        result = upload_to_pixeldrain(path, name, api_key=api_key)
-    (data_dir() / 'cloud_checkpoint_last.json').write_text(json.dumps({
-        'url': result['url'], 'id': result['id'], 'created_at': datetime.now(timezone.utc).isoformat()
-    }), 'utf-8')
-    return result
-
-
-def parse_pixeldrain_id(value):
-    value = value.strip()
-    if value.startswith('https://'):
-        parsed = urlsplit(value)
-        if parsed.netloc != 'pixeldrain.com' or parsed.query or parsed.fragment:
-            raise ValueError('Chỉ nhận link https://pixeldrain.com/u/ID hoặc ID file.')
-        match = re.fullmatch(r'/(?:u|api/file)/([A-Za-z0-9_-]{4,64})', parsed.path)
-        value = match.group(1) if match else ''
-    if not re.fullmatch(r'[A-Za-z0-9_-]{4,64}', value):
-        raise ValueError('ID Pixeldrain không hợp lệ.')
-    return value
-
-
-def download_checkpoint(value, destination):
-    file_id = parse_pixeldrain_id(value)
-    class NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, *args, **kwargs):
-            raise ValueError('Không cho phép chuyển hướng khi tải checkpoint.')
-    opener = urllib.request.build_opener(NoRedirect)
-    req = urllib.request.Request(f'https://pixeldrain.com/api/file/{file_id}', headers={'User-Agent': 'NovelReader/4.4'})
-    with opener.open(req, timeout=120) as response, Path(destination).open('wb') as out:
-        total = 0
-        while chunk := response.read(1024 * 1024):
-            total += len(chunk)
-            if total > MAX_ARCHIVE:
-                raise ValueError('Checkpoint vượt giới hạn 2 GB.')
-            out.write(chunk)
     return Path(destination)
 
 

@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 from storage import bucket_service
+from storage.store import Store
 
 
 class FakeStore:
@@ -105,7 +106,11 @@ def test_bucket_worker_clears_successful_outbox_entries(tmp_path, monkeypatch):
     monkeypatch.setattr(bucket_service, "data_dir", lambda: tmp_path)
     monkeypatch.setattr(bucket_service, "upload_artifact", flaky_upload)
     monkeypatch.setattr(bucket_service.time, "sleep", lambda _: None)
-    worker = bucket_service.BucketSyncWorker(FakeStore())
+    class StoreWithFiles(FakeStore):
+        text_dir = tmp_path
+        audio_dir = tmp_path
+
+    worker = bucket_service.BucketSyncWorker(StoreWithFiles())
 
     worker.enqueue_artifact(artifact, "text")
     worker._queue.join()
@@ -114,3 +119,49 @@ def test_bucket_worker_clears_successful_outbox_entries(tmp_path, monkeypatch):
     assert len(attempts) == 2
     assert worker.last_success
     assert (tmp_path / "bucket_last_success.txt").read_text("utf-8") == worker.last_success
+
+
+def test_connecting_token_queues_existing_text_epub_audio_and_checkpoint(tmp_path, monkeypatch):
+    store = Store(tmp_path / 'novel.sqlite3', tmp_path / 'text', tmp_path / 'audio')
+    store.replace('story.txt', 'utf-8', [('Chapter 1', 'Source')])
+    chapter = store.list()[0]
+    store.update(chapter['id'], status='done', translated=['Translated'])
+    store.export_chapter_text(chapter['id'], 'Chapter 1', ['Translated'], 1)
+    store.export_full_book_text()
+    (store.audio_dir / 'chapter.mp3').write_bytes(b'audio')
+    (store.audio_dir / 'audio_gop').mkdir()
+    (store.audio_dir / 'audio_gop' / 'group.mp3').write_bytes(b'group')
+
+    monkeypatch.setattr(bucket_service, 'data_dir', lambda: tmp_path / 'outbox')
+    monkeypatch.setattr(bucket_service.threading.Thread, 'start', lambda self: None)
+    monkeypatch.setattr(bucket_service, '_runtime_token', 'hf_' + 'x' * 30)
+    worker = bucket_service.BucketSyncWorker(store)
+    assert worker.enqueue_existing() == 5
+    assert worker.pending == 6
+    assert {item['relative_path'] for item in worker._outbox if item['kind'] == 'text'} == {
+        'chuong_0001.txt', 'toan_bo_truyen.txt', 'toan_bo_truyen.epub'
+    }
+    assert {item['relative_path'] for item in worker._outbox if item['kind'] == 'audio'} == {
+        'chapter.mp3', 'audio_gop/group.mp3'
+    }
+    assert worker.enqueue_existing() == 0
+    assert worker.pending == 6
+
+
+def test_queued_artifact_keeps_original_book_id_after_switch(tmp_path, monkeypatch):
+    store = Store(tmp_path / 'novel.sqlite3', tmp_path / 'text', tmp_path / 'audio')
+    store.replace('first.txt', 'utf-8', [('First', 'Source')])
+    original_id = bucket_service._book_id(store)
+    path = store.export_chapter_text(1, 'First', ['Translated'], 1)
+    uploaded = []
+
+    class FakeApi:
+        def batch_bucket_files(self, bucket_id, *, add):
+            uploaded.extend(add)
+
+    monkeypatch.setattr(bucket_service, '_runtime_token', 'hf_' + 'x' * 30)
+    monkeypatch.setattr(bucket_service, '_api', FakeApi)
+    store.replace('second.txt', 'utf-8', [('Second', 'Other source')])
+    destination = bucket_service.upload_artifact(store, path, 'text', book_id=original_id, relative_path=path.name)
+    assert destination == f'books/{original_id}/text/{path.name}'
+    assert uploaded == [(str(path), destination)]

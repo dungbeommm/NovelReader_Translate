@@ -1,85 +1,20 @@
-"""Checkpoint, scratch workspace and backend Pixeldrain settings routes."""
-import json
+"""Local checkpoint and workspace draft routes."""
 import shutil
 import tempfile
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
-from pydantic import BaseModel, Field
-from paths import data_dir
-from storage import checkpoints as service, cloud_settings, pixeldrain_service
+from pydantic import BaseModel
+from storage import checkpoints as service
 from web import runtime
 from web.schemas import Config
 
 router = APIRouter()
 
 
-class CloudKey(BaseModel):
-    api_key: str = Field(default='', max_length=4096)
-
-
 class CheckpointOptions(BaseModel):
     include_audio: bool = False
-
-
-class RestoreCloud(BaseModel):
-    file_id: str = Field(min_length=4, max_length=256)
-
-
-def _mask_key(k: str) -> str:
-    if not k:
-        return ""
-    if len(k) <= 8:
-        return "•" * len(k)
-    return k[:4] + "•" * (len(k) - 8) + k[-4:]
-
-
-@router.get('/api/settings/pixeldrain')
-def get_pixeldrain_key():
-    key = pixeldrain_service.get_pixeldrain_api_key() or ''
-    return {
-        'ok': True,
-        'has_key': bool(key),
-        'masked_key': _mask_key(key),
-        'api_key': key
-    }
-
-
-@router.post('/api/settings/pixeldrain')
-def save_key(payload: CloudKey):
-    clean = payload.api_key.strip()
-    cloud_settings.save_key(clean)
-    return {
-        'ok': True,
-        'has_key': bool(clean),
-        'masked_key': _mask_key(clean),
-        'message': 'Đã lưu API Key Pixeldrain thành công!' if clean else 'Đã xóa API Key Pixeldrain.'
-    }
-
-
-@router.post('/api/settings/pixeldrain/test')
-def test_connection(payload: CloudKey | None = None):
-    test_key = payload.api_key.strip() if payload and payload.api_key else None
-    try:
-        res = pixeldrain_service.check_connection(test_key)
-        if test_key:
-            cloud_settings.save_key(test_key)
-        return res
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(502, str(exc))
-
-
-@router.get('/api/checkpoints/status')
-def checkpoint_status():
-    path = data_dir() / 'cloud_checkpoint_last.json'
-    try:
-        last = json.loads(path.read_text('utf-8'))
-    except (OSError, ValueError):
-        last = None
-    return {'last_cloud': last, 'has_draft': service.draft_path().is_file(), 'max_archive_bytes': service.MAX_ARCHIVE}
 
 
 @router.post('/api/checkpoints/draft')
@@ -114,20 +49,6 @@ def download(payload: CheckpointOptions):
         raise HTTPException(400, f'Không tạo được checkpoint: {exc}')
 
 
-@router.post('/api/checkpoints/pixeldrain')
-def upload_cloud(payload: CheckpointOptions):
-    try:
-        with runtime.job.lock:
-            runtime.ensure_idle()
-            return service.upload_checkpoint(runtime.store, payload.include_audio)
-    except HTTPException:
-        raise
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-    except Exception as exc:
-        raise HTTPException(502, f'Không lưu được Pixeldrain: {exc}')
-
-
 def apply_restore(path):
     result = service.restore_checkpoint(runtime.store, path)
     runtime.job.target_chapter_ids = None
@@ -159,17 +80,3 @@ def restore_file(file: UploadFile):
         raise HTTPException(400, f'Không khôi phục được: {exc}')
     finally:
         file.file.close()
-
-
-@router.post('/api/checkpoints/restore-pixeldrain')
-def restore_cloud(payload: RestoreCloud):
-    try:
-        with runtime.job.lock:
-            runtime.ensure_idle()
-            with tempfile.TemporaryDirectory(prefix='novel-cloud-restore-') as work:
-                path = service.download_checkpoint(payload.file_id, Path(work) / 'checkpoint.zip')
-                return apply_restore(path)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(400, f'Không khôi phục được từ Pixeldrain: {exc}')

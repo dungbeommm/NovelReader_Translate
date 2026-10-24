@@ -44,6 +44,7 @@ def import_book(name,data):
             job.scope_label = ''
         except Exception as exc:
             logging.exception('Import failed');raise HTTPException(400,f'Không nạp được tệp: {exc}')
+    job.queue_cloud_snapshot()
     job.emit('book_loaded');return {'book':store.book(),'chapters':store.list()}
 
 

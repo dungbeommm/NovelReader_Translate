@@ -196,6 +196,26 @@ class Store:
             temp_file.unlink(missing_ok=True)
         return full_file
 
+    def export_full_book_epub(self) -> Path | None:
+        """Write an EPUB copy of the current translation for Bucket sync."""
+        from storage.files import export_epub
+
+        book = self.book()
+        if not book:
+            return None
+        chapters = [self.get(item['id']) for item in self.list()]
+        if not any(chapter['status'] == 'done' for chapter in chapters):
+            return None
+        target = self.text_dir / 'toan_bo_truyen.epub'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_suffix('.epub.tmp')
+        try:
+            temporary.write_bytes(export_epub(book, chapters))
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return target
+
     def replace(self, name, encoding, chapters):
         title = Path(name.replace('\\', '/')).stem
         folder = self._available_folder(title)

@@ -16,14 +16,19 @@ class TokenInput(BaseModel):
 
 @router.get('/api/bucket/status')
 def bucket_status():
-    return {**bucket_service.status(), "books": bucket_service.list_books()}
+    info = bucket_service.status()
+    try:
+        return {**info, "books": bucket_service.list_books()}
+    except Exception as exc:
+        return {**info, "books": [], "books_error": str(exc)}
 
 
 @router.post('/api/bucket/token')
 def bucket_set_token(payload: TokenInput):
     try:
         bucket_service.set_runtime_token(payload.token)
-        return bucket_service.status()
+        queued = runtime.job.bucket_sync.enqueue_existing() if bucket_service.write_enabled() else 0
+        return {**bucket_service.status(), "queued_files": queued}
     except Exception as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -32,7 +37,7 @@ def bucket_set_token(payload: TokenInput):
 def bucket_checkpoint():
     runtime.ensure_idle()
     try:
-        return bucket_service.publish_checkpoint(runtime.store, include_audio=True)
+        return bucket_service.publish_checkpoint(runtime.store, include_audio=False)
     except Exception as exc:
         raise HTTPException(503, f"Chưa lưu được lên Hugging Face Bucket: {exc}") from exc
 

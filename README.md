@@ -13,7 +13,13 @@ Nếu Molab đã mở cả repository, notebook dùng trực tiếp mã nguồn 
 
 Giữ phiên Molab hoạt động trong khi dùng ứng dụng. Khi phiên runtime kết thúc, server và cache model trong runtime cũng dừng. Trước khi kết thúc phiên, tải các tệp kết quả cần giữ về máy.
 
-Nếu dùng giao diện web và Hugging Face Bucket, chỉ tải lên nội dung có thể chia sẻ công khai vì bucket mặc định là công khai.
+## Tự lưu vào Hugging Face Bucket
+
+Vào **Cài đặt → Hugging Face**, nhập token có quyền ghi rồi bấm **Kết nối**. Có thể đặt `HF_TOKEN` hoặc `HUGGINGFACE_HUB_TOKEN` trước khi khởi động. Bucket mặc định là `uri410/NovelReader_Cloud_Audio`; đổi bằng `NOVEL_HF_BUCKET` nếu cần.
+
+Khi có token, ứng dụng tự đồng bộ bản dịch TXT từng chương, TXT/EPUB toàn truyện, audio từng chương, audio gộp và checkpoint tiến độ. Các tệp đã có trước lúc kết nối cũng được xếp hàng. Trạng thái chờ hoặc lỗi hiện trong mục Hugging Face và bảng tải kết quả. Tải TXT/EPUB/audio về máy vẫn dùng được.
+
+Bucket mặc định là công khai: chỉ đồng bộ nội dung bạn có quyền chia sẻ. Token nhập qua giao diện chỉ tồn tại trong phiên backend hiện tại; dùng biến môi trường để tự kết nối sau khi khởi động lại.
 
 ## Chạy cục bộ
 

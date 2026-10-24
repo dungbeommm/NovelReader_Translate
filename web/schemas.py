@@ -24,7 +24,6 @@ class Config(BaseModel):
     audio_pipeline:bool=Field(default=True)
     audio_workers:int=Field(default=1,ge=1,le=8)
     audio_queue_size:int=Field(default=4,ge=1,le=32)
-    cloud_checkpoint:bool=Field(default_factory=lambda: bool(os.getenv('HF_TOKEN') or os.getenv('HUGGINGFACE_HUB_TOKEN')))
     checkpoint_include_audio:bool=False
     tts_engine:str=Field(default_factory=lambda: os.getenv('NOVEL_TTS_ENGINE', 'piper'),pattern=r'^(piper|vieneu)$')
     vieneu_temperature:float=Field(default=0.8,ge=0.1,le=1.5,allow_inf_nan=False)
@@ -143,20 +142,6 @@ class MergeSelectedInput(BaseModel):
 class SystemPurgeInput(BaseModel):
     purge_data: bool = True
     purge_cache: bool = True
-
-
-class GDriveConfigInput(BaseModel):
-    enabled: bool = False
-    mode: str = Field(default='local_folder', pattern=r'^(local_folder|api)$')
-    local_path: str = ''
-    client_id: str = ''
-    client_secret: str = ''
-    access_token: str = ''
-    refresh_token: str = ''
-    account_email: str = ''
-    folder_id: str = ''
-    folder_name: str = 'Novel_Audio'
-    auto_upload: bool = False
 
 
 class BookTitleInput(BaseModel):

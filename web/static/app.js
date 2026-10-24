@@ -119,163 +119,12 @@ $('tab-reader').onclick = () => {
   workspace.classList.add('show-reader');
 };
 
-async function driveSafe(fn) {
-  try { await fn(); } catch(e) { $('drive-api-message').textContent = e.message; }
-}
-let driveBackend = 'disabled';
-let driveDialogResolve = null;
-function openDriveDialog() {
-  const dialog = $('drive-api-dialog');
-  if (dialog.open) return Promise.resolve(false);
-  $('drive-api-message').textContent = '';
-  dialog.showModal();
-  return new Promise(resolve => { driveDialogResolve = resolve; });
-}
-function closeDriveDialog(connected = false) {
-  $('drive-api-dialog').close();
-  const resolve = driveDialogResolve; driveDialogResolve = null;
-  if (resolve) resolve(connected);
-}
-$('drive-api-dialog').addEventListener('cancel', () => closeDriveDialog(false));
-$('drive-api-close').onclick = () => closeDriveDialog(false);
-$('drive-api-open').onclick = () => { openDriveDialog(); };
-$('drive-api-begin').onclick = () => driveSafe(async () => {
-  const file = $('drive-api-client').files[0];
-  if (!file || file.size > 32768) throw new Error('Chọn JSON OAuth Desktop app, tối đa 32 KB.');
-  const result = await api('/api/drive-api/begin', {client_json: await file.text()}, 'POST');
-  const url = new URL(result.auth_url);
-  if (url.protocol !== 'https:' || url.hostname !== 'accounts.google.com') throw new Error('Link OAuth không hợp lệ.');
-  const link = $('drive-api-auth-link'); link.href = result.auth_url; link.hidden = false;
-  $('drive-api-return').value = '';
-  $('drive-api-message').textContent = 'Bấm “Mở Google để cấp quyền”, rồi dán URL trả về. Link hết hạn sau 10 phút.';
-});
-$('drive-api-finish').onclick = () => driveSafe(async () => {
-  const button = $('drive-api-finish'); button.disabled = true;
-  try {
-    $('drive-api-message').textContent = 'Đang đổi quyền kết nối…';
-    await api('/api/drive-api/finish', {return_url: $('drive-api-return').value}, 'POST');
-    $('drive-api-return').value = ''; $('drive-api-client').value = '';
-    $('drive-api-auth-link').removeAttribute('href'); $('drive-api-auth-link').hidden = true;
-    $('drive-api-open').textContent = 'Drive đã kết nối';
-    closeDriveDialog(true);
-    notice('Đã kết nối Google Drive API. Có thể xuất TXT, EPUB và audio.');
-  } finally { button.disabled = false; }
-});
-$('drive-api-disconnect').onclick = () => driveSafe(async () => {
-  await api('/api/drive-api/disconnect', {}, 'POST');
-  $('drive-api-open').textContent = 'Kết nối Drive';
-  $('drive-api-return').value = ''; $('drive-api-client').value = '';
-  $('drive-api-auth-link').removeAttribute('href'); $('drive-api-auth-link').hidden = true;
-  closeDriveDialog(false); notice('Đã xóa quyền kết nối khỏi runtime. Có thể thu hồi quyền tại tài khoản Google.');
-});
-async function ensureDriveApiConnection() {
-  if (driveBackend !== 'api') return true;
-  const state = await api('/api/drive-api/status');
-  return state.connected || await openDriveDialog();
-}
-
-let pixeldrainExportBusy = false;
-
-function showPixeldrainModal(res) {
-  const dialog = $('pixeldrain-result-dialog');
-  if (!dialog) return;
-  const filenameEl = $('pd-dialog-filename');
-  const urlInput = $('pd-dialog-url');
-  const openLink = $('pd-dialog-open-link');
-  if (filenameEl) filenameEl.textContent = `Tệp: ${res.filename} (${res.size_mb || (res.size_bytes / (1024 * 1024)).toFixed(1)} MB)`;
-  if (urlInput) urlInput.value = res.url;
-  if (openLink) openLink.href = res.url;
-  dialog.showModal();
-}
-
-async function exportToPixeldrain(format) {
-  if (pixeldrainExportBusy) {
-    notice('Đang tải lên Pixeldrain. Vui lòng đợi...');
-    return;
-  }
-  const apiKey = localStorage.getItem('pixeldrain_api_key') || null;
-  pixeldrainExportBusy = true;
-  notice(`Đang xuất và tải ${format.toUpperCase()} lên Pixeldrain...`);
-  try {
-    const payload = apiKey ? { api_key: apiKey } : {};
-    const res = await api('/api/export/pixeldrain/' + format, payload, 'POST');
-    if (res.ok) {
-      notice(`✓ Đã tải lên Pixeldrain: ${res.url}`);
-      showPixeldrainModal(res);
-    } else {
-      throw new Error(res.message || 'Lỗi không xác định khi upload Pixeldrain.');
-    }
-  } catch (err) {
-    const msg = err.message || String(err);
-    if (msg.includes('API Key') || msg.includes('401')) {
-      notice('Pixeldrain yêu cầu API Key. Vui lòng mở Cài đặt để nhập Key.');
-      openSettingsModal('tab-cloud');
-    } else {
-      notice(`Lỗi Pixeldrain: ${msg}`);
-    }
-  } finally {
-    pixeldrainExportBusy = false;
-  }
-}
-
-async function loadExportDestination() {
-  const select = $('export-destination');
-  if (!select) return;
-  try {
-    const capability = await api('/api/export/drive/capabilities');
-    driveBackend = capability.backend || (capability.colab_drive ? 'colab' : 'disabled');
-    $('drive-api-open').hidden = driveBackend !== 'api';
-    select.querySelector('[value="gdrive"]').disabled = !capability.colab_drive;
-    const saved = localStorage.getItem('novel_export_destination');
-    if (saved === 'pixeldrain') {
-      select.value = 'pixeldrain';
-    } else if (saved === 'download') {
-      select.value = 'download';
-    } else {
-      select.value = capability.colab_drive ? (saved || 'gdrive') : 'download';
-    }
-  } catch {
-    const saved = localStorage.getItem('novel_export_destination');
-    select.value = saved || 'download';
-  }
-  select.onchange = () => localStorage.setItem('novel_export_destination', select.value);
-}
-
-let driveExportBusy = false;
 function exportBook(format) {
-  const dest = $('export-destination').value;
-  if (dest === 'pixeldrain') {
-    exportToPixeldrain(format);
-    return;
-  }
-  if (dest === 'download') {
-    const link = document.createElement('a');
-    link.href = '/api/export/' + format;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    return;
-  }
-  if (driveExportBusy) { notice('Đang xuất lên Drive. Vui lòng đợi.'); return; }
-  safe(async () => {
-    driveExportBusy = true;
-    try {
-      if (!await ensureDriveApiConnection()) return;
-      const task = await api('/api/export/drive/' + format, {}, 'POST');
-      notice(driveBackend === 'api' ? 'Đang xuất qua Drive API…' : 'Đang chuẩn bị. Nếu được hỏi, quay lại tab Colab để cấp quyền Google Drive.');
-      for (let i = 0; i < 3600; i++) {
-        const result = await api('/api/export/drive/status/' + task.id);
-        if (result.status === 'done') {
-          notice('✓ Đã lưu trong My Drive/' + result.drive_path + (format === 'audio' ? ` (${result.uploaded_files || result.total_files} file audio, không ZIP).` : '.') + ' Bản gốc vẫn giữ tại máy chạy.');
-          return;
-        }
-        if (result.status === 'error' || result.status === 'auth_error') throw new Error(result.message);
-        notice(result.message || 'Đang xuất Google Drive…');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-      throw new Error('Chưa nhận được kết quả. Kiểm tra thư mục NovelReader_Exports trong Drive trước khi xuất lại.');
-    } finally { driveExportBusy = false; }
-  });
+  const link = document.createElement('a');
+  link.href = '/api/export/' + format;
+  document.body.append(link);
+  link.click();
+  link.remove();
 }
 
 async function loadHardware() {
@@ -621,8 +470,6 @@ function openSettingsModal(tabId = 'tab-translation') {
   settingsReturnFocus = document.activeElement;
   if ($('settings-modal')) $('settings-modal').hidden = false;
   switchSettingsTab(tabId);
-  loadGdriveSettings();
-  loadPixeldrainSettings();
   loadBucketSettings();
   loadMergedGroups();
   $('settings-modal').querySelector('.modal-tab.active')?.focus({preventScroll:true});
@@ -677,61 +524,16 @@ document.querySelectorAll('.modal-tab').forEach(tab => {
   };
 });
 
-async function loadPixeldrainSettings() {
-  const status = $('pixeldrain-key-status');
-  const input = $('modal-pixeldrain-key');
-  try {
-    const oldKey = localStorage.getItem('pixeldrain_api_key');
-    if (oldKey) {
-      await api('/api/settings/pixeldrain', {api_key: oldKey});
-      localStorage.removeItem('pixeldrain_api_key');
-    }
-    const info = await api('/api/settings/pixeldrain');
-    if (info && info.ok) {
-      if (input && !input.dataset.userEditing) {
-        input.value = info.api_key || '';
-      }
-      if (status) {
-        if (info.has_key) {
-          status.textContent = '✓ Đã lưu (' + (info.masked_key || 'Đã cấu hình') + ')';
-          status.className = 'chip chip-success';
-          status.style.color = 'var(--md-sys-color-primary, #4ade80)';
-        } else {
-          status.textContent = 'Chưa lưu API key';
-          status.className = 'chip';
-          status.style.color = 'var(--text-muted, #8e918f)';
-        }
-      }
-    }
-    const checkpoint = await api('/api/checkpoints/status');
-    const output = $('checkpoint-status');
-    if (output && checkpoint.last_cloud) {
-      output.replaceChildren(document.createTextNode('Checkpoint gần nhất: '));
-      const link = document.createElement('a');
-      if (/^https:\/\/pixeldrain\.com\/u\/[A-Za-z0-9_-]+$/.test(checkpoint.last_cloud.url)) {
-        link.href = checkpoint.last_cloud.url;
-        link.textContent = checkpoint.last_cloud.created_at;
-        link.target = '_blank'; link.rel = 'noopener noreferrer';
-        output.append(link);
-      }
-    }
-  } catch (e) {
-    if (status) {
-      status.textContent = 'Lỗi: ' + e.message;
-      status.style.color = 'var(--md-sys-color-error, #cf6679)';
-    }
-  }
-}
-
 async function loadBucketSettings() {
   const status = $('hf-bucket-status');
   if (!status) return;
   try {
     const info = await api('/api/bucket/status');
     const cloud = state?.progress?.cloud_sync;
+    $('hf-bucket-name').textContent = `${info.bucket_id} · ${info.visibility === 'public' ? 'Công khai' : 'Kiểm tra quyền chia sẻ'}`;
     status.textContent = info.write_enabled
-      ? (cloud?.last_error ? `Đã kết nối · Lỗi đồng bộ: ${cloud.last_error}` : `Đã kết nối · ${info.books.length} truyện · ${cloud?.pending || 0} tệp đang chờ`)
-      : 'Chỉ đọc được Bucket. Nhập token Hugging Face có quyền ghi để bật sao lưu.';
+      ? (cloud?.last_error ? `Lỗi đồng bộ: ${cloud.last_error}` : info.books_error ? `Có token · Không tải được danh sách: ${info.books_error}` : `Đã cấu hình token · ${info.books.length} truyện · ${cloud?.pending || 0} tệp đang chờ`)
+      : (info.books_error ? `Nhập token Hugging Face có quyền ghi để bật tự lưu: ${info.books_error}` : 'Nhập token Hugging Face có quyền ghi để bật tự lưu.');
     status.className = info.write_enabled ? 'bucket-connected' : 'bucket-readonly';
     const select = $('hf-bucket-books');
     const selectedValue = select.value;
@@ -750,15 +552,16 @@ if ($('btn-hf-bucket-token')) $('btn-hf-bucket-token').onclick = () => safe(asyn
   const input = $('hf-bucket-token');
   const result = await api('/api/bucket/token', {token: input.value.trim()});
   input.value = '';
-  if ($('cloud-checkpoint-auto')) $('cloud-checkpoint-auto').checked = result.write_enabled;
   $('hf-bucket-status').textContent = result.write_enabled ? 'Đã kết nối ghi Bucket trong phiên này.' : 'Đã ngắt kết nối ghi Bucket.';
   await loadBucketSettings();
 });
 if ($('btn-bucket-refresh')) $('btn-bucket-refresh').onclick = () => safe(loadBucketSettings);
 if ($('btn-bucket-save')) $('btn-bucket-save').onclick = () => checkpointAction(async () => {
   $('checkpoint-status').textContent = 'Đang tạo snapshot và đồng bộ Bucket…';
-  const result = await api('/api/bucket/checkpoint', {include_audio: $('checkpoint-include-audio').checked});
+  $('hf-bucket-status').textContent = 'Đang lưu checkpoint lên Bucket…';
+  const result = await api('/api/bucket/checkpoint', {});
   $('checkpoint-status').textContent = `Đã lưu checkpoint ${result.created_at}.`;
+  notice(`Đã lưu checkpoint ${result.created_at} lên Bucket.`);
   await loadBucketSettings();
 });
 if ($('btn-bucket-restore')) $('btn-bucket-restore').onclick = () => checkpointAction(async () => {
@@ -770,6 +573,7 @@ if ($('btn-bucket-restore')) $('btn-bucket-restore').onclick = () => checkpointA
   selected = null;
   await refreshAll();
   $('checkpoint-status').textContent = `Đã khôi phục ${result.book?.title || bookId}.`;
+  notice($('checkpoint-status').textContent);
 });
 if ($('btn-bucket-audio')) $('btn-bucket-audio').onclick = () => checkpointAction(async () => {
   const bookId = $('hf-bucket-books').value;
@@ -777,6 +581,7 @@ if ($('btn-bucket-audio')) $('btn-bucket-audio').onclick = () => checkpointActio
   $('checkpoint-status').textContent = 'Đang tải audio của truyện…';
   const result = await api('/api/bucket/audio', {book_id: bookId});
   $('checkpoint-status').textContent = `Đã nạp ${result.files} file audio (${(result.bytes / 1024 ** 2).toFixed(1)} MB).`;
+  notice($('checkpoint-status').textContent);
 });
 if ($('btn-end-session')) $('btn-end-session').onclick = () => safe(async () => {
   if (!confirm('Dừng tác vụ, đồng bộ checkpoint lên Bucket và kết thúc công việc trong phiên này? Sau đó quay lại Molab để dừng runtime.')) return;
@@ -793,7 +598,7 @@ if ($('btn-end-session')) $('btn-end-session').onclick = () => safe(async () => 
       }
       if (state.progress.active) throw new Error('Tác vụ chưa dừng sau 2 phút; hãy thử lại khi tác vụ đã dừng.');
     }
-    const checkpoint = await api('/api/bucket/checkpoint', {include_audio: $('checkpoint-include-audio').checked});
+    const checkpoint = await api('/api/bucket/checkpoint', {});
     notice(`Đã lưu checkpoint ${checkpoint.created_at}. Quay lại Molab để dừng runtime.`);
     await loadBucketSettings();
   } finally {
@@ -801,53 +606,11 @@ if ($('btn-end-session')) $('btn-end-session').onclick = () => safe(async () => 
   }
 });
 
-if ($('modal-pixeldrain-key')) {
-  $('modal-pixeldrain-key').addEventListener('input', () => {
-    $('modal-pixeldrain-key').dataset.userEditing = 'true';
-  });
-}
-
-if ($('btn-save-pixeldrain-key')) $('btn-save-pixeldrain-key').onclick = () => safe(async () => {
-  const input = $('modal-pixeldrain-key');
-  const val = input ? input.value.trim() : '';
-  const status = $('pixeldrain-key-status');
-  if (status) status.textContent = 'Đang lưu...';
-  const res = await api('/api/settings/pixeldrain', {api_key: val});
-  localStorage.removeItem('pixeldrain_api_key');
-  if (input) delete input.dataset.userEditing;
-  await loadPixeldrainSettings();
-  notice(val ? '✓ Đã lưu API key Pixeldrain thành công!' : 'Đã xóa API key Pixeldrain.');
-});
-
-if ($('btn-test-pixeldrain')) $('btn-test-pixeldrain').onclick = () => safe(async () => {
-  const input = $('modal-pixeldrain-key');
-  const val = input ? input.value.trim() : '';
-  const status = $('pixeldrain-key-status');
-  if (status) {
-    status.textContent = 'Đang kiểm tra...';
-    status.style.color = 'var(--text-muted, #8e918f)';
-  }
-  const result = await api('/api/settings/pixeldrain/test', {api_key: val});
-  if (result.ok) {
-    if (status) {
-      status.textContent = '✓ ' + (result.message || 'Kết nối thành công');
-      status.style.color = 'var(--md-sys-color-primary, #4ade80)';
-    }
-    notice('✓ ' + (result.message || 'Kết nối Pixeldrain thành công!'));
-  } else {
-    if (status) {
-      status.textContent = '⚠ ' + (result.message || 'Lỗi kết nối');
-      status.style.color = 'var(--md-sys-color-error, #cf6679)';
-    }
-    notice('Lỗi: ' + (result.message || 'Không thể kết nối'), true);
-  }
-});
-
 let checkpointBusy = false;
 async function checkpointAction(action) {
   if (checkpointBusy) return;
   checkpointBusy = true;
-  const buttons = document.querySelectorAll('.checkpoint-card button');
+  const buttons = document.querySelectorAll('.checkpoint-card button, .bucket-card button');
   buttons.forEach(b => b.disabled = true);
   $('checkpoint-status').textContent = 'Đang xử lý… Không đóng runtime.';
   try { await action(); }
@@ -864,7 +627,6 @@ if ($('btn-load-draft')) $('btn-load-draft').onclick = () => checkpointAction(as
   $('glossary').value = c.glossary; $('batch').value = c.batch_size;
   $('opt-audio').checked = c.generate_audio; $('opt-audio-pipeline').checked = c.audio_pipeline;
   $('audio-workers').value = c.audio_workers; $('audio-queue-size').value = c.audio_queue_size;
-  $('cloud-checkpoint-auto').checked = c.cloud_checkpoint;
   $('checkpoint-include-audio').checked = c.checkpoint_include_audio;
   $('opt-honorific').checked = c.honorific_mode !== 'off';
   $('opt-pronoun').checked = c.pronoun_harmonizer;
@@ -888,12 +650,6 @@ if ($('btn-load-draft')) $('btn-load-draft').onclick = () => checkpointAction(as
   $('trans-range-start').value = c.start_pos ?? ''; $('trans-range-end').value = c.end_pos ?? '';
   await applyAudioConfig(c);
   $('checkpoint-status').textContent = 'Đã nạp cấu hình bảng tạm. Kiểm tra phạm vi/reset trước khi chạy.';
-});
-if ($('btn-checkpoint-cloud')) $('btn-checkpoint-cloud').onclick = () => checkpointAction(async () => {
-  await api('/api/checkpoints/draft', buildTranslatePayload());
-  const result = await api('/api/checkpoints/pixeldrain', {include_audio: $('checkpoint-include-audio').checked});
-  showPixeldrainModal(result);
-  $('checkpoint-status').textContent = 'Đã lưu checkpoint lên Pixeldrain. Hãy giữ link để khôi phục runtime khác.';
 });
 if ($('btn-checkpoint-download')) $('btn-checkpoint-download').onclick = () => checkpointAction(async () => {
   await api('/api/checkpoints/draft', buildTranslatePayload());
@@ -920,203 +676,8 @@ if ($('checkpoint-file')) $('checkpoint-file').onchange = () => checkpointAction
   await finishRestore(await api('/api/checkpoints/restore', data));
   $('checkpoint-file').value = '';
 });
-if ($('btn-checkpoint-restore')) $('btn-checkpoint-restore').onclick = () => checkpointAction(async () => {
-  if (!confirm('Tải checkpoint Pixeldrain và thay truyện hiện tại?')) return;
-  await finishRestore(await api('/api/checkpoints/restore-pixeldrain', {file_id: $('checkpoint-id').value.trim()}));
-});
-
-if ($('pd-dialog-close')) $('pd-dialog-close').onclick = () => $('pixeldrain-result-dialog')?.close();
-if ($('pd-btn-copy')) {
-  $('pd-btn-copy').onclick = () => {
-    const url = $('pd-dialog-url')?.value;
-    if (url) {
-      navigator.clipboard.writeText(url).then(() => notice('✓ Đã sao chép link Pixeldrain vào clipboard!'));
-    }
-  };
-}
-
-document.querySelectorAll('input[name="gdrive_mode"]').forEach(r => {
-  r.onchange = () => {
-    const isLocal = r.value === 'local_folder';
-    if ($('gdrive-local-settings')) $('gdrive-local-settings').style.display = isLocal ? 'block' : 'none';
-    if ($('gdrive-api-settings')) $('gdrive-api-settings').style.display = isLocal ? 'none' : 'block';
-  };
-});
-
-async function loadGdriveSettings() {
-  try {
-    const cfg = await api('/api/settings/gdrive');
-    if (!cfg) return;
-    if ($('modal-gdrive-enabled')) $('modal-gdrive-enabled').checked = !!cfg.enabled;
-    const mode = cfg.mode || 'local_folder';
-    const radio = document.querySelector(`input[name="gdrive_mode"][value="${mode}"]`);
-    if (radio) {
-      radio.checked = true;
-      radio.dispatchEvent(new Event('change'));
-    }
-    if ($('modal-gdrive-path')) $('modal-gdrive-path').value = cfg.local_path || cfg.local_sync_path || '';
-    if ($('modal-gdrive-client-id')) $('modal-gdrive-client-id').value = cfg.client_id || '';
-    if ($('modal-gdrive-client-secret')) $('modal-gdrive-client-secret').value = '';
-    if ($('modal-gdrive-client-secret')) $('modal-gdrive-client-secret').placeholder = cfg.has_client_secret ? 'Đã lưu · để trống để giữ nguyên' : 'Nhập Client Secret';
-    if ($('modal-gdrive-folder-id')) $('modal-gdrive-folder-id').value = cfg.folder_id || '';
-    if ($('modal-gdrive-auto')) $('modal-gdrive-auto').checked = !!cfg.auto_upload;
-    if ($('gdrive-redirect-uri')) $('gdrive-redirect-uri').textContent = `${window.location.origin}/api/gdrive/callback`;
-
-    const ind = $('gdrive-oauth-indicator');
-    if (ind) {
-      if (cfg.account_email) {
-        ind.textContent = `✓ ${cfg.account_email}`;
-        ind.style.color = 'var(--green, #4ade80)';
-      } else if (cfg.connected) {
-        ind.textContent = '✓ Đã liên kết';
-        ind.style.color = 'var(--green, #4ade80)';
-      } else {
-        ind.textContent = 'Chưa liên kết';
-        ind.style.color = 'var(--text-dim, #aaa)';
-      }
-    }
-  } catch {}
-}
-
-async function saveGdriveSettings() {
-  if (!$('modal-gdrive-enabled')) return {};
-  const mode = document.querySelector('input[name="gdrive_mode"]:checked')?.value || 'local_folder';
-  const payload = {
-    enabled: $('modal-gdrive-enabled') ? $('modal-gdrive-enabled').checked : false,
-    mode: mode,
-    local_path: $('modal-gdrive-path') ? $('modal-gdrive-path').value.trim() : '',
-    client_id: $('modal-gdrive-client-id') ? $('modal-gdrive-client-id').value.trim() : '',
-    client_secret: $('modal-gdrive-client-secret') ? $('modal-gdrive-client-secret').value.trim() : '',
-    folder_id: $('modal-gdrive-folder-id') ? $('modal-gdrive-folder-id').value.trim() : '',
-    auto_upload: $('modal-gdrive-auto') ? $('modal-gdrive-auto').checked : false
-  };
-  if (!payload.client_secret) delete payload.client_secret;
-  await api('/api/settings/gdrive', payload, 'POST');
-  return payload;
-}
-
-if ($('modal-gdrive-client-id')) {
-  $('modal-gdrive-client-id').oninput = () => {
-    const val = $('modal-gdrive-client-id').value.trim();
-    const isApiKey = val.startsWith('AIzaSy');
-    if ($('gdrive-client-id-warn')) {
-      $('gdrive-client-id-warn').style.display = isApiKey ? 'block' : 'none';
-    }
-  };
-}
-
-if ($('btn-copy-redirect-uri')) {
-  $('btn-copy-redirect-uri').onclick = () => {
-    const uri = `${window.location.origin}/api/gdrive/callback`;
-    navigator.clipboard.writeText(uri).then(() => {
-      notice('✓ Đã sao chép URI chuyển hướng vào Clipboard: ' + uri);
-    }).catch(() => {
-      notice('URI chuyển hướng: ' + uri);
-    });
-  };
-}
-
-if ($('btn-detect-desktop-gdrive')) {
-  $('btn-detect-desktop-gdrive').onclick = () => safe(async () => {
-    notice('Đang tìm thư mục Google Drive Desktop...');
-    const res = await api('/api/gdrive/auto-detect', {}, 'POST');
-    if (res.found) {
-      $('modal-gdrive-path').value = res.path;
-      notice('✓ Đã tìm thấy Google Drive Desktop: ' + res.path);
-    } else {
-      notice(res.message || 'Không tìm thấy Google Drive Desktop trên máy.');
-    }
-  });
-}
-
-if ($('btn-import-client-secret')) $('btn-import-client-secret').onclick = () => $('gdrive-secret-file').click();
-if ($('gdrive-secret-file')) {
-  $('gdrive-secret-file').onchange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const json = JSON.parse(ev.target.result);
-        const clientObj = json.installed || json.web || json;
-        const cid = clientObj.client_id || '';
-        const csec = clientObj.client_secret || '';
-        if (cid && $('modal-gdrive-client-id')) {
-          $('modal-gdrive-client-id').value = cid;
-          $('modal-gdrive-client-id').dispatchEvent(new Event('input'));
-        }
-        if (csec && $('modal-gdrive-client-secret')) $('modal-gdrive-client-secret').value = csec;
-        notice('✓ Đã nạp Client ID & Secret từ ' + file.name);
-      } catch (err) {
-        notice('Lỗi đọc file client_secret: ' + err.message, true);
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-}
-
-if ($('btn-oauth-gdrive')) {
-  $('btn-oauth-gdrive').onclick = () => safe(async () => {
-    const cid = $('modal-gdrive-client-id')?.value.trim() || '';
-    if (cid.startsWith('AIzaSy')) {
-      throw new Error('Chuỗi bạn nhập là Google API Key (bắt đầu bằng AIzaSy). Vui lòng tạo OAuth 2.0 Client ID trong Google Cloud Console (có đuôi .apps.googleusercontent.com).');
-    }
-    if (!cid) {
-      throw new Error('Vui lòng nhập Google OAuth Client ID hoặc nạp file client_secret.json.');
-    }
-    await saveGdriveSettings();
-    const res = await api('/api/gdrive/auth-url');
-    if (res.auth_url) {
-      notice('Đang mở cửa sổ đăng nhập Google...');
-      const popup = window.open(res.auth_url, 'GoogleDriveOAuth', 'width=600,height=700,status=no,resizable=yes');
-      if (!popup) {
-        window.location.href = res.auth_url;
-      }
-    }
-  });
-}
-
-window.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'gdrive_auth_success') {
-    notice('✓ Đã liên kết Google Drive thành công: ' + (event.data.email || ''));
-    loadGdriveSettings();
-  }
-});
-
-if ($('btn-test-gdrive')) {
-  $('btn-test-gdrive').onclick = () => safe(async () => {
-    const msg = $('gdrive-status-msg');
-    msg.textContent = '⏳ Đang kiểm tra kết nối...';
-    msg.style.color = 'var(--text-dim, #aaa)';
-    await saveGdriveSettings();
-    const res = await api('/api/gdrive/test', {}, 'POST');
-    if (res.ok) {
-      msg.textContent = '✓ ' + res.message;
-      msg.style.color = 'var(--green, #4ade80)';
-    } else {
-      msg.textContent = '✗ ' + res.message;
-      msg.style.color = 'var(--red, #f87171)';
-    }
-  });
-}
-
-if ($('btn-upload-all-gdrive')) {
-  $('btn-upload-all-gdrive').onclick = () => safe(async () => {
-    const msg = $('gdrive-status-msg');
-    msg.textContent = '⏳ Đang tải toàn bộ audio lên Google Drive...';
-    msg.style.color = 'var(--text-dim, #aaa)';
-    await saveGdriveSettings();
-    const res = await api('/api/gdrive/upload-all', {}, 'POST');
-    msg.textContent = `✓ Đã tải ${res.uploaded} file audio lên Drive.`;
-    msg.style.color = 'var(--green, #4ade80)';
-    notice(`✓ Đã đồng bộ ${res.uploaded} file audio lên Google Drive!`);
-  });
-}
-
 if ($('btn-save-settings')) {
   $('btn-save-settings').onclick = () => safe(async () => {
-    await saveGdriveSettings();
     await api('/api/checkpoints/draft', buildTranslatePayload());
     await api('/api/settings/audio', buildAudioPayload());
     closeSettingsModal();
@@ -1227,35 +788,7 @@ async function loadMergedGroups() {
       downloadLink.className = 'btn-tool';
       downloadLink.textContent = '⬇ Tải file';
 
-      const pdBtn = document.createElement('button');
-      pdBtn.type = 'button';
-      pdBtn.className = 'btn-tool';
-      pdBtn.textContent = '☁ Pixeldrain';
-      pdBtn.title = 'Tải file này lên Pixeldrain và lấy link chia sẻ';
-      pdBtn.onclick = async () => {
-        const apiKey = localStorage.getItem('pixeldrain_api_key') || null;
-        notice(`Đang tải ${g.filename} lên Pixeldrain...`);
-        try {
-          const payload = apiKey ? { api_key: apiKey } : {};
-          const res = await api('/api/export/pixeldrain/file/' + encodeURIComponent(g.filename), payload, 'POST');
-          if (res.ok) {
-            notice(`✓ Đã tải lên Pixeldrain: ${res.url}`);
-            showPixeldrainModal(res);
-          } else {
-            throw new Error(res.message || 'Lỗi khi upload Pixeldrain.');
-          }
-        } catch (err) {
-          const msg = err.message || String(err);
-          if (msg.includes('API Key') || msg.includes('401')) {
-            notice('Pixeldrain yêu cầu API Key. Vui lòng mở Cài đặt để nhập Key.');
-            openSettingsModal('tab-cloud');
-          } else {
-            notice(`Lỗi Pixeldrain: ${msg}`);
-          }
-        }
-      };
-
-      actions.append(downloadLink, pdBtn);
+      actions.append(downloadLink);
       row.append(info, actions);
       list.append(row);
     });
@@ -1355,7 +888,6 @@ function updateTranslationSummary() {
 $('normalize-mode').onchange=()=>setNormalizeMode($('normalize-mode').value);
 $('opt-t2s').onchange=()=>setNormalizeMode($('opt-t2s').checked?lastEnabledNormalizeMode:'none');
 $('btn-translation-settings').onclick=()=>openSettingsModal('tab-translation');
-$('settings-drive-connect').onclick=()=>{closeSettingsModal();if(driveBackend==='api')openDriveDialog();else notice(driveBackend==='colab'?'Chọn Google Drive khi xuất và cấp quyền trong notebook Colab nếu được hỏi.':'Drive chưa khả dụng ở runtime này. Có thể dùng tải về máy hoặc Pixeldrain.');};
 
 $('btn-import-glossary').onclick = () => $('glossary-file').click();
 $('glossary-file').onchange = e => {
@@ -1399,7 +931,7 @@ function renderProgress(progress) {
   $('stop').disabled = !p.active || p.status === 'stopping';
   $('pause').textContent = p.status === 'paused' ? '▷ Tiếp tục' : 'Ⅱ Tạm dừng';
 
-  const inputs = ['engine', 'glossary', 'batch', 'reset', 'load-path', 'file', 'opt-audio-pipeline', 'audio-workers', 'audio-queue-size', 'cloud-checkpoint-auto', 'checkpoint-include-audio', 'opt-honorific', 'opt-pronoun', 'opt-t2s', 'beam-size', 'normalize-mode', 'btn-delete-book', 'btn-save-book-title', 'book-output-title', 'btn-trans-range', 'btn-auto-group-audio', 'range-start', 'range-end', 'trans-range-start', 'trans-range-end', 'toc-group-size', 'btn-reset-current', 'btn-delete-current', 'btn-download-model', 'btn-download-model-action'];
+  const inputs = ['engine', 'glossary', 'batch', 'reset', 'load-path', 'file', 'opt-audio-pipeline', 'audio-workers', 'audio-queue-size', 'checkpoint-include-audio', 'opt-honorific', 'opt-pronoun', 'opt-t2s', 'beam-size', 'normalize-mode', 'btn-delete-book', 'btn-save-book-title', 'book-output-title', 'btn-trans-range', 'btn-auto-group-audio', 'range-start', 'range-end', 'trans-range-start', 'trans-range-end', 'toc-group-size', 'btn-reset-current', 'btn-delete-current', 'btn-download-model', 'btn-download-model-action'];
   inputs.forEach(id => {
     const el = $(id);
     if (el) el.disabled = p.active || busy || isDownloadingModel;
@@ -1786,7 +1318,6 @@ function buildTranslatePayload(extraConfig = {}) {
     audio_pipeline: $('opt-audio-pipeline') ? $('opt-audio-pipeline').checked : true,
     audio_workers: Number($('audio-workers')?.value || 1),
     audio_queue_size: Number($('audio-queue-size')?.value || 4),
-    cloud_checkpoint: !!$('cloud-checkpoint-auto')?.checked,
     checkpoint_include_audio: !!$('checkpoint-include-audio')?.checked,
     reset: extraConfig.reset !== undefined ? extraConfig.reset : $('reset').checked,
     honorific_mode: $('opt-honorific').checked ? 'safe' : 'off',
@@ -2168,7 +1699,6 @@ let updating = false, dirty = false;
 async function handleEvent(event) {
   if (event.progress) renderProgress(event.progress);
   if (event.type === 'error') notice(event.message || 'Chương dịch lỗi.', true);
-  if (event.type === 'cloud_checkpoint_done') { notice('Đã lưu checkpoint Pixeldrain: ' + event.url); loadPixeldrainSettings(); }
   if (event.type === 'cloud_checkpoint_error') notice('Lưu cloud thất bại, tiến độ cục bộ vẫn còn: ' + event.error, true);
   if (event.type === 'chapter_audio_error' || event.type === 'audio_group_error') notice(event.error || 'Lỗi xử lý audio.', true);
   if (event.type === 'audio_groups_updated') {
@@ -2235,7 +1765,7 @@ safe(async () => {
   setViewMode(currentViewMode);
   const savedBackend = localStorage.getItem('novel_backend') || 'ct2';
   setBackend(savedBackend);
-  await Promise.all([loadHardware(), loadModels(), loadVoices(), loadGdriveSettings(), loadExportDestination(), loadPixeldrainSettings()]);
+  await Promise.all([loadHardware(), loadModels(), loadVoices(), loadBucketSettings()]);
   const s = await refreshAll();
 
   if (s.book) {
@@ -2248,7 +1778,6 @@ safe(async () => {
       if ($('opt-audio-pipeline')) $('opt-audio-pipeline').checked = c.audio_pipeline !== false;
       if ($('audio-workers')) $('audio-workers').value = c.audio_workers || 1;
       if ($('audio-queue-size')) $('audio-queue-size').value = c.audio_queue_size || 4;
-      if ($('cloud-checkpoint-auto')) $('cloud-checkpoint-auto').checked = !!c.cloud_checkpoint;
       if ($('checkpoint-include-audio')) $('checkpoint-include-audio').checked = !!c.checkpoint_include_audio;
       if (c.honorific_mode !== undefined) $('opt-honorific').checked = c.honorific_mode !== 'off';
       if (c.pronoun_harmonizer !== undefined) $('opt-pronoun').checked = !!c.pronoun_harmonizer;
@@ -2322,18 +1851,26 @@ if ($('btn-save-book-title')) $('btn-save-book-title').onclick = () => safe(asyn
 
 let exportOptions = null;
 function updateExportReview() {
- const kind=document.querySelector('input[name="export-kind"]:checked')?.value||'txt';
- const dest=$('export-destination').value;
- $('drive-api-open').hidden=dest!=='gdrive'||driveBackend!=='api';
- const total=exportOptions?.chapters ?? chapters.length, done=exportOptions?.translated ?? chapters.filter(c=>c.status==='done').length;
- const count=exportOptions?.audio_files ?? 0;
- $('export-book-name').textContent=exportOptions?.book_title||state.book?.title||'Chưa nạp truyện';
- $('export-progress-summary').textContent=`${done}/${total} chương đã dịch · ${count} tệp audio`;
- $('export-result-summary').textContent=kind==='audio'?(dest==='gdrive'?'Từng tệp audio gốc, không ZIP':'Một file ZIP chứa audio đã có'):(kind==='epub'?'Một file EPUB':'Một file TXT UTF-8');
- $('export-format-hint').textContent=kind==='audio'?'Không tự tạo audio mới, không đổi giọng/bitrate khi xuất. Các tệp audio đã gộp (nếu có) cũng được xuất.': 'Xuất bản dịch hiện có theo thứ tự chương; chương chưa dịch được đánh dấu. Không xuất riêng dải chương ở bước này.';
- const problem=!state.book?'Nạp truyện trước khi xuất.':!exportOptions?'Chưa kiểm tra được dữ liệu. Đóng và mở lại bảng xuất.':kind==='audio'&&exportOptions.busy?'Dừng job trước khi xuất audio để tránh tệp thay đổi.':kind==='audio'&&!count?'Chưa có audio. Tạo audio trước khi xuất.':driveExportBusy||pixeldrainExportBusy?'Đang xuất dữ liệu, vui lòng đợi.':'';
- $('export-inline-status').textContent=problem || (dest==='pixeldrain'?'Cần API key trong Cài đặt → Lưu trữ. Ai có link Pixeldrain có thể tải tệp.':dest==='gdrive'?'Có thể cần cấp quyền Drive. Giữ notebook mở trong lúc xuất.':'Bản gốc vẫn được giữ trên máy chạy tool.');
- $('btn-confirm-export').disabled=!!problem;
+  const kind = document.querySelector('input[name="export-kind"]:checked')?.value || 'txt';
+  const total = exportOptions?.chapters ?? chapters.length;
+  const done = exportOptions?.translated ?? chapters.filter(c => c.status === 'done').length;
+  const count = exportOptions?.audio_files ?? 0;
+  $('export-book-name').textContent = exportOptions?.book_title || state.book?.title || 'Chưa nạp truyện';
+  $('export-progress-summary').textContent = `${done}/${total} chương đã dịch · ${count} tệp audio`;
+  $('export-result-summary').textContent = kind === 'audio' ? 'Một file ZIP chứa audio đã có' : kind === 'epub' ? 'Một file EPUB' : 'Một file TXT UTF-8';
+  $('export-format-hint').textContent = kind === 'audio'
+    ? 'Tải các tệp audio hiện có, gồm cả các tập đã gộp. Không tạo audio mới.'
+    : 'Tải bản dịch hiện có theo thứ tự chương; chương chưa dịch được đánh dấu.';
+  const problem = !state.book ? 'Nạp truyện trước khi tải.'
+    : !exportOptions ? 'Chưa kiểm tra được dữ liệu.'
+    : kind === 'audio' && exportOptions.busy ? 'Dừng job trước khi tải audio.'
+    : kind === 'audio' && !count ? 'Chưa có audio. Tạo audio trước.' : '';
+  $('export-inline-status').textContent = problem || 'Tệp sẽ được tải về thiết bị của bạn.';
+  const sync = state.progress?.cloud_sync;
+  $('export-bucket-status').textContent = sync?.write_enabled
+    ? (sync.last_error ? `Bucket đang thử lại: ${sync.last_error}` : `Hugging Face Bucket tự lưu · ${sync.pending || 0} tệp đang chờ`)
+    : 'Chưa bật tự lưu Bucket. Kết nối token Hugging Face trong Cài đặt.';
+  $('btn-confirm-export').disabled = !!problem;
 }
 $('btn-open-export').onclick=()=>safe(async()=>{
  if(!$('export-dialog').open)$('export-dialog').showModal();
@@ -2342,7 +1879,6 @@ $('btn-open-export').onclick=()=>safe(async()=>{
  catch(e){$('export-inline-status').textContent=e.message;}
 });
 $('btn-close-export').onclick=$('btn-cancel-export').onclick=()=>$('export-dialog').close();
-$('export-destination').addEventListener('change',updateExportReview);
 document.querySelectorAll('input[name="export-kind"]').forEach(el=>el.onchange=updateExportReview);
 $('btn-confirm-export').onclick=()=>{
  if($('btn-confirm-export').disabled)return;

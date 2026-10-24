@@ -6,8 +6,8 @@
 <title>NovelReader</title>
 <link href="/static/fonts/inter.css" rel="stylesheet"/>
 <link href="/static/fonts/jetbrains-mono.css" rel="stylesheet"/>
-<link href="/static/style.css?v=20261023-3" rel="stylesheet"/>
-<link href="/static/monitor.css?v=20261023-3" rel="stylesheet"/>
+<link href="/static/style.css?v=20261023-5" rel="stylesheet"/>
+<link href="/static/monitor.css?v=20261023-5" rel="stylesheet"/>
 </head>
 <body>
 <header class="topbar">
@@ -446,7 +446,7 @@
         </button>
         <button aria-controls="pane-tab-cloud" aria-selected="false" class="modal-tab" data-tab="tab-cloud" id="settings-nav-cloud" role="tab" type="button">
           <span class="tab-icon">☁</span>
-          <span>Lưu trữ &amp; Key</span>
+          <span>Hugging Face</span>
         </button>
         <button aria-controls="pane-tab-backup" aria-selected="false" class="modal-tab" data-tab="tab-backup" id="settings-nav-backup" role="tab" type="button">
           <span class="tab-icon"></span>
@@ -620,37 +620,28 @@
           </details>
         </div>
 
-        <!-- TAB: Lưu trữ Đám mây & Pixeldrain -->
+        <!-- TAB: Đồng bộ Hugging Face Bucket -->
         <div aria-labelledby="settings-nav-cloud" class="tab-pane" id="pane-tab-cloud" role="tabpanel" style="display:none">
           <div class="settings-section">
-            <h3>Lưu trữ đám mây</h3>
+            <h3>Tự lưu vào Hugging Face Bucket</h3>
           </div>
-          <div class="md3-card" style="padding:16px; margin-bottom:16px; border-radius:12px; background:var(--card-bg); border:1px solid var(--border-default);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:18px;">☁</span>
-                <strong>Pixeldrain API Key</strong>
-              </div>
-              <span class="chip" id="pixeldrain-key-status">Đang kiểm tra...</span>
+          <div class="bucket-card">
+            <strong id="hf-bucket-name">Hugging Face Bucket</strong>
+            <p>Bản dịch TXT/EPUB, audio từng chương, audio đã gộp và checkpoint được xếp hàng tự lưu khi có token ghi. Tệp đã tạo trước khi kết nối cũng sẽ được đồng bộ.</p>
+            <label for="hf-bucket-token">Token Hugging Face có quyền ghi Bucket</label>
+            <div class="bucket-token-row">
+              <input id="hf-bucket-token" autocomplete="off" placeholder="hf_…" type="password"/>
+              <button class="button" id="btn-hf-bucket-token" type="button">Kết nối</button>
             </div>
-            <div style="display:flex; gap:10px; align-items:center;">
-              <input class="form-input" id="modal-pixeldrain-key" placeholder="Dán API Key Pixeldrain tại đây..." style="flex:1;" type="password"/>
-              <button class="button primary" id="btn-save-pixeldrain-key" type="button">Lưu Key</button>
-              <button class="button" id="btn-test-pixeldrain" type="button">Kiểm tra kết nối</button>
+            <p id="hf-bucket-status" role="status">Kiểm tra kết nối…</p>
+            <div class="cloud-actions">
+              <button class="button primary" id="btn-bucket-save" type="button">Lưu checkpoint ngay</button>
+              <button class="button" id="btn-bucket-refresh" type="button">Tải danh sách truyện</button>
             </div>
-            <div style="margin-top:10px; font-size:12px; color:var(--text-muted); display:flex; justify-content:space-between; align-items:center;">
-              <span>Key được lưu an toàn tại backend server.</span>
-              <a href="https://pixeldrain.com/user/api_keys" rel="noopener noreferrer" style="color:var(--md-sys-color-primary, #4ade80); text-decoration:underline;" target="_blank">Lấy API key Pixeldrain ↗</a>
-            </div>
-          </div>
-
-          <div class="md3-card" style="padding:16px; border-radius:12px; background:var(--card-bg); border:1px solid var(--border-default);">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:18px;"></span>
-                <strong>Google Drive</strong>
-              </div>
-              <button class="button" id="settings-drive-connect" type="button">Quản lý kết nối Drive</button>
+            <div class="bucket-token-row">
+              <select id="hf-bucket-books" aria-label="Truyện trong Hugging Face Bucket"><option value="">Chọn truyện để khôi phục</option></select>
+              <button class="button" id="btn-bucket-restore" type="button">Khôi phục</button>
+              <button class="button" id="btn-bucket-audio" type="button">Nạp audio đã lưu</button>
             </div>
           </div>
         </div>
@@ -662,50 +653,19 @@
           </div>
           <section aria-labelledby="checkpoint-heading" class="checkpoint-card">
             <h3 id="checkpoint-heading">Tiến độ &amp; Bảng tạm</h3>
-            <div class="bucket-card">
-              <strong>Hugging Face Bucket</strong>
-              <span>uri410/NovelReader_Cloud_Audio · Công khai</span>
-              <label for="hf-bucket-token">Write token cho Bucket</label>
-              <div class="bucket-token-row">
-                <input id="hf-bucket-token" autocomplete="off" placeholder="hf_…" type="password"/>
-                <button class="button" id="btn-hf-bucket-token" type="button">Kết nối</button>
-              </div>
-              <p id="hf-bucket-status" role="status">Kiểm tra kết nối…</p>
-              <div class="cloud-actions">
-                <button class="button primary" id="btn-bucket-save" type="button">Lưu checkpoint</button>
-                <button class="button" id="btn-bucket-refresh" type="button">Tải danh sách truyện</button>
-              </div>
-              <div class="bucket-token-row">
-                <select id="hf-bucket-books" aria-label="Truyện trong Hugging Face Bucket"><option value="">Chọn truyện để khôi phục</option></select>
-                <button class="button" id="btn-bucket-restore" type="button">Khôi phục</button>
-                <button class="button" id="btn-bucket-audio" type="button">Nạp audio đã lưu</button>
-              </div>
-            </div>
             <label class="toggle-row">
               <input id="checkpoint-include-audio" type="checkbox"/>
-              <span>Kèm file audio (dung lượng lớn hơn)</span>
-            </label>
-            <label class="toggle-row">
-              <input checked="" id="cloud-checkpoint-auto" type="checkbox"/>
-              <span>Tự lưu Hugging Face Bucket mỗi 60 giây và khi job kết thúc</span>
+              <span>Kèm audio trong checkpoint tải thủ công (dung lượng lớn hơn)</span>
             </label>
             <div class="cloud-actions" style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
               <button class="button" id="btn-end-session" type="button">Lưu và kết thúc phiên</button>
               <button class="button" id="btn-save-draft" type="button">Lưu bảng tạm</button>
               <button class="button" id="btn-load-draft" type="button">Nạp bảng tạm</button>
               <button class="button" id="btn-checkpoint-download" type="button">Tải ZIP</button>
-              <button class="button" id="btn-checkpoint-cloud" type="button">Lưu Pixeldrain cũ</button>
             </div>
             <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border-subtle);">
               <label class="restore-label" for="checkpoint-file" style="display:block; margin-bottom:6px; font-weight:600;">Khôi phục từ tệp ZIP:</label>
               <input accept=".zip,application/zip" id="checkpoint-file" type="file"/>
-            </div>
-            <div style="margin-top:14px;">
-              <label class="restore-label" for="checkpoint-id" style="display:block; margin-bottom:6px; font-weight:600;">Khôi phục từ Pixeldrain (Link hoặc ID):</label>
-              <div class="cloud-actions" style="display:flex; gap:8px;">
-                <input autocomplete="off" id="checkpoint-id" placeholder="https://pixeldrain.com/u/…" style="flex:1;" type="text"/>
-                <button class="button" id="btn-checkpoint-restore" type="button">Khôi phục</button>
-              </div>
             </div>
             <p aria-live="polite" class="form-hint" id="checkpoint-status" role="status" style="margin-top:10px;"></p>
           </section>
@@ -760,70 +720,26 @@
   </div>
 </div>
 
-<!-- DIALOG: Google Drive API (Kaggle / OAuth) -->
-<dialog id="drive-api-dialog" style="width:min(560px,calc(100vw - 32px)); max-height:88vh; box-sizing:border-box; overflow:auto; background:var(--card-bg, #141e17); color:var(--text-main, #e5f0e8); border:1px solid var(--border-default, #375140); border-radius:16px; padding:24px;">
-  <h2 style="margin-top:0;">Kết nối Google Drive</h2>
-  <label for="drive-api-client" style="display:block; margin:12px 0 6px;">Chọn JSON Desktop OAuth:</label>
-  <input accept="application/json,.json" id="drive-api-client" style="display:block; width:100%; margin-bottom:12px;" type="file"/>
-  <button class="button" id="drive-api-begin" type="button">Tạo link xác thực Google</button>
-  <p><a hidden="" id="drive-api-auth-link" rel="noopener noreferrer" target="_blank">Mở Google để cấp quyền</a></p>
-  <label for="drive-api-return" style="display:block; margin:14px 0 6px;">Dán URL chuyển tiếp từ Google:</label>
-  <input autocomplete="off" id="drive-api-return" placeholder="http://127.0.0.1:8765/?state=…&amp;code=…" style="box-sizing:border-box; width:100%; margin-bottom:12px; padding:8px 12px;" type="password"/>
-  <p id="drive-api-message" role="status" style="overflow-wrap:anywhere;"></p>
-  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;">
-    <button class="button primary" id="drive-api-finish" type="button">Hoàn tất</button>
-    <button class="button" id="drive-api-disconnect" type="button">Ngắt kết nối</button>
-    <button class="button btn-ghost" id="drive-api-close" type="button">Đóng</button>
-  </div>
-</dialog>
-
-<!-- DIALOG: Pixeldrain Result Modal -->
-<dialog id="pixeldrain-result-dialog" style="width:min(520px,calc(100vw - 32px)); background:var(--card-bg, #141e17); color:var(--text-main, #e5f0e8); border:1px solid var(--border-default, #375140); border-radius:16px; padding:24px;">
-  <h2 style="margin-top:0; display:flex; align-items:center; gap:8px;">☁ Tải lên Pixeldrain thành công!</h2>
-  <p id="pd-dialog-filename" style="font-size:13px; color:var(--text-muted);"></p>
-  <div style="margin:16px 0; background:var(--input-bg, #0d1410); padding:12px; border-radius:10px; border:1px solid var(--border-subtle, #24382a);">
-    <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:6px;">Link tải &amp; chia sẻ:</label>
-    <div style="display:flex; gap:8px;">
-      <input id="pd-dialog-url" readonly="" style="flex:1; background:var(--card-bg); border:1px solid var(--border-default); color:var(--md-sys-color-primary, #4ade80); padding:8px 10px; border-radius:6px; font-family:monospace; font-size:13px;" type="text"/>
-      <button class="button" id="pd-btn-copy" type="button"> Sao chép</button>
-    </div>
-  </div>
-  <div style="display:flex; gap:10px; justify-content:flex-end;">
-    <a class="button primary" href="#" id="pd-dialog-open-link" rel="noopener noreferrer" style="text-decoration:none;" target="_blank">Mở link ↗</a>
-    <button class="button btn-ghost" id="pd-dialog-close" type="button">Đóng</button>
-  </div>
-</dialog>
-
-<!-- DIALOG: Xuất truyện -->
+<!-- DIALOG: Tải kết quả về máy -->
 <dialog aria-labelledby="export-heading" class="export-dialog" id="export-dialog">
   <div class="export-dialog-header">
     <div>
       <p class="eyebrow">LƯU KẾT QUẢ</p>
-      <h2 id="export-heading">Xuất truyện</h2>
+      <h2 id="export-heading">Tải kết quả</h2>
     </div>
     <button aria-label="Đóng bảng xuất" class="icon-close" id="btn-close-export" type="button">×</button>
   </div>
   <div class="export-dialog-body">
     <p class="export-book-name" id="export-book-name"></p>
     <fieldset class="export-format-options">
-      <legend>1. Định dạng xuất</legend>
+      <legend>Định dạng tải về</legend>
       <label><input checked="" name="export-kind" type="radio" value="txt"/><span><strong>Văn bản TXT</strong><small>Dễ đọc, nhẹ</small></span></label>
       <label><input name="export-kind" type="radio" value="epub"/><span><strong>Sách EPUB</strong><small>Đọc trên app sách</small></span></label>
       <label><input name="export-kind" type="radio" value="audio"/><span><strong>Audio</strong><small>Tập tin âm thanh</small></span></label>
     </fieldset>
-    <div id="export-location-slot">
-      <label class="export-location-field">
-        <span>2. Nơi lưu</span>
-        <select aria-label="Nơi lưu bản xuất" id="export-destination">
-          <option value="download">Tải về máy</option>
-          <option value="gdrive">Google Drive</option>
-          <option value="pixeldrain">Pixeldrain</option>
-        </select>
-        <button hidden="" id="drive-api-open" type="button">Kết nối Drive</button>
-      </label>
-    </div>
+    <p id="export-bucket-status" class="form-hint"></p>
     <section aria-labelledby="export-review-heading" class="export-review">
-      <h3 id="export-review-heading">3. Kiểm tra trước khi xuất</h3>
+      <h3 id="export-review-heading">Kiểm tra trước khi tải</h3>
       <dl>
         <div><dt>Phạm vi</dt><dd>Toàn bộ chương đã có</dd></div>
         <div><dt>Tiến độ</dt><dd id="export-progress-summary">Đang kiểm tra…</dd></div>
@@ -832,11 +748,11 @@
       <p id="export-format-hint"></p>
     </section>
     <p aria-live="polite" id="export-inline-status" role="status"></p>
-    <button class="text-action" id="export-storage-settings" type="button">Cấu hình kết nối lưu trữ →</button>
+    <button class="text-action" id="export-storage-settings" type="button">Cấu hình Hugging Face Bucket →</button>
   </div>
   <div class="export-dialog-footer">
     <button id="btn-cancel-export" type="button">Đóng</button>
-    <button class="primary" id="btn-confirm-export" type="button">Xuất ngay</button>
+    <button class="primary" id="btn-confirm-export" type="button">Tải về máy</button>
   </div>
 </dialog>
 
@@ -891,7 +807,7 @@
   </div>
 </dialog>
 
-<script defer src="/static/app.js?v=20261023-3"></script>
-<script defer src="/static/monitor.js?v=20261023-3"></script>
+<script defer src="/static/app.js?v=20261023-5"></script>
+<script defer src="/static/monitor.js?v=20261023-5"></script>
 </body>
 </html>
