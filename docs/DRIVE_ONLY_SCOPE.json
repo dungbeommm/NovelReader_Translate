@@ -1,0 +1,20 @@
+{
+  "base": "user-attached v4.2 ZIP",
+  "changed_existing": [
+    "NovelReader_Colab.ipynb",
+    "README.md",
+    "docs/QA.md",
+    "gdrive/colab_bridge.py",
+    "gdrive/export_service.py",
+    "requirements.txt",
+    "tests/test_drive_exports.py",
+    "web/application.py",
+    "web/routes/drive_exports.py",
+    "web/static/app.js",
+    "web/static/index.html"
+  ],
+  "unchanged_count": 130,
+  "gpu_translation_audio_workflow_storage_scripts": "byte-identical",
+  "gpu_config": "original cell kept; GPU 0; no two-GPU addition",
+  "drive_audio": "individual files, no ZIP; download/backup ZIP unchanged"
+}

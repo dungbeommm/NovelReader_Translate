@@ -1,0 +1,45 @@
+"""Shared application state. Routes access this module, not copied globals."""
+from pathlib import Path
+import logging
+from fastapi import HTTPException
+from storage.store import Store
+from storage.files import parse_file
+from workflows.jobs import Job
+from paths import ROOT, data_dir
+
+store = None
+job = None
+
+def initialize():
+    global store, job
+    directory = data_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    logs = directory / 'logs'
+    logs.mkdir(parents=True, exist_ok=True)
+    log_path = logs / 'app.log'
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    if not any(isinstance(h, logging.FileHandler) and Path(h.baseFilename) == log_path for h in logger.handlers):
+        handler = logging.FileHandler(log_path, encoding='utf-8')
+        handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s'))
+        logger.addHandler(handler)
+    store = Store(directory / 'novel.sqlite3')
+    job = Job(store)
+
+def ensure_idle():
+    if job.active:raise HTTPException(409,'Hãy dừng job dịch trước khi thực hiện thao tác này.')
+
+
+def import_book(name,data):
+    with job.lock:
+        ensure_idle()
+        try:
+            chapters,encoding=parse_file(name,data)
+            store.replace(name,encoding,chapters);job.status='ready';job.message=''
+            job.target_chapter_ids = None
+            job.scope_label = ''
+        except Exception as exc:
+            logging.exception('Import failed');raise HTTPException(400,f'Không nạp được tệp: {exc}')
+    job.emit('book_loaded');return {'book':store.book(),'chapters':store.list()}
+
+

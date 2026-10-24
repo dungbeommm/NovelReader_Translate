@@ -1,0 +1,11 @@
+.env
+.git
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/*.log
+**/*.sqlite3*
+data
+output_text
+output_audio
+models/translation
