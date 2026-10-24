@@ -9,3 +9,6 @@ data
 output_text
 output_audio
 models/translation
+
+models/vieneu
+models/voices

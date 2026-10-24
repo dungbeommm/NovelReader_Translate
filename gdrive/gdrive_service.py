@@ -1,5 +1,7 @@
 """Google Drive integration service: supports local sync folder (Drive Desktop) and automatic OAuth2 API."""
 import json
+import tempfile
+import threading
 import logging
 import os
 import shutil
@@ -36,12 +38,30 @@ def get_gdrive_config() -> dict:
     }
 
 
+_config_lock = threading.RLock()
+
+
+def public_gdrive_config():
+    cfg = get_gdrive_config()
+    return {**{k: v for k, v in cfg.items() if k not in {'access_token', 'refresh_token', 'client_secret'}},
+            'connected': bool(cfg.get('access_token') or cfg.get('refresh_token')),
+            'has_client_secret': bool(cfg.get('client_secret'))}
+
+
 def save_gdrive_config(cfg: dict) -> dict:
-    config_path().parent.mkdir(parents=True, exist_ok=True)
-    current = get_gdrive_config()
-    current.update(cfg)
-    config_path().write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
-    return current
+    with _config_lock:
+        config_path().parent.mkdir(parents=True, exist_ok=True)
+        current = get_gdrive_config()
+        current.update(cfg)
+        fd, name = tempfile.mkstemp(dir=config_path().parent, prefix='.gdrive-')
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(current, f, ensure_ascii=False, indent=2)
+            os.chmod(name, 0o600)
+            os.replace(name, config_path())
+        finally:
+            Path(name).unlink(missing_ok=True)
+        return current
 
 
 def auto_detect_desktop_gdrive() -> str | None:

@@ -15,10 +15,13 @@ class PixeldrainRequest(BaseModel):
 @router.get("/api/export/pixeldrain/status")
 def pixeldrain_status():
     env_key = os.getenv("PIXELDRAIN_API_KEY", "").strip()
+    from storage.cloud_settings import load_key
     return {
+        "has_key": bool(pixeldrain_service.get_pixeldrain_api_key()),
+        "has_saved_key": bool(load_key()),
         "ok": True,
         "has_env_key": bool(env_key),
-        "env_key_masked": f"{env_key[:4]}...{env_key[-4:]}" if len(env_key) > 8 else ("***" if env_key else ""),
+        "env_key_masked": "***" if env_key else "",
     }
 
 

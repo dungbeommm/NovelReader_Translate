@@ -6,17 +6,23 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response
 from audio import audio_service, merge_service
 from web import runtime
-from web.schemas import MergeAudioInput, AutoGroupInput, MergeRangeInput, MergeSelectedInput
+from web.schemas import MergeAudioInput, AutoGroupInput, MergeRangeInput, MergeSelectedInput, AudioSettingsPatch, Config
 
 router = APIRouter()
 
 @router.get('/api/tts/status')
 def tts_status():
-    return audio_service.tts_runtime_status()
+    from audio.vieneu_service import runtime_status
+    return {**audio_service.tts_runtime_status(), 'vieneu': runtime_status()}
 
 
 @router.get('/api/voices')
-def get_voices():
+def get_voices(tts_engine: str = 'piper'):
+    if tts_engine == 'vieneu':
+        from audio.vieneu_service import list_voices
+        return list_voices()
+    if tts_engine != 'piper':
+        raise HTTPException(400, 'Engine TTS không hợp lệ.')
     return audio_service.list_available_voices()
 
 
@@ -34,49 +40,79 @@ def get_chapter_audio(id: int):
     ext = path.suffix.lower()
     media_map = {'.mp3': 'audio/mpeg', '.m4b': 'audio/mp4', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.opus': 'audio/ogg', '.ogg': 'audio/ogg'}
     media_type = media_map.get(ext, 'audio/mpeg')
-    return FileResponse(path, media_type=media_type, filename=f"chuong_{chapter['position']:04d}{ext}")
+    return FileResponse(path, media_type=media_type, filename=f"chuong_{chapter['position']:04d}{ext}", headers={"Cache-Control": "no-store"})
+
+
+def resolved_settings(saved, patch):
+    data = patch.model_dump(exclude_unset=True, exclude_none=True) if patch else {}
+    if 'tts_engine' in data and data['tts_engine'] != saved.get('tts_engine', 'piper') and 'voice_id' not in data:
+        data['voice_id'] = 'truc_ly' if data['tts_engine'] == 'vieneu' else 'ngochuyennew'
+    return Config.model_validate({**saved, **data}).model_dump()
+
+
+@router.get('/api/settings/audio')
+def get_audio_settings():
+    from storage.checkpoints import load_draft
+    book=runtime.store.book()
+    saved=json.loads(book['config'] or '{}') if book else (load_draft() or {})
+    cfg=Config.model_validate(saved).model_dump()
+    return {'settings':{k:cfg[k] for k in audio_service.AUDIO_CONFIG_KEYS}}
+
+
+@router.post('/api/settings/audio')
+def save_audio_settings(payload: AudioSettingsPatch):
+    with runtime.job.lock:
+        runtime.ensure_idle()
+        book = runtime.store.book()
+        old = json.loads(book['config'] or '{}') if book else {}
+        try:
+            cfg = resolved_settings(old, payload)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        from storage.checkpoints import load_draft, save_draft
+        save_draft({**(load_draft() or cfg), **{k: cfg[k] for k in audio_service.AUDIO_CONFIG_KEYS}})
+        if book:
+            changed = any(old.get(k) != cfg[k] for k in audio_service.AUDIO_CONFIG_KEYS)
+            runtime.store.configure(cfg, reset=False)
+            if changed:
+                with runtime.store.connect() as db:
+                    db.execute("UPDATE chapter SET audio_status='none' WHERE audio_status='done'")
+                runtime.store._invalidate_groups()
+        return {'ok': True, 'settings': {k: cfg[k] for k in audio_service.AUDIO_CONFIG_KEYS}}
 
 
 @router.post('/api/chapters/{id}/audio')
-def generate_single_audio(id: int):
-    runtime.ensure_idle()
-    chapter = runtime.store.get(id)
-    if not chapter:
-        raise HTTPException(404, 'Không tìm thấy chương.')
-    if chapter['status'] != 'done':
-        raise HTTPException(400, 'Chương này chưa được dịch xong.')
-    
-    book = runtime.store.book()
-    b_cfg = json.loads(book['config']) if (book and book.get('config')) else {}
-    voice_id = b_cfg.get('voice_id', 'ngochuyennew')
-    speed = float(b_cfg.get('audio_speed', 1.0))
-    noise_scale = float(b_cfg.get('noise_scale', 0.667))
-    noise_w_scale = float(b_cfg.get('noise_w_scale', 0.8))
-    fmt = b_cfg.get('audio_format', 'mp3')
-    bitrate = b_cfg.get('audio_bitrate', '96k')
-
-    try:
-        runtime.store.update(id, audio_status='generating')
-        runtime.job.emit('chapter_audio_started', chapter_id=id)
-        path = audio_service.generate_chapter_audio(
-            id, chapter['position'],
-            chapter['translated_title'] or chapter['title'],
-            chapter['translated'],
-            runtime.store.audio_dir,
-            voice_id=voice_id,
-            speed=speed,
-            noise_scale=noise_scale,
-            noise_w_scale=noise_w_scale,
-            fmt=fmt,
-            bitrate=bitrate
-        )
-        runtime.store.update(id, audio_status='done')
-        runtime.job.emit('chapter_audio_done', chapter_id=id, audio_url=f'/api/chapters/{id}/audio')
-        return {'ok': True, 'audio_url': f'/api/chapters/{id}/audio'}
-    except Exception as exc:
-        runtime.store.update(id, audio_status='error')
-        runtime.job.emit('chapter_audio_error', chapter_id=id, error=str(exc))
-        raise HTTPException(500, f'Lỗi tạo audio: {exc}')
+def generate_single_audio(id: int, payload: AudioSettingsPatch | None = None):
+    with runtime.job.lock:
+        runtime.ensure_idle()
+        chapter = runtime.store.get(id)
+        if not chapter:
+            raise HTTPException(404, 'Không tìm thấy chương.')
+        if chapter['status'] != 'done':
+            raise HTTPException(400, 'Chương này chưa được dịch xong.')
+        book = runtime.store.book()
+        saved = json.loads(book['config'] or '{}') if book else {}
+        try:
+            cfg = resolved_settings(saved, payload)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        try:
+            runtime.store.update(id, audio_status='generating')
+            runtime.job.emit('chapter_audio_started', chapter_id=id)
+            runtime.job.telemetry.book(book.get('output_folder') or book['filename'])
+            with runtime.job.telemetry.audio_task(id, chapter['position'], chapter['translated_title'] or chapter['title']):
+                path = audio_service.generate_chapter_audio(
+                    id, chapter['position'], chapter['translated_title'] or chapter['title'],
+                    chapter['translated'], runtime.store.audio_dir, **audio_service.generation_kwargs(cfg))
+            runtime.store.update(id, audio_status='done')
+            runtime.store._invalidate_groups([chapter['position']])
+            runtime.job.emit('chapter_audio_done', chapter_id=id, audio_url=f'/api/chapters/{id}/audio')
+            return {'ok': True, 'audio_url': f'/api/chapters/{id}/audio',
+                    'settings': {k: cfg[k] for k in audio_service.AUDIO_CONFIG_KEYS}}
+        except Exception as exc:
+            runtime.store.update(id, audio_status='error')
+            runtime.job.emit('chapter_audio_error', chapter_id=id, error=str(exc))
+            raise HTTPException(500, f'Lỗi tạo audio: {exc}')
 
 
 @router.post('/api/audio/merge')
@@ -177,12 +213,23 @@ def get_audio_group_file(filename: str):
     raise HTTPException(404, 'Không tìm thấy file nhóm.')
 
 
+@router.get('/api/export/options')
+def export_options():
+    book=runtime.store.book()
+    rows=runtime.store.list() if book else []
+    files=audio_service.exportable_audio_files(runtime.store.audio_dir) if book else []
+    return {'book_title':book['title'] if book else None,'chapters':len(rows),
+            'translated':sum(c['status']=='done' for c in rows),
+            'audio_files':len(files),'audio_bytes':sum(p.stat().st_size for p in files),
+            'busy':runtime.job.active}
+
+
 @router.get('/api/export/audio')
 def export_audio_zip():
     book = runtime.store.book()
     if not book:
         raise HTTPException(400, 'Chưa có truyện.')
-    audio_files = [f for f in sorted(runtime.store.audio_dir.rglob('*.*')) if f.is_file() and f.suffix in ('.mp3', '.m4b', '.m4a', '.wav', '.opus')]
+    audio_files = audio_service.exportable_audio_files(runtime.store.audio_dir)
     if not audio_files:
         raise HTTPException(404, 'Chưa có file audio nào để xuất.')
     buf = io.BytesIO()

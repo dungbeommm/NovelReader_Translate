@@ -1,0 +1,4 @@
+# Optional. Prefer scripts/setup_tts.py --engine vieneu --device cuda --install --preload
+vieneu==3.8.3
+transformers==4.57.6
+soundfile>=0.13,<1

@@ -9,9 +9,10 @@ from paths import ROOT, data_dir
 
 store = None
 job = None
+resources = None
 
 def initialize():
-    global store, job
+    global store, job, resources
     directory = data_dir()
     directory.mkdir(parents=True, exist_ok=True)
     logs = directory / 'logs'
@@ -23,6 +24,9 @@ def initialize():
         handler = logging.FileHandler(log_path, encoding='utf-8')
         handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s'))
         logger.addHandler(handler)
+    from monitoring.resources import ResourceSampler
+    if resources is not None:resources.close()
+    resources=ResourceSampler([('Dữ liệu',directory),('Audio',Path(__import__('os').getenv('NOVEL_OUTPUT_AUDIO',ROOT/'output_audio'))),('Văn bản',Path(__import__('os').getenv('NOVEL_OUTPUT_TEXT',ROOT/'output_text')))])
     store = Store(directory / 'novel.sqlite3')
     job = Job(store)
 

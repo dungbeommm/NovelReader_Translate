@@ -244,4 +244,5 @@ def test_kaggle_bootstrap_keeps_legacy_checkpoint(tmp_path,monkeypatch):
     assert scope['REPO_DIR']==legacy
     assert (legacy/'data/novel.sqlite3').read_text()=='existing checkpoint'
     assert (legacy/'gdrive/api_drive.py').is_file()
-    assert (tmp_path/'working/NovelReader_GPU_notebook.zip').is_file()
+    assert not (tmp_path/'working/NovelReader_GPU_notebook.zip').exists()
+    assert (legacy/'audio/vieneu_service.py').is_file()  # Embedded source bootstraps offline.

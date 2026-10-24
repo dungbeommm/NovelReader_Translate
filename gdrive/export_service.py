@@ -83,11 +83,8 @@ def stage_export(store, kind, directory):
         target.write_bytes((export_txt if kind == 'txt' else export_epub)(book, chapters))
     elif kind == 'audio':
         audio_dir = store.audio_dir
-        files = [p for p in sorted(audio_dir.rglob('*'))
-                 if p.is_file() and not p.is_symlink()
-                 and p.suffix.lower() in {'.mp3', '.wav', '.m4b', '.m4a', '.opus', '.aac', '.ogg'}
-                 and not any(parent.is_symlink() for parent in p.parents if parent.is_relative_to(audio_dir))
-                 and not any(part.startswith('.') for part in p.relative_to(audio_dir).parts)]
+        from audio.audio_service import exportable_audio_files
+        files = exportable_audio_files(audio_dir)
         if not files:
             raise ValueError('Chưa có file audio nào để xuất')
         target.mkdir(parents=True, exist_ok=True)
