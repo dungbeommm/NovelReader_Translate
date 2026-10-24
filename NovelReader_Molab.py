@@ -136,10 +136,10 @@ def _install(
             )
         marker.write_text(signature, encoding="utf-8")
 
-    voice = vieneu_voice.value if engine.value == "vieneu" else piper_voice.value
+    _voice = vieneu_voice.value if engine.value == "vieneu" else piper_voice.value
     os.environ.update({
         "NOVEL_TTS_ENGINE": engine.value,
-        "NOVEL_TTS_VOICE": voice,
+        "NOVEL_TTS_VOICE": _voice,
         "VIENEU_DEVICE": "cuda" if gpu_line else "cpu",
         "PIPER_DEVICE": "cuda" if gpu_line else "cpu",
         "PIPER_REQUIRE_CUDA": "0",
@@ -153,10 +153,11 @@ def _install(
         "NOVEL_OUTPUT_TEXT": str(root / "output_text"),
         "NOVEL_OUTPUT_AUDIO": str(root / "output_audio"),
         "ALLOWED_HOSTS": "*",
-        "ALLOW_TUNNEL": "0",
+        # Public access is protected by the per-session access token below.
+        "ALLOW_TUNNEL": "1",
         "PYTHONUNBUFFERED": "1",
     })
-    voice_args = [str(python), str(root / "scripts/setup_tts.py"), "--engine", engine.value, "--voice", voice]
+    voice_args = [str(python), str(root / "scripts/setup_tts.py"), "--engine", engine.value, "--voice", _voice]
     if engine.value == "vieneu":
         voice_args += ["--device", os.environ["VIENEU_DEVICE"], "--install", "--preload"]
     subprocess.run(voice_args, cwd=root, check=True)
@@ -168,17 +169,17 @@ def _launch(mo, os, python, root, subprocess):
     import json
     import secrets
     import time
-    import urllib.error
-    import urllib.request
+    import urllib.error as _url_error
+    import urllib.request as _url_request
 
     token = os.environ.get("NOVEL_WEB_ACCESS_TOKEN") or secrets.token_urlsafe(32)
     os.environ["NOVEL_WEB_ACCESS_TOKEN"] = token
-    os.environ["ALLOW_TUNNEL"] = "0"
+    os.environ["ALLOW_TUNNEL"] = "1"
     server_log = root / "data/logs/molab-server.log"
     _handle = server_log.open("a", encoding="utf-8", buffering=1)
     try:
-        probe = urllib.request.Request("http://127.0.0.1:8000/api/state", headers={"X-Novel-Access": token})
-        with urllib.request.urlopen(probe, timeout=2):
+        probe = _url_request.Request("http://127.0.0.1:8000/api/state", headers={"X-Novel-Access": token})
+        with _url_request.urlopen(probe, timeout=2):
             running = True
     except Exception:
         running = False
@@ -189,8 +190,8 @@ def _launch(mo, os, python, root, subprocess):
         )
         for _ in range(60):
             try:
-                probe = urllib.request.Request("http://127.0.0.1:8000/api/state", headers={"X-Novel-Access": token})
-                with urllib.request.urlopen(probe, timeout=2):
+                probe = _url_request.Request("http://127.0.0.1:8000/api/state", headers={"X-Novel-Access": token})
+                with _url_request.urlopen(probe, timeout=2):
                     break
             except Exception:
                 time.sleep(1)
@@ -210,13 +211,13 @@ def _launch(mo, os, python, root, subprocess):
         elif payload is not None:
             body = json.dumps(payload).encode("utf-8")
             headers["Content-Type"] = "application/json"
-        request = urllib.request.Request("http://127.0.0.1:8000" + path, data=body, headers=headers, method=method)
+        request = _url_request.Request("http://127.0.0.1:8000" + path, data=body, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with _url_request.urlopen(request, timeout=30) as response:
                 data = response.read()
                 content_type = response.headers.get("Content-Type", "")
                 return data if "json" not in content_type else json.loads(data.decode("utf-8"))
-        except urllib.error.HTTPError as exc:
+        except _url_error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")
             try:
                 detail = json.loads(detail).get("detail", detail)
@@ -225,7 +226,77 @@ def _launch(mo, os, python, root, subprocess):
             raise RuntimeError(f"Lỗi máy chủ ({exc.code}): {detail}") from exc
 
     mo.output.replace(mo.callout(mo.md("✅ Backend đã chạy. Giao diện dịch truyện nằm ngay trong notebook bên dưới; không cần tunnel hoặc mở tab khác."), kind="success"))
-    return (api_request,)
+    return api_request, token
+
+
+@app.cell
+def _public_link(mo, os, root, subprocess, token):
+    """Expose the local Molab server through Cloudflare Tunnel."""
+    import re
+    import shutil as _shutil
+    import stat
+    import tarfile as _tarfile
+    import time as _time
+    import urllib.request as _urlrequest
+
+    _mode = os.environ.get("NOVEL_PUBLIC_TUNNEL", "quick").strip().lower()
+    hostname = os.environ.get("NOVEL_PUBLIC_HOSTNAME", "").strip().strip("/")
+    tunnel_token = os.environ.get("CLOUDFLARE_TUNNEL_TOKEN", "").strip()
+    tunnel_log = root / "data/logs/molab-tunnel.log"
+    tunnel_log.parent.mkdir(parents=True, exist_ok=True)
+
+    def cloudflared_binary():
+        found = _shutil.which("cloudflared")
+        if found:
+            return found
+        target = root / ".molab-bin" / "cloudflared"
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            archive = target.with_suffix(".tgz")
+            _urlrequest.urlretrieve(
+                "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.tgz",
+                archive,
+            )
+            with _tarfile.open(archive, "r:gz") as bundle:
+                member = bundle.getmember("cloudflared")
+                with bundle.extractfile(member) as source, target.open("wb") as output:
+                    _shutil.copyfileobj(source, output)
+            archive.unlink(missing_ok=True)
+            target.chmod(target.stat().st_mode | stat.S_IXUSR)
+        return str(target)
+
+    _public_url = ""
+    _message = "Public link chưa bật."
+    if _mode == "off":
+        _message = "Public tunnel đã tắt (NOVEL_PUBLIC_TUNNEL=off)."
+    elif _mode == "named" and (not tunnel_token or not hostname):
+        _message = "Named tunnel cần CLOUDFLARE_TUNNEL_TOKEN và NOVEL_PUBLIC_HOSTNAME."
+    else:
+        binary = cloudflared_binary()
+        if _mode == "named":
+            command = [binary, "tunnel", "--no-autoupdate", "run", "--token", tunnel_token]
+        else:
+            command = [binary, "tunnel", "--no-autoupdate", "--url", "http://127.0.0.1:8000"]
+        log = tunnel_log.open("a", encoding="utf-8", buffering=1)
+        _tunnel_process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, cwd=root)
+        for _ in range(30):
+            _time.sleep(1)
+            if _mode == "named":
+                _public_url = f"https://{hostname}"
+                break
+            _tunnel_text = tunnel_log.read_text(encoding="utf-8", errors="replace")
+            match = re.search(r"https://[a-zA-Z0-9-]+\\.trycloudflare\\.com", _tunnel_text)
+            if match:
+                _public_url = match.group(0)
+                break
+        if _public_url:
+            _public_url = f"{_public_url}/?access_token={token}"
+            _message = f"**Public URL:** [{_public_url}]({_public_url})"
+        else:
+            _message = "Không lấy được URL tunnel; xem `data/logs/molab-tunnel.log`."
+
+    mo.output.replace(mo.callout(mo.md(_message), kind="success" if _public_url else "warn"))
+    return (_public_url,)
 
 
 @app.cell
@@ -299,10 +370,10 @@ def _actions(
                 book_title = (uploaded.get("book") or {}).get("title") or file.name
                 action_message = f"Đã nạp **{book_title}** · {len(uploaded.get('chapters', []))} chương."
         elif start_button.value:
-            voice = vieneu_voice.value if engine.value == "vieneu" else piper_voice.value
+            _voice = vieneu_voice.value if engine.value == "vieneu" else piper_voice.value
             result = api_request("/api/translate/start", method="POST", payload={
                 "engine": model.value, "backend": "ct2", "generate_audio": audio_enabled.value,
-                "audio_pipeline": audio_enabled.value, "tts_engine": engine.value, "voice_id": voice,
+                "audio_pipeline": audio_enabled.value, "tts_engine": engine.value, "voice_id": _voice,
                 "reset": False, "beam_size": 2, "chunk_mode": "sentence",
             })
             action_message = result.get("message") or "Đã bắt đầu dịch."

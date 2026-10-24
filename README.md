@@ -9,6 +9,21 @@ NovelReader nhập truyện TXT/EPUB, dịch sang tiếng Việt và tạo audio
 3. Chờ cài thư viện và chuẩn bị giọng hoàn tất. Notebook khởi chạy backend tại `127.0.0.1:8000`.
 4. Nạp truyện, dịch, theo dõi tiến độ và tải kết quả ngay trong notebook.
 
+### Public URL từ Molab
+
+Notebook tự cài `cloudflared` vào runtime và tạo quick tunnel mặc định. URL này công khai nhưng đổi sau mỗi phiên; mọi request vẫn cần `access_token` riêng của phiên.
+
+Muốn có URL cố định, tạo Cloudflare Tunnel kiểu **remotely-managed**, trỏ hostname của bạn tới `http://127.0.0.1:8000`, rồi đặt secret trong Molab trước khi chạy notebook:
+
+```python
+import os
+os.environ["NOVEL_PUBLIC_TUNNEL"] = "named"
+os.environ["NOVEL_PUBLIC_HOSTNAME"] = "novel.example.com"
+os.environ["CLOUDFLARE_TUNNEL_TOKEN"] = "<Cloudflare tunnel token>"
+```
+
+Không ghi tunnel token hoặc Hugging Face token vào notebook đã chia sẻ công khai. Molab vẫn là nơi chạy backend, model, dữ liệu tạm và tunnel client; Cloudflare chỉ chuyển tiếp HTTP.
+
 Nếu Molab đã mở cả repository, notebook dùng trực tiếp mã nguồn đó. Nếu chỉ tải notebook lên, nó lấy mã nguồn từ GitHub vào thư mục phiên. CPU được dùng khi không tìm thấy NVIDIA GPU. Piper là lựa chọn nhẹ; VieNeu tải các thành phần inference và model cần thiết, nên bước chuẩn bị sẽ lâu hơn.
 
 Giữ phiên Molab hoạt động trong khi dùng ứng dụng. Khi phiên runtime kết thúc, server và cache model trong runtime cũng dừng. Trước khi kết thúc phiên, tải các tệp kết quả cần giữ về máy.
