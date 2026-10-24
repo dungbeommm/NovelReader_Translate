@@ -44,3 +44,26 @@ def monitor_snapshot(response: Response):
     runtime.job.telemetry.book((book.get('output_folder') or book['filename']) if book else None)
     return {'resources':runtime.resources.snapshot(),'tasks':runtime.job.telemetry.snapshot(),
             'job':runtime.job.summary()}
+
+
+@router.get('/api/system/environment')
+def system_environment():
+    return runtime.environment()
+
+
+@router.get('/api/tunnel/status')
+def tunnel_status():
+    return runtime.tunnel.status()
+
+
+@router.post('/api/tunnel/start')
+def tunnel_start():
+    try:
+        return runtime.tunnel.start()
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+
+
+@router.post('/api/tunnel/stop')
+def tunnel_stop():
+    return runtime.tunnel.stop()

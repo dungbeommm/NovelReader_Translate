@@ -13,11 +13,18 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from storage.checkpoints import create_checkpoint, download_bucket_checkpoint, restore_checkpoint
+from storage.hf_bucket import load_config
 from paths import data_dir
 
-DEFAULT_BUCKET_ID = "uri410/NovelReader_Cloud_Audio"
-BUCKET_ID = os.getenv("NOVEL_HF_BUCKET", DEFAULT_BUCKET_ID)
-BUCKET_URI = f"hf://buckets/{BUCKET_ID}"
+DEFAULT_BUCKET_ID = "novelreader-storage"
+_private_config = load_config()
+_configured_bucket = os.getenv("HF_BUCKET_ID", "").strip() or os.getenv("NOVEL_HF_BUCKET", "").strip() or (_private_config.bucket_id or "").strip()
+if _configured_bucket and "/" not in _configured_bucket and os.getenv("HF_USERNAME", "").strip():
+    _configured_bucket = f"{os.getenv('HF_USERNAME').strip()}/{_configured_bucket}"
+elif _configured_bucket and "/" not in _configured_bucket and _private_config.username:
+    _configured_bucket = f"{_private_config.username}/{_configured_bucket}"
+BUCKET_ID = _configured_bucket
+BUCKET_URI = f"hf://buckets/{BUCKET_ID}" if BUCKET_ID else None
 _runtime_token: str | None = None
 
 
@@ -26,7 +33,7 @@ class StaleBookError(RuntimeError):
 
 
 def _token() -> str | None:
-    return _runtime_token or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN") or None
+    return _runtime_token or load_config().token or os.getenv("HUGGINGFACE_HUB_TOKEN") or None
 
 
 def set_runtime_token(token: str) -> None:
@@ -59,8 +66,8 @@ def _book_id(store) -> str:
 
 
 def status() -> dict:
-    return {"bucket_id": BUCKET_ID, "uri": BUCKET_URI, "configured": True,
-            "write_enabled": bool(_token()), "visibility": "public" if BUCKET_ID == DEFAULT_BUCKET_ID else "unknown"}
+    return {"bucket_id": BUCKET_ID or DEFAULT_BUCKET_ID, "uri": BUCKET_URI, "configured": bool(BUCKET_ID),
+            "write_enabled": bool(BUCKET_ID and _token()), "visibility": "private" if BUCKET_ID else "unset"}
 
 
 def write_enabled() -> bool:
@@ -72,6 +79,8 @@ def _api():
         from huggingface_hub import HfApi
     except ImportError as exc:
         raise RuntimeError("Cần huggingface-hub có hỗ trợ Storage Buckets.") from exc
+    if not BUCKET_ID:
+        raise RuntimeError("Chưa cấu hình HF_BUCKET_ID (hoặc HF_USERNAME + bucket name).")
     api = HfApi(token=_token())
     if not hasattr(api, "batch_bucket_files"):
         raise RuntimeError("Phiên bản huggingface-hub hiện tại chưa hỗ trợ Storage Buckets.")

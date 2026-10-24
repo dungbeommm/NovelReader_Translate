@@ -144,6 +144,20 @@ class SystemPurgeInput(BaseModel):
     purge_cache: bool = True
 
 
+class GDriveConfigInput(BaseModel):
+    enabled: bool = False
+    mode: str = Field(default='local_folder', pattern=r'^(local_folder|api)$')
+    local_path: str = Field(default='', max_length=4096)
+    client_id: str = Field(default='', max_length=4096)
+    client_secret: str = Field(default='', max_length=4096)
+    access_token: str = Field(default='', max_length=8192)
+    refresh_token: str = Field(default='', max_length=8192)
+    account_email: str = Field(default='', max_length=320)
+    folder_id: str = Field(default='', max_length=512)
+    folder_name: str = Field(default='Novel_Audio', min_length=1, max_length=200)
+    auto_upload: bool = False
+
+
 class BookTitleInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
 

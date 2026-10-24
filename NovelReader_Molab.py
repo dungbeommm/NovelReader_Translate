@@ -44,7 +44,12 @@ def _intro():
         value="HachimiMT-60-QT",
         label="Mô hình dịch",
     )
-    return engine, mo, model, piper_voice, vieneu_voice
+    tunnel_mode = mo.ui.dropdown(
+        options={"Không bật tunnel": "off", "Cloudflare Quick Tunnel": "quick", "Cloudflare Named Tunnel": "named"},
+        value="Không bật tunnel",
+        label="Truy cập từ xa (Cloudflare)",
+    )
+    return engine, mo, model, piper_voice, tunnel_mode, vieneu_voice
 
 
 @app.cell
@@ -63,15 +68,14 @@ def _prepare():
     else:
         root = cwd / "NovelReader_Translate"
         root.mkdir(parents=True, exist_ok=True)
-        archive = cwd / "novelreader-source.zip"
-        request = urllib.request.Request(
-            "https://github.com/dungbeommm/NovelReader_Translate/archive/refs/heads/main.zip",
-            headers={"User-Agent": "NovelReader-Molab"},
-        )
-        with urllib.request.urlopen(request, timeout=90) as response, archive.open("wb") as output:
-            shutil.copyfileobj(response, output)
+        archive = Path(os.environ.get("NOVELREADER_SOURCE_BUNDLE", str(cwd / "NovelReader_GPU_notebook.zip"))).expanduser()
+        if not archive.is_file():
+            raise RuntimeError("Không tìm thấy source bundle đã xác minh. Đặt NOVELREADER_SOURCE_BUNDLE tới ZIP phát hành trước khi chạy notebook.")
         with zipfile.ZipFile(archive) as bundle:
-            prefix = bundle.namelist()[0].split("/")[0] + "/"
+            names = [name for name in bundle.namelist() if name.endswith("/main.py")]
+            prefix = names[0].rsplit("main.py", 1)[0] if names else ""
+            if not prefix:
+                raise RuntimeError("Source bundle không chứa main.py hợp lệ.")
             for item in bundle.infolist():
                 if item.is_dir() or not item.filename.startswith(prefix):
                     continue
@@ -81,7 +85,6 @@ def _prepare():
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     with bundle.open(item) as source, destination.open("wb") as target:
                         shutil.copyfileobj(source, target)
-        archive.unlink(missing_ok=True)
 
     os.chdir(root)
     if str(root) not in sys.path:
@@ -230,7 +233,7 @@ def _launch(mo, os, python, root, subprocess):
 
 
 @app.cell
-def _public_link(mo, os, root, subprocess, token):
+def _public_link(mo, os, root, subprocess, token, tunnel_mode):
     """Expose the local Molab server through Cloudflare Tunnel."""
     import re
     import shutil as _shutil
@@ -239,7 +242,7 @@ def _public_link(mo, os, root, subprocess, token):
     import time as _time
     import urllib.request as _urlrequest
 
-    _mode = os.environ.get("NOVEL_PUBLIC_TUNNEL", "quick").strip().lower()
+    _mode = tunnel_mode.value or os.environ.get("NOVEL_PUBLIC_TUNNEL", "off").strip().lower()
     hostname = os.environ.get("NOVEL_PUBLIC_HOSTNAME", "").strip().strip("/")
     tunnel_token = os.environ.get("CLOUDFLARE_TUNNEL_TOKEN", "").strip()
     tunnel_log = root / "data/logs/molab-tunnel.log"

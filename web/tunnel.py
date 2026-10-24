@@ -9,6 +9,8 @@ import re
 import subprocess
 import threading
 import time
+import os
+from pathlib import Path
 from typing import Callable, Optional
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\([a-zA-Z]|\x1b\][^\a\x1b]*(?:\a|\x1b\\)")
@@ -124,3 +126,51 @@ def cleanup_tunnels(subp=subprocess) -> None:
             subp.run(cmd, check=False, stdout=subp.DEVNULL, stderr=subp.DEVNULL)
         except Exception:
             pass
+
+
+class CloudflareTunnel:
+    """Lifecycle wrapper for the only supported public access path."""
+    def __init__(self, port: int = 8000, log_path: Path | None = None):
+        self.port = port
+        self.log_path = Path(log_path or 'data/logs/cloudflared.log')
+        self.process = None
+        self._log_handle = None
+
+    @property
+    def active(self):
+        return self.process is not None and self.process.poll() is None
+
+    def start(self):
+        if self.active:
+            return self.status()
+        executable = os.getenv('CLOUDFLARED_BIN', 'cloudflared')
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._log_handle = self.log_path.open('a', encoding='utf-8', buffering=1)
+        try:
+            self.process = subprocess.Popen(
+                [executable, 'tunnel', '--no-autoupdate', '--protocol', 'http2', '--url', f'http://127.0.0.1:{self.port}'],
+                stdout=self._log_handle, stderr=subprocess.STDOUT, cwd=str(Path.cwd()), env=dict(os.environ),
+            )
+        except OSError as exc:
+            self._log_handle.close()
+            self._log_handle = None
+            raise RuntimeError('Không tìm thấy cloudflared hoặc không thể khởi động Cloudflare Tunnel.') from exc
+        return self.status()
+
+    def stop(self):
+        if self.process is not None and self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+        self.process = None
+        if self._log_handle:
+            self._log_handle.close()
+            self._log_handle = None
+        return self.status()
+
+    def status(self):
+        text = self.log_path.read_text(encoding='utf-8', errors='replace') if self.log_path.is_file() else ''
+        return {'provider': 'cloudflare', 'active': self.active, 'pid': self.process.pid if self.active else None,
+                'url': extract_cloudflare_url(text)}

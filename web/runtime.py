@@ -6,13 +6,16 @@ from storage.store import Store
 from storage.files import parse_file
 from workflows.jobs import Job
 from paths import ROOT, data_dir
+from runtime.environment import inspect_environment
+from web.tunnel import CloudflareTunnel
 
 store = None
 job = None
 resources = None
+tunnel = None
 
 def initialize():
-    global store, job, resources
+    global store, job, resources, tunnel
     directory = data_dir()
     directory.mkdir(parents=True, exist_ok=True)
     logs = directory / 'logs'
@@ -29,6 +32,11 @@ def initialize():
     resources=ResourceSampler([('Dữ liệu',directory),('Audio',Path(__import__('os').getenv('NOVEL_OUTPUT_AUDIO',ROOT/'output_audio'))),('Văn bản',Path(__import__('os').getenv('NOVEL_OUTPUT_TEXT',ROOT/'output_text')))])
     store = Store(directory / 'novel.sqlite3')
     job = Job(store)
+    tunnel = CloudflareTunnel(log_path=logs / 'cloudflared.log')
+
+
+def environment():
+    return inspect_environment(ROOT)
 
 def ensure_idle():
     if job.active:raise HTTPException(409,'Hãy dừng job dịch trước khi thực hiện thao tác này.')

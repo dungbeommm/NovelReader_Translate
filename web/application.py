@@ -9,6 +9,10 @@ from storage.files import MAX_FILE
 from web import runtime
 from web.access import protect_request, handle_login
 from web.routes import books, translation, audio, system, progress, checkpoints, bucket
+try:
+    from web.routes import gdrive, drive_api, drive_exports, pixeldrain_routes
+except ImportError:  # optional legacy export integrations
+    gdrive = drive_api = drive_exports = pixeldrain_routes = None
 
 @asynccontextmanager
 async def lifespan(app):
@@ -16,6 +20,8 @@ async def lifespan(app):
     runtime.resources.start()
     yield
     runtime.resources.close()
+    if runtime.tunnel:
+        runtime.tunnel.stop()
     if runtime.job.active:
         runtime.job.stop_flag.set();runtime.job.gate.set()
         await asyncio.to_thread(runtime.job.thread.join,120)
@@ -66,7 +72,10 @@ def create_app():
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed)
 
     app.middleware('http')(local_guard)
-    for module in (audio, translation, system, progress, checkpoints, bucket, books):
+    modules = [audio, translation, system, progress, checkpoints, bucket, books]
+    if os.environ.get('NOVEL_ENABLE_LEGACY_EXPORTS') == '1':
+        modules.extend(module for module in (gdrive, drive_api, drive_exports, pixeldrain_routes) if module is not None)
+    for module in modules:
         app.include_router(module.router)
     static_dir = runtime.ROOT / 'web/static'
     static_dir.mkdir(parents=True, exist_ok=True)
