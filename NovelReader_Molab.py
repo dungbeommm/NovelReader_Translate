@@ -1,46 +1,84 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#     "marimo>=0.23.3",
-#     "fastapi>=0.115,<1",
-#     "uvicorn>=0.30,<1",
-#     "websockets>=13,<16",
-#     "python-multipart>=0.0.18,<1",
-#     "pydantic>=2.9,<3",
-#     "ebooklib>=0.19,<1",
-#     "beautifulsoup4>=4.12,<5",
-#     "charset-normalizer>=3.4,<4",
-#     "huggingface-hub>=0.34,<3",
-#     "ctranslate2>=4.5,<5",
-#     "sentencepiece>=0.2,<1",
-#     "gradio-client>=1.10,<3",
-#     "opencc-python-reimplemented>=0.1.7,<1",
-#     "piper-tts>=1.3,<2",
-#     "onnxruntime-gpu>=1.20,<2",
-#     "transformers>=4.40.0",
-#     "sacremoses>=0.1.1",
-#     "safetensors>=0.4.0",
-#     "google-api-python-client>=2.150,<3",
-#     "google-auth-oauthlib>=1.2,<2",
-#     "google-auth-httplib2>=0.2,<1",
-#     "nvidia-cublas-cu12>=12,<13",
-#     "nvidia-cudnn-cu12",
-#     "nvidia-cuda-runtime-cu12>=12,<13",
-#     "pathvalidate>=3.3,<4",
-# ]
-# ///
-
 import marimo
 
-__generated_with = "0.25.1"
-app = marimo.App(
-    width="full",
-    app_title="NovelReader AI — Molab Marimo Edition",
-)
+__generated_with = "0.25.2"
+app = marimo.App(width="medium", auto_download=["html"])
+
+
+@app.cell(hide_code=True)
+def WEB_DASHBOARD(json, mo, os, re, repo_dir, time, urllib):
+    def _novelreader_dashboard():
+        _token = ""
+        _pid = ""
+        for _entry in os.listdir("/proc"):
+            if not _entry.isdigit():
+                continue
+            try:
+                _cmd = open("/proc/" + _entry + "/cmdline", "rb").read().replace(bytes([0]), b" ").decode("utf-8", "replace")
+            except OSError:
+                continue
+            if "uvicorn" in _cmd and "main:app" in _cmd:
+                _pid = _entry
+                try:
+                    for _item in open("/proc/" + _entry + "/environ", "rb").read().split(bytes([0])):
+                        if _item.startswith(b"NOVEL_WEB_ACCESS_TOKEN="):
+                            _token = _item.split(b"=", 1)[1].decode("utf-8", "replace")
+                except OSError:
+                    pass
+                break
+
+        _zrok_host = ""
+        _zrok_log = repo_dir / "data/logs/zrok_share.log"
+        if _zrok_log.exists():
+            _hosts = re.findall(r"([A-Za-z0-9.-]+[.]shares[.]zrok[.]io)", _zrok_log.read_text(errors="replace"))
+            if _hosts:
+                _zrok_host = _hosts[-1]
+        _link = ("https://" + _zrok_host + "/?access_token=" + _token) if (_zrok_host and _token) else ""
+
+        _models = []
+        if _token:
+            try:
+                _req = urllib.request.Request("http://127.0.0.1:8000/api/models", headers={"X-Novel-Access": _token})
+                with urllib.request.urlopen(_req, timeout=3) as _resp:
+                    _models = json.loads(_resp.read())
+            except Exception:
+                _models = []
+        _local_models = [m for m in _models if not str(m.get("id", "")).startswith("space")]
+        _ready_models = [m for m in _local_models if m.get("downloaded")]
+
+        _voices_dir = repo_dir / "models/voices"
+        _voices = len(list(_voices_dir.rglob("*.onnx"))) if _voices_dir.exists() else 0
+
+        _web = "chưa chạy"
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:8000/", timeout=2) as _resp:
+                _web = "HTTP " + str(_resp.status)
+        except Exception as _exc:
+            _web = type(_exc).__name__
+
+        _stamp = time.strftime("%H:%M:%S")
+        _status = [
+            "- Web server: **" + _web + "**",
+            "- Model dịch local: **" + (str(len(_ready_models)) + "/" + str(len(_local_models)) if _local_models else "chưa rõ") + "**",
+            "- Giọng đọc: **" + str(_voices) + "** file ONNX",
+            "- zrok: `" + (_zrok_host or "chưa có share") + "`",
+            "- Cập nhật lúc: " + _stamp,
+        ]
+        _blocks = [mo.md("### Bảng điều khiển NovelReader")]
+        if _link:
+            _blocks.append(mo.callout(mo.md("[Mở NovelReader](" + _link + ")"), kind="success"))
+            _blocks.append(mo.md("**Link đầy đủ**\n\n```\n" + _link + "\n```\n\n**Mã truy cập:** `" + _token + "`"))
+        else:
+            _blocks.append(mo.callout(mo.md("Web chưa sẵn sàng. Hãy chạy ô Web + zrok ở cuối notebook rồi chạy lại ô này."), kind="warn"))
+        _blocks.append(mo.md("\n".join(_status)))
+        _blocks.append(mo.md("_Link chỉ sống khi sandbox molab còn chạy. Mở link lần đầu để tự đăng nhập._"))
+        return mo.vstack(_blocks)
+
+    _novelreader_dashboard()
+    return
 
 
 @app.cell
-def shared_imports():
+def _():
     import datetime
     import hashlib
     import importlib.metadata
@@ -62,17 +100,19 @@ def shared_imports():
     from pathlib import Path
     import marimo as mo
 
+    # Hugging Face token
+    os.environ["HF_TOKEN"] = "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"
+    os.environ["HUGGING_FACE_HUB_TOKEN"] = os.environ["HF_TOKEN"]
     return (
         Path,
         datetime,
         importlib,
+        json,
         mo,
         os,
         re,
-        secrets,
         shutil,
         site,
-        sqlite3,
         subprocess,
         sys,
         tempfile,
@@ -83,7 +123,7 @@ def shared_imports():
 
 
 @app.cell
-def intro_ui(mo):
+def _(mo):
     model_selector = mo.ui.dropdown(
         options={
             "HachimiMT-60-QT (Khuyên dùng - Nhanh, chuẩn)": "HachimiMT-60-QT",
@@ -130,30 +170,21 @@ def intro_ui(mo):
         label="Tải giọng đọc",
     )
 
-    tunnel_selector = mo.ui.dropdown(
-        options={
-            "Tự động (Cloudflare HTTP/2 + Pinggy + Localhost.run)": "auto",
-            "Cloudflare HTTPS Tunnel (Port 443)": "cloudflare",
-            "Pinggy SSH Tunnel (Port 443)": "pinggy",
-            "Localhost.run SSH Tunnel (Port 80)": "localhost_run",
-        },
-        value="Tự động (Cloudflare HTTP/2 + Pinggy + Localhost.run)",
-        label="Chế độ Tunnel Web",
-    )
+    tunnel_selector = mo.md("Giao diện notebook trực tiếp")
 
     intro_markdown = mo.md(
         r"""
         # 🚀 NovelReader AI — Molab Marimo Edition v4.7.1
 
         Bản notebook tối ưu hóa riêng cho **Molab Marimo** (reactive environment), tương thích 100% với Google Colab / Kaggle.
-        Tự động cấu hình **CTranslate2 CUDA + Piper ONNX hoặc VieNeu v3 Turbo** và hệ thống kết nối **Tunnel HTTP/2 đa tầng**.
+        Tự động cấu hình **CTranslate2 CUDA + Piper ONNX hoặc VieNeu v3 Turbo** và hệ thống kết nối **bảng điều khiển marimo**.
 
         ### 📋 Các bước chạy tự động:
         1. 📥 **Bước 1:** Khởi tạo môi trường & Mã nguồn NovelReader
         2. 📦 **Bước 2:** Cài đặt thư viện + ONNX Runtime GPU + NVIDIA cuDNN 12
         3. ⚙️ **Bước 3:** Cấu hình tham số GPU tối ưu (Batch 96, int8_float16)
         4. 🔍 **Bước 4:** Tải model theo bộ đọc. VieNeu: 25 giọng Vbook + backbone/codec chính thức tải riêng, không chạy GGUF.
-        5. 🌐 **Bước 5:** Khởi chạy máy chủ Web + Link truy cập bảo mật
+        5. 🌐 **Bước 5:** Mở bảng điều khiển trực tiếp trong notebook
         6. 📦 **Bước 6:** Xem log trực tiếp & Sao lưu kết quả dịch ra file ZIP
         """
     )
@@ -166,12 +197,18 @@ def intro_ui(mo):
     ])
 
     intro_view = mo.vstack([intro_markdown, settings_panel])
-    mo.output.replace(intro_view)
-    return model_selector, tunnel_selector, voice_selector, voice_download_mode, tts_engine_selector, vieneu_voice_selector
+    mo.output.replace(mo.md("# 📚 NovelReader trên MoLab\nChạy bốn bước chuẩn bị môi trường và model, sau đó dùng **Bảng điều khiển notebook** bên dưới để nạp truyện, dịch, tạo audio và sao lưu Hugging Face."))
+    return (
+        model_selector,
+        tts_engine_selector,
+        vieneu_voice_selector,
+        voice_download_mode,
+        voice_selector,
+    )
 
 
 @app.cell
-def step1_source_setup(Path, os, shutil, subprocess, sys, urllib, zipfile):
+def _(Path, os, shutil, subprocess, sys, zipfile):
     print("=" * 65)
     print("📥 BƯỚC 1: KHỞI TẠO MÔI TRƯỜNG & MÃ NGUỒN NOVELREADER")
     print("=" * 65)
@@ -252,17 +289,11 @@ def step1_source_setup(Path, os, shutil, subprocess, sys, urllib, zipfile):
         print("⚠️ Không thể gọi nvidia-smi.")
 
     step1_ready = True
-    return base_dir, gpu_detected, repo_dir
+    return gpu_detected, repo_dir
 
 
 @app.cell
-def step2_install_libraries(
-    gpu_detected,
-    importlib,
-    repo_dir,
-    subprocess,
-    sys,
-):
+def _(gpu_detected, importlib, repo_dir, subprocess, sys):
     print("=" * 65)
     print("📦 BƯỚC 2: CÀI ĐẶT THƯ VIỆN & CẤU HÌNH PIPER CUDA")
     print("=" * 65)
@@ -270,7 +301,7 @@ def step2_install_libraries(
     pip_executable = [sys.executable, "-m", "pip"]
 
     # Kiểm tra các thư viện bắt buộc
-    needed_packages = ["fastapi", "uvicorn", "ctranslate2", "piper-tts", "psutil"]
+    needed_packages = ["fastapi", "uvicorn", "websockets", "python-multipart", "pydantic", "ebooklib", "beautifulsoup4", "charset-normalizer", "huggingface-hub", "ctranslate2", "sentencepiece", "gradio-client", "opencc-python-reimplemented", "piper-tts", "psutil"]
     if gpu_detected:
         needed_packages.extend(["onnxruntime-gpu", "nvidia-cudnn-cu12", "nvidia-cublas-cu12"])
 
@@ -285,7 +316,13 @@ def step2_install_libraries(
         print(f"📦 Đang bổ sung các thư viện: {', '.join(missing_packages)}...")
         req_path = repo_dir / "requirements.txt"
         if req_path.is_file():
-            subprocess.run(pip_executable + ["install", "-q", "-r", str(req_path)], check=False)
+            install_result = subprocess.run(
+                pip_executable + ["install", "-q", "-r", str(req_path)],
+                capture_output=True, text=True
+            )
+            if install_result.returncode != 0:
+                print((install_result.stderr or install_result.stdout)[-5000:])
+                raise RuntimeError("Cài đặt thư viện từ requirements.txt thất bại.")
 
         if gpu_detected:
             # Gỡ bỏ triệt để onnxruntime CPU và đảm bảo bản GPU + cuDNN 12 chuẩn xác
@@ -332,7 +369,17 @@ def step2_install_libraries(
 
 
 @app.cell
-def step3_configure_env(Path, gpu_detected, os, repo_dir, site, step2_ready, tts_engine_selector, voice_selector, vieneu_voice_selector):
+def _(
+    Path,
+    gpu_detected,
+    os,
+    repo_dir,
+    site,
+    step2_ready,
+    tts_engine_selector,
+    vieneu_voice_selector,
+    voice_selector,
+):
     assert step2_ready
     print("=" * 65)
     print("⚙️ BƯỚC 3: THIẾT LẬP BIẾN MÔI TRƯỜNG & LIÊN KẾT CUDA")
@@ -398,20 +445,15 @@ def step3_configure_env(Path, gpu_detected, os, repo_dir, site, step2_ready, tts
 
 
 @app.cell
-def step4_models_and_smoke_test(
+def _(
     gpu_detected,
     model_selector,
     os,
     repo_dir,
-    shutil,
+    step3_ready,
     subprocess,
     sys,
-    urllib,
-    voice_selector,
     voice_download_mode,
-    step3_ready,
-    tts_engine_selector,
-    vieneu_voice_selector,
 ):
     assert step3_ready
     print("=" * 65)
@@ -478,324 +520,615 @@ def step4_models_and_smoke_test(
 
 
 @app.cell
-def step5_launch_server(
-    step4_ready,
-    base_dir,
-    mo,
-    os,
-    re,
-    repo_dir,
-    secrets,
-    subprocess,
-    sys,
-    time,
-    tunnel_selector,
-    urllib,
-):
+def _(json, mo, os, repo_dir, step4_ready, subprocess, urllib):
+    # BƯỚC 5 — Backend trực tiếp trong notebook marimo
     assert step4_ready
-    print("=" * 65)
-    print("🌐 BƯỚC 5: KHỞI CHẠY MÁY CHỦ WEB & HỆ THỐNG TUNNEL ĐA TẦNG")
-    print("=" * 65)
-
-    # 1. Dọn dẹp tiến trình cũ nếu chạy lại cell
+    import importlib as nr_importlib
+    from web import runtime as nr_runtime
+    from web.schemas import Config as nr_Config
+    from storage import checkpoints as nr_checkpoints
+    from storage import huggingface_service as nr_hf
+    from storage.cloud_settings import save_key as nr_save_key
+    from storage.files import export_txt as nr_export_txt, export_epub as nr_export_epub
+    from audio import audio_service as nr_audio
+    # Không thay thế dữ liệu nếu tác vụ cũ còn chạy.
+    try:
+        _req = urllib.request.Request("http://127.0.0.1:8000/api/state", headers={"X-Novel-Access": os.environ.get("NOVEL_WEB_ACCESS_TOKEN", "")})
+        with urllib.request.urlopen(_req, timeout=2) as _resp:
+            _previous_state = json.loads(_resp.read())
+        if _previous_state.get("progress", {}).get("active"):
+            raise RuntimeError("Tác vụ cũ còn chạy: hãy dừng tác vụ trước khi chuyển backend.")
+    except (OSError, ValueError):
+        pass
     subprocess.run(["pkill", "-f", "uvicorn.*main:app"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["pkill", "-f", "cloudflared"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(1.5)
-
-    # 2. Sinh mã token truy cập bảo mật
-    token_str = secrets.token_urlsafe(32)
-    session_str = secrets.token_hex(16)
-    os.environ["NOVEL_WEB_ACCESS_TOKEN"] = token_str
-    os.environ["NOVEL_EXPORT_SESSION_ID"] = session_str
-
-    log_server = repo_dir / "data/logs/colab-server.log"
-    log_tunnel = repo_dir / "data/logs/colab-tunnel.log"
-
-    # Mở file log bền vững (không đóng theo with block để tránh lỗi broken pipe gây crash tiến trình nền)
-    server_out = open(str(log_server), "a", buffering=1, encoding="utf-8", errors="replace")
-
-    # 3. Khởi động Uvicorn Server ở chế độ nền
-    print("🚀 Đang khởi động máy chủ Uvicorn trên 127.0.0.1:8000...")
-    server_process = subprocess.Popen(
-        [
-            sys.executable, "-m", "uvicorn", "main:app",
-            "--host", "127.0.0.1", "--port", "8000",
-            "--workers", "1", "--no-access-log",
-            "--timeout-graceful-shutdown", "120"
-        ],
-        cwd=str(repo_dir),
-        stdout=server_out,
-        stderr=subprocess.STDOUT,
-        env=dict(os.environ)
+    if nr_runtime.store is None:
+        nr_runtime.initialize()
+    log_server = repo_dir / "data/logs/app.log"
+    log_tunnel = repo_dir / "data/logs/retired-tunnel.log"
+    server_active = False
+    nr_get_notice, nr_set_notice = mo.state("Sẵn sàng. Nạp truyện hoặc khôi phục checkpoint để bắt đầu.")
+    mo.callout(mo.md("### ✅ Backend notebook đã sẵn sàng\nDùng bảng điều khiển NovelReader phía dưới."), kind="success")
+    return (
+        nr_Config,
+        nr_audio,
+        nr_checkpoints,
+        nr_export_epub,
+        nr_export_txt,
+        nr_get_notice,
+        nr_hf,
+        nr_runtime,
+        nr_save_key,
+        nr_set_notice,
     )
 
-    # 4. Chờ máy chủ phản hồi trạng thái sẵn sàng
-    server_ready = False
-    for attempt in range(120):
-        if server_process.poll() is not None:
-            print("❌ Máy chủ đã dừng bất thường!")
-            print(log_server.read_text(errors="replace")[-1000:])
-            break
-        try:
-            req_check = urllib.request.Request(
-                "http://127.0.0.1:8000/api/state",
-                headers={"X-Novel-Access": token_str}
-            )
-            with urllib.request.urlopen(req_check, timeout=2) as state_resp:
-                if state_resp.status == 200:
-                    server_ready = True
-                    break
-        except Exception:
-            time.sleep(1)
-
-    if server_ready:
-        print("   ✅ Máy chủ Uvicorn đã sẵn sàng hoạt động!")
-    else:
-        print("   ⚠️ Hết thời gian chờ phản hồi từ 127.0.0.1:8000.")
-
-    # 5. Khởi tạo Tunnel đa tầng (Pinggy HTTPS + Cloudflare HTTP/2)
-    pinggy_url = None
-    cloudflare_url = None
-    lhr_url = None
-
-    # 5a. Pinggy HTTPS Tunnel (SSH Port 443 - Tuyệt đối không bị lỗi Cloudflare 1033)
-    try:
-        print("🌐 Đang kết nối Pinggy HTTPS Tunnel (Port 443)...")
-        pinggy_proc = subprocess.Popen(
-            [
-                "ssh", "-p", "443", "-o", "StrictHostKeyChecking=no",
-                "-o", "ServerAliveInterval=30",
-                "-R", "0:localhost:8000", "a.pinggy.io"
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env={**os.environ, "TERM": "dumb"}
-        )
-        p_start = time.time()
-        while time.time() - p_start < 25:
-            p_line = pinggy_proc.stdout.readline()
-            if not p_line:
-                break
-            p_match = re.search(r"(https://[a-zA-Z0-9.-]+\.pinggy[a-zA-Z0-9.-]*\.link)", p_line)
-            if p_match:
-                pinggy_url = p_match.group(1)
-                print(f"   ✅ Pinggy Tunnel sẵn sàng: {pinggy_url}")
-                break
-    except Exception as pinggy_err:
-        print(f"   ⚠️ Lỗi kết nối Pinggy: {pinggy_err}")
-
-    # 5b. Cloudflare Tunnel (HTTP/2 - Port 443)
-    cf_executable = base_dir / "cloudflared"
-    if sys.platform.startswith("linux") and not cf_executable.is_file():
-        try:
-            urllib.request.urlretrieve(
-                "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
-                cf_executable
-            )
-            cf_executable.chmod(0o755)
-        except Exception as cf_dl_err:
-            print(f"   ⚠️ Không tải được cloudflared: {cf_dl_err}")
-
-    if cf_executable.is_file():
-        print("🌐 Đang kết nối Cloudflare Tunnel (HTTP/2)...")
-        # Sử dụng cờ --logfile độc lập để cloudflared ghi log trực tiếp, tránh đóng luồng gây Error 1033
-        cf_proc = subprocess.Popen(
-            [
-                str(cf_executable), "tunnel",
-                "--protocol", "http2",
-                "--url", "http://127.0.0.1:8000",
-                "--logfile", str(log_tunnel),
-                "--loglevel", "info"
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        for _ in range(35):
-            if cf_proc.poll() is not None:
-                break
-            if log_tunnel.is_file():
-                log_text = log_tunnel.read_text(errors="replace")
-                cf_match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", log_text)
-                if cf_match:
-                    cloudflare_url = cf_match.group(0)
-                    print(f"   ✅ Cloudflare Tunnel sẵn sàng: {cloudflare_url}")
-                    break
-            time.sleep(1)
-
-    # 5c. Localhost.run (Dự phòng nếu hai cổng trên đều không mở được)
-    if not pinggy_url and not cloudflare_url:
-        print("🌐 Đang kết nối Localhost.run...")
-        try:
-            lhr_proc = subprocess.Popen(
-                [
-                    "ssh", "-o", "StrictHostKeyChecking=no",
-                    "-o", "ServerAliveInterval=30",
-                    "-R", "80:localhost:8000", "nokey@localhost.run"
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env={**os.environ, "TERM": "dumb"}
-            )
-            l_start = time.time()
-            while time.time() - l_start < 25:
-                l_line = lhr_proc.stdout.readline()
-                if not l_line:
-                    break
-                l_match = re.search(r"(https://[a-zA-Z0-9.-]+\.lhr\.life)", l_line)
-                if l_match:
-                    lhr_url = l_match.group(1)
-                    print(f"   ✅ Localhost.run sẵn sàng: {lhr_url}")
-                    break
-        except Exception as lhr_err:
-            print(f"   ⚠️ Lỗi kết nối Localhost.run: {lhr_err}")
-
-    # 6. Hiển thị bảng điều khiển kết quả
-    active_links = []
-    if pinggy_url:
-        active_links.append(("Pinggy HTTPS (Khuyên dùng - 100% không lỗi 1033)", f"{pinggy_url}/?access_token={token_str}"))
-    if cloudflare_url:
-        active_links.append(("Cloudflare Tunnel", f"{cloudflare_url}/?access_token={token_str}"))
-    if lhr_url:
-        active_links.append(("Localhost.run", f"{lhr_url}/?access_token={token_str}"))
-
-    if active_links and server_ready:
-        primary_title, primary_link = active_links[0]
-        print(f"\n🎉 NOVELREADER ĐÃ KHỞI CHẠY THÀNH CÔNG!")
-        for title, link in active_links:
-            print(f"🌐 {title}: {link}")
-        print(f"🔑 Token: {token_str}\n")
-
-        other_links_md = ""
-        if len(active_links) > 1:
-            other_lines = [f"- **{t}:** [{lnk}]({lnk})" for t, lnk in active_links]
-            other_links_md = "#### 🌐 Danh sách các cổng kết nối:\n" + "\n".join(other_lines) + "\n\n*(Nếu Cloudflare báo lỗi Error 1033 do nghẽn DNS, bạn chỉ cần bấm vào link **Pinggy** phía trên để vào ngay)*\n\n"
-
-        status_view = mo.callout(
-            mo.vstack([
-                mo.md(f"### 🎉 NovelReader Đang Hoạt Động!"),
-                mo.md(
-                    f"👉 **[BẤM VÀO ĐÂY ĐỂ MỞ ỨNG DỤNG ({primary_title})]({primary_link})**  \n\n"
-                    f"{other_links_md}"
-                    f"**🔑 Mã Access Token bảo mật:** `{token_str}`  \n"
-                    f"> ⚠️ **Lưu ý:** Giữ tab trình duyệt Molab này mở trong suốt quá trình dịch truyện."
-                ),
-            ]),
-            kind="success"
-        )
-    elif server_ready:
-        localhost_link = f"http://127.0.0.1:8000/?access_token={token_str}"
-        print(f"✅ Server đang chạy cục bộ: {localhost_link}")
-        status_view = mo.callout(
-            mo.vstack([
-                mo.md("### ⚠️ Server đang chạy nhưng chưa tạo được Tunnel công khai"),
-                mo.md(f"Bạn có thể kết nối port forwarding 8000: `{localhost_link}`"),
-                mo.md(f"**🔑 Access Token:** `{token_str}`")
-            ]),
-            kind="warn"
-        )
-    else:
-        status_view = mo.callout(
-            mo.md("### ❌ Không thể khởi động Server. Vui lòng kiểm tra log bên dưới."),
-            kind="danger"
-        )
-
-    server_active = True
-    return log_server, log_tunnel
-
 
 @app.cell
-def step6_controls_ui(mo):
-    refresh_logs_btn = mo.ui.run_button(label="🔄 Làm mới nhật ký Server")
-    stop_server_btn = mo.ui.run_button(label="🛑 Dừng toàn bộ Server", kind="danger")
-    return refresh_logs_btn, stop_server_btn
-
-
-@app.cell
-def step6_logs_view(
-    log_server,
-    log_tunnel,
+def _(
+    Path,
+    datetime,
+    json,
     mo,
-    refresh_logs_btn,
-    stop_server_btn,
-    subprocess,
+    nr_Config,
+    nr_checkpoints,
+    nr_hf,
+    nr_runtime,
+    nr_save_key,
+    nr_set_notice,
+    os,
+    repo_dir,
+    tempfile,
+    zipfile,
 ):
-    if stop_server_btn.value:
-        subprocess.run(["pkill", "-f", "uvicorn.*main:app"], check=False)
-        subprocess.run(["pkill", "-f", "cloudflared"], check=False)
-        action_msg = mo.md("🛑 **Đã gửi tín hiệu dừng máy chủ thành công.**")
-    else:
-        action_msg = mo.md("")
+    # NOVELREADER_NATIVE_CONTROLS
+    import io as nr_io
+    import threading as nr_threading
+    nr_tasks = {"thread": None}
+    def nr_report(text):
+        nr_set_notice(str(text))
+    def nr_run_task(label, fn):
+        if nr_tasks["thread"] is not None and nr_tasks["thread"].is_alive():
+            nr_report("Một thao tác đang xử lý. Hãy chờ hoàn tất.")
+            return
+        def work():
+            try:
+                nr_report(label + "…")
+                result = fn()
+                nr_report(label + ": " + (json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else str(result or "Hoàn tất")))
+            except Exception as exc:
+                nr_report("Lỗi: " + str(getattr(exc, "detail", exc)))
+        nr_tasks["thread"] = mo.Thread(target=work, daemon=True)
+        nr_tasks["thread"].start()
+    def nr_settings():
+        return nr_Config(engine=nr_model.value, batch_size=int(nr_batch.value),
+            glossary=nr_glossary.value, generate_audio=nr_make_audio.value,
+            tts_engine=nr_tts.value, voice_id=nr_voice.value.strip(),
+            audio_speed=float(nr_speed.value), audio_format=nr_format.value,
+            audio_bitrate=nr_bitrate.value, honorific_mode=nr_honorific.value,
+            start_pos=int(nr_start.value), end_pos=int(nr_end.value) if nr_end.value else None,
+            auto_group_audio=nr_group.value, group_size=int(nr_group_size.value),
+            cloud_checkpoint=False).model_dump()
+    def nr_import_uploaded():
+        nr_runtime.ensure_idle()
+        if nr_runtime.store.book() and not nr_replace.value:
+            raise ValueError("Đánh dấu cho phép thay truyện hiện tại trước khi nạp.")
+        if not nr_upload.value:
+            raise ValueError("Chọn file TXT, EPUB hoặc ZIP trước.")
+        item = nr_upload.value[0]
+        name, data = item.name, item.contents
+        if name.lower().endswith(".zip"):
+            from storage.files import decode_text
+            with zipfile.ZipFile(nr_io.BytesIO(data)) as archive:
+                entries = [x for x in archive.infolist() if not x.is_dir() and x.filename.lower().endswith(".txt")]
+                if not entries or len(entries) > 20000 or sum(x.file_size for x in archive.infolist()) > 50*1024*1024:
+                    raise ValueError("ZIP phải có TXT, tối đa 50 MB sau giải nén và 20.000 file TXT.")
+                if any(x.flag_bits & 1 for x in entries):
+                    raise ValueError("ZIP có mật khẩu không được hỗ trợ.")
+                data = "\n\n".join(decode_text(archive.read(x))[0] for x in sorted(entries, key=lambda x:x.filename)).encode("utf-8")
+                name = Path(name).stem + ".txt"
+        return nr_runtime.import_book(name, data).get("book")
+    def nr_start_job():
+        nr_runtime.job.start(nr_settings(), reset=False)
+        return nr_runtime.job.summary()
+    def nr_draft():
+        nr_runtime.ensure_idle()
+        nr_checkpoints.save_draft(nr_settings())
+        return "Đã lưu cấu hình."
+    def nr_hf_configure():
+        nr_runtime.ensure_idle()
+        repo = nr_hf_repo.value.strip()
+        if len(repo.split("/")) != 2 or any(not x for x in repo.split("/")):
+            raise ValueError("Kho HF phải theo dạng tài_khoản/tên_dataset.")
+        nr_hf.REPO_ID = repo
+        nr_hf.BASE_URL = "https://huggingface.co/datasets/" + repo
+        if nr_hf_token.value.strip():
+            os.environ["HF_TOKEN"] = nr_hf_token.value.strip()
+            nr_save_key(nr_hf_token.value.strip())
+        return nr_hf.check_connection()
+    def nr_hf_create():
+        nr_runtime.ensure_idle()
+        if nr_hf_token.value.strip():
+            os.environ["HF_TOKEN"] = nr_hf_token.value.strip()
+            nr_save_key(nr_hf_token.value.strip())
+        repo = nr_hf_repo.value.strip()
+        if len(repo.split("/")) != 2:
+            raise ValueError("Nhập dataset theo dạng tài_khoản/tên_dataset.")
+        nr_hf.client().create_repo(repo_id=repo,repo_type="dataset",private=True,exist_ok=True)
+        return nr_hf_configure()
+    def nr_local_backup():
+        with nr_runtime.job.lock:
+            nr_runtime.ensure_idle()
+            folder = repo_dir / "notebook_exports"
+            folder.mkdir(exist_ok=True)
+            target = folder / ("NovelReader_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".zip")
+            nr_checkpoints.create_checkpoint(nr_runtime.store, target, nr_include_audio.value)
+            return "Đã tạo " + target.name + ". Tải ở tab Kết quả."
+    def nr_cloud_backup():
+        with nr_runtime.job.lock:
+            nr_runtime.ensure_idle()
+            return nr_checkpoints.upload_checkpoint(nr_runtime.store, nr_include_audio.value)
+    def nr_restore():
+        if not nr_restore_confirm.value:
+            raise ValueError("Cần đánh dấu xác nhận khôi phục sẽ thay dữ liệu hiện tại.")
+        with nr_runtime.job.lock:
+            nr_runtime.ensure_idle()
+            with tempfile.TemporaryDirectory() as work:
+                target = Path(work) / "checkpoint.zip"
+                if nr_restore_upload.value:
+                    target.write_bytes(nr_restore_upload.value[0].contents)
+                elif nr_restore_link.value.strip():
+                    nr_checkpoints.download_checkpoint(nr_restore_link.value.strip(), target)
+                else:
+                    raise ValueError("Chọn ZIP checkpoint hoặc nhập đường dẫn HF.")
+                result = nr_checkpoints.restore_checkpoint(nr_runtime.store, target)
+                nr_runtime.job.target_chapter_ids = None
+                nr_runtime.job.scope_label = ""
+                nr_runtime.job.status = "ready"
+                return result
+    def nr_merge():
+        from audio import merge_service
+        with nr_runtime.job.lock:
+            nr_runtime.ensure_idle()
+            return {"groups": merge_service.group_and_merge_chapters(nr_runtime.store, group_size=int(nr_group_size.value), fmt=nr_format.value)}
+    def nr_button(label, fn, kind="neutral"):
+        return mo.ui.button(label=label, kind=kind, on_click=lambda value: (nr_run_task(label, fn), (value or 0)+1)[1], value=0)
+    nr_upload = mo.ui.file(filetypes=[".txt", ".epub", ".zip"], max_size=50*1024*1024, label="Chọn truyện TXT / EPUB / ZIP")
+    nr_replace = mo.ui.checkbox(label="Cho phép thay truyện hiện tại khi nạp file")
+    nr_model = mo.ui.dropdown(options=["HachimiMT-60-QT", "HachimiMT-125-QT", "HachimiMT-Small"], value="HachimiMT-60-QT", label="Model dịch")
+    nr_batch = mo.ui.number(start=1, stop=1024, value=96, label="Batch size")
+    nr_start = mo.ui.number(start=1, value=1, label="Từ chương")
+    nr_end = mo.ui.number(start=0, value=0, label="Đến chương (0 = hết)")
+    nr_glossary = mo.ui.text_area(label="Thuật ngữ / tên riêng", full_width=True)
+    nr_honorific = mo.ui.dropdown(options={"Tự nhiên, an toàn":"safe", "Tiên hiệp":"xianxia_strict", "Tắt":"off"}, value="Tự nhiên, an toàn", label="Xưng hô")
+    nr_make_audio = mo.ui.checkbox(value=True, label="Tạo audio sau khi dịch")
+    nr_tts = mo.ui.dropdown(options=["piper", "vieneu"], value="piper", label="Bộ đọc")
+    nr_voice = mo.ui.text(value="ngochuyennew", label="Mã giọng (VieNeu: truc_ly)")
+    nr_speed = mo.ui.slider(start=0.4, stop=2.5, step=0.1, value=1.0, label="Tốc độ")
+    nr_format = mo.ui.dropdown(options=["mp3", "m4b", "m4a", "wav", "opus"], value="mp3", label="Định dạng")
+    nr_bitrate = mo.ui.dropdown(options=["64k", "96k", "128k", "192k"], value="96k", label="Bitrate")
+    nr_group = mo.ui.checkbox(label="Tự động gộp audio")
+    nr_group_size = mo.ui.number(start=2, stop=500, value=50, label="Số chương / nhóm")
+    nr_hf_repo = mo.ui.text(value=nr_hf.REPO_ID, label="Dataset Hugging Face", full_width=True)
+    nr_hf_token = mo.ui.text(kind="password", label="Token HF mới (bỏ trống để giữ token đã cấu hình)", full_width=True)
+    nr_include_audio = mo.ui.checkbox(label="Kèm audio trong checkpoint")
+    nr_restore_upload = mo.ui.file(filetypes=[".zip"], max_size=2*1024**3, label="Checkpoint ZIP")
+    nr_restore_link = mo.ui.text(label="Hoặc đường dẫn checkpoint trên HF", full_width=True)
+    nr_restore_confirm = mo.ui.checkbox(label="Tôi đồng ý thay dữ liệu hiện tại bằng checkpoint")
+    nr_refresh = mo.ui.refresh(options=[2,5,10,30], default_interval=5, label="Làm mới tiến độ (giây)")
+    nr_controls = mo.ui.tabs({
+        "📥 Truyện": mo.vstack([mo.md("### Nạp truyện\nFile tối đa 50 MB. Nạp truyện sẽ thay truyện đang có."), nr_upload, nr_replace, nr_button("Nạp truyện", nr_import_uploaded, "success")]),
+        "⚙️ Dịch & giọng": mo.vstack([mo.hstack([nr_model,nr_batch]), mo.hstack([nr_start,nr_end,nr_honorific]), nr_glossary, nr_make_audio, mo.hstack([nr_tts,nr_voice,nr_speed]), mo.hstack([nr_format,nr_bitrate]), mo.hstack([nr_group,nr_group_size]), nr_button("Lưu cấu hình",nr_draft)]),
+        "☁️ Hugging Face": mo.vstack([nr_hf_repo,nr_hf_token,nr_button("Áp dụng & kiểm tra HF",nr_hf_configure),mo.md("Nếu kho chưa tồn tại, nút dưới tạo dataset riêng tư trong tài khoản có quyền ghi."),nr_button("Tạo dataset HF riêng tư",nr_hf_create),nr_include_audio,mo.hstack([nr_button("Tạo checkpoint ZIP",nr_local_backup),nr_button("Sao lưu lên HF",nr_cloud_backup)]),mo.md("### Khôi phục"),nr_restore_upload,nr_restore_link,nr_restore_confirm,nr_button("Khôi phục checkpoint",nr_restore,"warn")]),
+    })
+    mo.vstack([mo.md("# 📚 NovelReader — Bảng điều khiển notebook"),
+        mo.hstack([nr_button("▶ Bắt đầu / tiếp tục chương chưa dịch", nr_start_job,"success"), nr_button("⏸ Tạm dừng", nr_runtime.job.pause),nr_button("▶ Tiếp tục",nr_runtime.job.resume),nr_button("■ Hủy tác vụ",nr_runtime.job.stop,"danger")]),
+        nr_controls,mo.hstack([nr_button("Gộp audio đã có", nr_merge),nr_refresh])])
+    return (
+        nr_bitrate,
+        nr_button,
+        nr_format,
+        nr_refresh,
+        nr_speed,
+        nr_tts,
+        nr_voice,
+    )
 
-    # Nhấn refresh_logs_btn sẽ tự động kích hoạt cell này chạy lại để nạp log mới nhất
-    _ = refresh_logs_btn.value
 
-    recent_logs = ""
-    if log_server.is_file():
-        all_lines = log_server.read_text(errors="replace").splitlines()
-        recent_logs = "\n".join(all_lines[-35:])
-    else:
-        recent_logs = "Chưa có log ghi nhận."
-
-    tunnel_logs = ""
-    if log_tunnel.is_file():
-        t_lines = log_tunnel.read_text(errors="replace").splitlines()
-        tunnel_logs = "\n".join(t_lines[-15:])
-
-    control_card = mo.vstack([
-        mo.md("## 📊 Nhật ký & Điều khiển Máy chủ"),
-        mo.hstack([refresh_logs_btn, stop_server_btn], gap=2),
-        action_msg,
-        mo.accordion({
-            "📄 Nhật ký Server (Uvicorn 35 dòng gần nhất)": mo.ui.code_editor(
-                value=recent_logs, language="text", min_height=200, disabled=True
-            ),
-            "🌐 Nhật ký Tunnel Kết nối": mo.ui.code_editor(
-                value=tunnel_logs, language="text", min_height=120, disabled=True
-            ),
-        })
-    ])
+@app.cell
+def _(mo, nr_get_notice, nr_refresh, nr_runtime, repo_dir):
+    # NOVELREADER_NATIVE_PROGRESS
+    _ = nr_refresh.value
+    _nr_summary = nr_runtime.job.summary()
+    _nr_book = nr_runtime.store.book()
+    _nr_rows = nr_runtime.store.list() if _nr_book else []
+    _nr_done = int(_nr_summary.get("done",0))
+    _nr_total = int(_nr_summary.get("total",0))
+    _nr_log = repo_dir / "data/logs/app.log"
+    _nr_log_text = "\n".join(_nr_log.read_text(errors="replace").splitlines()[-35:]) if _nr_log.is_file() else "Chưa có nhật ký."
+    _nr_notice = nr_get_notice()
+    mo.vstack([mo.md("## 📊 Tiến độ"),mo.callout(mo.plain_text(_nr_notice)),
+        mo.md(f"**Truyện:** {(_nr_book or {}).get('title','Chưa nạp')} · **Trạng thái:** {_nr_summary['status']} · **Hoàn tất:** {_nr_done}/{_nr_total}"),
+        mo.md(_nr_summary.get("message", "")),
+        mo.ui.table([{k:r.get(k) for k in ("position","title","status","audio_status")} for r in _nr_rows[:200]], selection=None, page_size=10) if _nr_rows else mo.md("Nạp truyện ở bảng điều khiển để bắt đầu."),
+        mo.accordion({"Nhật ký gần nhất":mo.ui.code_editor(value=_nr_log_text,language="text",disabled=True)})])
     return
 
 
 @app.cell
-def step7_backup_ui(mo):
-    create_backup_btn = mo.ui.run_button(label="📦 Tạo bản sao lưu toàn bộ (ZIP)", kind="success")
-    backup_ui_panel = mo.vstack([
-        mo.md("## 💾 Sao lưu & Xuất dữ liệu"),
-        mo.md("Dừng job dịch trước (giữ máy chủ Web đang chạy). Nút này tạo checkpoint chuẩn có audio, khôi phục được trong mục Sao lưu. Muốn lưu Hugging Face hoặc bỏ audio, dùng Cài đặt → Sao lưu trên Web:"),
-        create_backup_btn,
-    ])
-    return (create_backup_btn,)
+def _(
+    mo,
+    nr_bitrate,
+    nr_button,
+    nr_format,
+    nr_runtime,
+    nr_speed,
+    nr_tts,
+    nr_voice,
+):
+    # NOVELREADER_NATIVE_RESULTS_CONTROLS
+    nr_chapter_no = mo.ui.number(start=1, value=1, label="Chương muốn xem / nghe")
+    nr_results_refresh = mo.ui.run_button(label="Làm mới kết quả và danh sách tải")
+    def nr_single_audio():
+        from web.routes.audio import generate_single_audio
+        from web.schemas import AudioSettingsPatch
+        _chapter = next((r for r in nr_runtime.store.list() if r["position"]==int(nr_chapter_no.value)), None)
+        if not _chapter:
+            raise ValueError("Không tìm thấy chương.")
+        return generate_single_audio(_chapter["id"], AudioSettingsPatch(tts_engine=nr_tts.value, voice_id=nr_voice.value.strip(), audio_speed=float(nr_speed.value), audio_format=nr_format.value, audio_bitrate=nr_bitrate.value))
+    mo.vstack([mo.md("## 📖 Kết quả & tải xuống"), mo.hstack([nr_chapter_no,nr_results_refresh,nr_button("Tạo lại audio chương đang chọn",nr_single_audio)])])
+    return nr_chapter_no, nr_results_refresh
 
 
 @app.cell
-def step7_backup_process(base_dir, create_backup_btn, datetime, mo, os, shutil, urllib):
-    if not create_backup_btn.value:
-        backup_result_display = mo.md("")
+def _(
+    mo,
+    nr_audio,
+    nr_chapter_no,
+    nr_export_epub,
+    nr_export_txt,
+    nr_results_refresh,
+    nr_runtime,
+    repo_dir,
+):
+    # NOVELREADER_NATIVE_RESULTS
+    _ = nr_results_refresh.value
+    _nr_position = int(nr_chapter_no.value)
+    _nr_all_rows = nr_runtime.store.list()
+    _nr_row = next((r for r in _nr_all_rows if r["position"]==_nr_position), None)
+    _nr_result_parts = []
+    if _nr_row:
+        _nr_chapter = nr_runtime.store.get(_nr_row["id"])
+        _nr_result_parts.append(mo.md("### " + str(_nr_chapter.get("translated_title") or _nr_chapter["title"])))
+        _nr_result_parts.append(mo.ui.code_editor(value="\n\n".join(_nr_chapter.get("translated") or []), language="text",disabled=True))
+        _nr_audio_path = nr_audio.get_chapter_audio_path(nr_runtime.store.audio_dir,_nr_row["id"],_nr_position)
+        if _nr_audio_path and _nr_audio_path.is_file():
+            _nr_result_parts.extend([mo.audio(_nr_audio_path),mo.download(data=lambda p=_nr_audio_path:p.read_bytes(), filename=_nr_audio_path.name,label="Tải audio chương")])
+        else:
+            _nr_result_parts.append(mo.md("Chương này chưa có audio."))
     else:
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_filename = f"NovelReader_Checkpoint_{timestamp}.zip"
-        backup_path = base_dir / backup_filename
+        _nr_result_parts.append(mo.md("Chưa có chương được chọn."))
+    _nr_current_book=nr_runtime.store.book()
+    if _nr_current_book:
+        def _nr_text_download(fmt):
+            _b=nr_runtime.store.book()
+            _rows=[nr_runtime.store.get(r["id"]) for r in nr_runtime.store.list()]
+            return (nr_export_txt if fmt=="txt" else nr_export_epub)(_b,_rows)
+        _nr_result_parts.append(mo.hstack([mo.download(data=lambda:_nr_text_download("txt"),filename="translated.txt",label="Tải bản dịch TXT"),mo.download(data=lambda:_nr_text_download("epub"),filename="translated.epub",label="Tải bản dịch EPUB")]))
+        _nr_audio_files=nr_audio.exportable_audio_files(nr_runtime.store.audio_dir)
+        _nr_result_parts.append(mo.accordion({"Audio và nhóm đã gộp":mo.vstack([mo.download(data=lambda p=p:p.read_bytes(),filename=p.name,label=p.name) for p in _nr_audio_files[:100]]) if _nr_audio_files else mo.md("Chưa có audio.")}))
+    _nr_backups=sorted((repo_dir/"notebook_exports").glob("*.zip"),reverse=True)
+    if _nr_backups:
+        _nr_result_parts.append(mo.accordion({"Checkpoint ZIP":mo.vstack([mo.download(data=lambda p=p:p.read_bytes(),filename=p.name,label=p.name) for p in _nr_backups[:20]])}))
+    mo.vstack(_nr_result_parts)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md("""
+    Nhấn **Làm mới kết quả và danh sách tải** sau khi dịch, tạo audio hoặc sao lưu. Token HF không được đưa vào checkpoint.
+    """)
+    return
+
+
+@app.cell
+def _(Path, json, subprocess, urllib):
+    # ZROK_INSTALL
+    import tarfile as _zr_tar
+    _zr_dir=Path("/tmp/novelreader-zrok")
+    _zr_dir.mkdir(exist_ok=True)
+    with urllib.request.urlopen("https://api.github.com/repos/openziti/zrok/releases/latest",timeout=15) as _zr_response:
+        _zr_release=json.load(_zr_response)
+    _zr_asset=next(a for a in _zr_release["assets"] if a["name"].endswith("_linux_amd64.tar.gz"))
+    _zr_archive=_zr_dir/"zrok.tar.gz"
+    with urllib.request.urlopen(_zr_asset["browser_download_url"],timeout=30) as _zr_download:
+        _zr_archive.write_bytes(_zr_download.read())
+    with _zr_tar.open(_zr_archive) as _zr_package:
+        _zr_member=next(m for m in _zr_package.getmembers() if Path(m.name).name in ("zrok2","zrok") and m.isfile())
+        (_zr_dir/"zrok2").write_bytes(_zr_package.extractfile(_zr_member).read())
+    (_zr_dir/"zrok2").chmod(0o700)
+    print(subprocess.run([str(_zr_dir/"zrok2"),"version"],capture_output=True,text=True,timeout=10).stdout)
+    print("zrok đã cài. Chờ đăng nhập myzrok.io để kích hoạt môi trường.")
+    return
+
+
+@app.cell
+def _(Path, json, mo, os, repo_dir, subprocess, sys, urllib, zr_account_token):
+    # ZROK_ENABLE_AND_SHARE
+    import re as _zc_re
+    import signal as _zc_signal
+    import time as _zc_time
+    import secrets as _zc_secrets
+    import urllib.error as _zc_urllib_error
+
+    zrok_url = ""
+    zrok_access_code = ""
+    _zc_token = str(zr_account_token).strip()
+    if not _zc_token:
+        mo.stop(True, mo.md("Thiếu token zrok trong ô cấu hình."))
+
+    _zc_bin = Path("/tmp/novelreader-zrok/zrok2")
+    if not _zc_bin.is_file():
+        # Tự cài lại khi sandbox được relaunch và /tmp bị làm sạch.
+        import json as _zc_json
+        import tarfile as _zc_tarfile
+        import urllib.request as _zc_request
+        _zc_dir = _zc_bin.parent
+        _zc_dir.mkdir(parents=True, exist_ok=True)
         try:
-            backup_request = urllib.request.Request(
-                "http://127.0.0.1:8000/api/checkpoints/download",
-                data=b'{"include_audio":true}', method="POST",
-                headers={"Content-Type": "application/json", "X-App-Request": "novel-translator",
-                         "X-Novel-Access": os.environ.get("NOVEL_WEB_ACCESS_TOKEN", "")},
+            with _zc_request.urlopen("https://api.github.com/repos/openziti/zrok/releases/latest", timeout=20) as _zc_response:
+                _zc_release = _zc_json.load(_zc_response)
+            _zc_asset = next(a for a in _zc_release["assets"] if a["name"].endswith("_linux_amd64.tar.gz"))
+            _zc_archive = _zc_dir / "zrok.tar.gz"
+            with _zc_request.urlopen(_zc_asset["browser_download_url"], timeout=60) as _zc_download:
+                _zc_archive.write_bytes(_zc_download.read())
+            with _zc_tarfile.open(_zc_archive) as _zc_package:
+                _zc_member = next(m for m in _zc_package.getmembers() if Path(m.name).name in ("zrok2", "zrok") and m.isfile())
+                _zc_bin.write_bytes(_zc_package.extractfile(_zc_member).read())
+            _zc_bin.chmod(0o700)
+            print("Đã tự cài lại zrok:", subprocess.run([str(_zc_bin), "version"], capture_output=True, text=True, timeout=10).stdout.strip())
+        except Exception as _zc_install_error:
+            print("Tự cài zrok thất bại:", type(_zc_install_error).__name__, str(_zc_install_error))
+            mo.stop(True, mo.md("Không tải/cài được zrok; xem lỗi ở output phía trên."))
+
+    # Khởi động WebUI nếu sandbox vừa kết nối lại và server chưa chạy.
+    _zc_web_log = repo_dir / "data/logs/webui.log"
+    _zc_web_log.parent.mkdir(parents=True, exist_ok=True)
+
+    def _zc_http_status():
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:8000/", timeout=3) as _zc_resp:
+                return _zc_resp.status
+        except _zc_urllib_error.HTTPError as _zc_err:
+            return _zc_err.code
+        except Exception:
+            return 0
+
+    zrok_access_code = os.environ.get("NOVEL_WEB_ACCESS_TOKEN", "").strip()
+    if not zrok_access_code:
+        zrok_access_code = _zc_secrets.token_urlsafe(9)
+        os.environ["NOVEL_WEB_ACCESS_TOKEN"] = zrok_access_code
+
+
+    _zc_running_pid = ""
+    _zc_running_token = ""
+    for _zc_pid in os.listdir("/proc"):
+        if not _zc_pid.isdigit():
+            continue
+        try:
+            with open("/proc/" + _zc_pid + "/cmdline", "rb") as _zc_f:
+                _zc_cmd = _zc_f.read().replace(bytes([0]), b" ").decode("utf-8", "replace")
+            if "uvicorn" not in _zc_cmd or "main:app" not in _zc_cmd or "8000" not in _zc_cmd:
+                continue
+            _zc_running_pid = _zc_pid
+            with open("/proc/" + _zc_pid + "/environ", "rb") as _zc_f:
+                for _zc_item in _zc_f.read().split(bytes([0])):
+                    if _zc_item.startswith(b"NOVEL_WEB_ACCESS_TOKEN="):
+                        _zc_running_token = _zc_item.split(b"=", 1)[1].decode("utf-8", "replace")
+                        break
+            break
+        except OSError:
+            continue
+
+
+    _zc_status = _zc_http_status()
+    _zc_web_running = bool(_zc_running_pid) and _zc_running_token == zrok_access_code and _zc_status == 200
+    if _zc_running_pid and not _zc_web_running:
+        # Dừng server cũ nếu nó đang dùng mã khác; không đổi mã giữa lúc xử lý truyện.
+        try:
+            _zc_state_req = urllib.request.Request(
+                "http://127.0.0.1:8000/api/state",
+                headers={"X-Novel-Access": _zc_running_token},
             )
-            with urllib.request.urlopen(backup_request, timeout=1800) as source, backup_path.open("wb") as out:
-                shutil.copyfileobj(source, out, 1024 * 1024)
-            size_mb = backup_path.stat().st_size / (1024 * 1024)
-            backup_result_display = mo.vstack([
-                mo.md(f"✅ **Checkpoint:** `{backup_filename}` ({size_mb:.1f} MB). Giữ file để khôi phục runtime mới."),
-                mo.download(data=lambda: backup_path.read_bytes(), filename=backup_filename,
-                            mimetype="application/zip", label="⬇️ Tải checkpoint về máy"),
-            ])
-        except Exception as backup_error:
-            backup_path.unlink(missing_ok=True)
-            backup_result_display = mo.md(f"⚠️ Chưa tạo được checkpoint: {backup_error}. Hãy dừng job nhưng giữ server chạy và thử lại.")
+            with urllib.request.urlopen(_zc_state_req, timeout=3) as _zc_state_resp:
+                _zc_state = json.loads(_zc_state_resp.read())
+            if _zc_state.get("progress", {}).get("active"):
+                mo.stop(True, mo.md("Tác vụ NovelReader đang chạy; dừng tác vụ trước khi đổi mã truy cập."))
+        except Exception:
+            pass
+        try:
+            os.kill(int(_zc_running_pid), _zc_signal.SIGTERM)
+        except (OSError, ValueError):
+            pass
+        for _zc_wait in range(20):
+            _zc_status = _zc_http_status()
+            if _zc_status != 200:
+                break
+            _zc_time.sleep(0.5)
+        if _zc_status == 200:
+            print("Server cũ chưa dừng được; giữ nguyên để tránh tạo server trùng.")
+            mo.stop(True, mo.md("Không thể khởi động lại WebUI an toàn; hãy reconnect sandbox rồi chạy lại ô này."))
+        _zc_web_running = False
+
+
+    if not _zc_web_running:
+        _zc_web_out = open(_zc_web_log, "w", encoding="utf-8")
+        _zc_web_proc = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"],
+            cwd=str(repo_dir),
+            stdin=subprocess.DEVNULL,
+            stdout=_zc_web_out,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        _zc_web_out.close()
+        for _zc_try in range(45):
+            _zc_status = _zc_http_status()
+            if _zc_status == 200:
+                break
+            _zc_time.sleep(1)
+
+
+    if _zc_status != 200:
+        print("WebUI chưa lên được; log:")
+        try:
+            print(_zc_web_log.read_text(errors="replace")[-5000:])
+        except OSError:
+            pass
+        mo.stop(True, mo.md("WebUI chưa sẵn sàng trên cổng 8000; xem log ngay phía trên."))
+
+    print("WebUI HTTP:", _zc_status)
+
+    # Dùng lại environment zrok hiện có; chỉ enable nếu sandbox chưa có environment.
+    _zc_status_result = subprocess.run(
+        [str(_zc_bin), "status"], capture_output=True, text=True, timeout=15
+    )
+    _zc_status_text = _zc_status_result.stdout + _zc_status_result.stderr
+    _zc_env_line = next((line for line in _zc_status_text.splitlines() if "EnvZId" in line), "")
+    _zc_env_enabled = "<<SET>>" in _zc_env_line
+
+    if not _zc_env_enabled:
+        _zc_enable = subprocess.run(
+            [str(_zc_bin), "enable", _zc_token, "--headless"],
+            capture_output=True, text=True, timeout=60
+        )
+        if _zc_enable.returncode != 0:
+            _zc_status_result = subprocess.run(
+                [str(_zc_bin), "status"], capture_output=True, text=True, timeout=15
+            )
+            _zc_status_text = _zc_status_result.stdout + _zc_status_result.stderr
+            _zc_env_line = next((line for line in _zc_status_text.splitlines() if "EnvZId" in line), "")
+            if "<<SET>>" not in _zc_env_line:
+                print((_zc_enable.stdout + _zc_enable.stderr)[-3000:])
+                mo.stop(True, mo.md("Không enable được zrok; xem lỗi ở output phía trên."))
+
+    # Dừng share cũ để mỗi lần chạy bắt URL mới và không để lại tunnel lặp.
+    for _zc_pid in os.listdir("/proc"):
+        if not _zc_pid.isdigit():
+            continue
+        try:
+            with open("/proc/" + _zc_pid + "/cmdline", "rb") as _zc_f:
+                _zc_cmd = _zc_f.read().replace(bytes([0]), b" ").decode("utf-8", "replace")
+            if "zrok2" in _zc_cmd and "share public" in _zc_cmd:
+                os.kill(int(_zc_pid), _zc_signal.SIGTERM)
+        except (OSError, ValueError):
+            pass
+    _zc_time.sleep(1)
+
+    _zc_share_log = repo_dir / "data/logs/zrok_share.log"
+    _zc_share_log.parent.mkdir(parents=True, exist_ok=True)
+    _zc_share_log.write_text("", encoding="utf-8")
+    _zc_share_out = open(_zc_share_log, "w", encoding="utf-8")
+    _zc_share_proc = subprocess.Popen(
+        [str(_zc_bin), "share", "public", "http://127.0.0.1:8000", "--headless"],
+        cwd=str(repo_dir),
+        stdin=subprocess.DEVNULL,
+        stdout=_zc_share_out,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    _zc_share_out.close()
+
+    _zc_host = ""
+    _zc_log_text = ""
+    for _zc_try in range(60):
+        if _zc_share_log.exists():
+            _zc_log_text = _zc_share_log.read_text(errors="replace")
+            _zc_hosts = _zc_re.findall(r"(?i)\b([a-z0-9-]+\.shares\.zrok\.io)\b", _zc_log_text)
+            if _zc_hosts:
+                _zc_host = _zc_hosts[-1]
+                break
+        if _zc_share_proc.poll() is not None:
+            break
+        _zc_time.sleep(1)
+
+    if not _zc_host:
+        print("zrok share chưa trả về URL; log:")
+        print(_zc_log_text[-5000:])
+        mo.stop(True, mo.md("Chưa lấy được URL zrok; xem log ngay phía trên."))
+
+    zrok_url = "https://" + _zc_host + "/"
+
+    # Lấy mã truy cập từ môi trường của WebUI đang phục vụ cổng 8000.
+    zrok_access_code = os.environ.get("NOVEL_WEB_ACCESS_TOKEN", "").strip()
+    if not zrok_access_code:
+        for _zc_pid in os.listdir("/proc"):
+            if not _zc_pid.isdigit():
+                continue
+            try:
+                with open("/proc/" + _zc_pid + "/cmdline", "rb") as _zc_f:
+                    _zc_cmd = _zc_f.read().replace(bytes([0]), b" ").decode("utf-8", "replace")
+                if "uvicorn" not in _zc_cmd or "main:app" not in _zc_cmd:
+                    continue
+                with open("/proc/" + _zc_pid + "/environ", "rb") as _zc_f:
+                    for _zc_item in _zc_f.read().split(bytes([0])):
+                        if _zc_item.startswith(b"NOVEL_WEB_ACCESS_TOKEN="):
+                            zrok_access_code = _zc_item.split(b"=", 1)[1].decode("utf-8", "replace")
+                            break
+                if zrok_access_code:
+                    break
+            except OSError:
+                pass
+
+    print("ZROK_URL:", zrok_url)
+    if not zrok_access_code:
+        print("Chưa tìm thấy mã truy cập trong môi trường WebUI.")
+    return zrok_access_code, zrok_url
+
+
+@app.cell
+def _(json, urllib):
+    # ZROK_RELEASE_CHECK
+    with urllib.request.urlopen("https://api.github.com/repos/openziti/zrok/releases?per_page=10",timeout=15) as _zr_meta:
+        _zr_releases=json.load(_zr_meta)
+    print([(r["tag_name"],[a["name"] for a in r["assets"] if "linux_amd64" in a["name"]]) for r in _zr_releases])
+    return
+
+
+@app.cell
+def _():
+    # ZROK_ACCOUNT_TOKEN_INPUT
+    zr_account_token="mEpVU5H1wLeG"
+    return (zr_account_token,)
+
+
+@app.cell
+def _(repo_dir, subprocess):
+    # ZROK_STATUS_CHECK
+    for _zs_args in [["status"],["enable","--help"],["share","public","--help"]]:
+        _zs_result=subprocess.run(["/tmp/novelreader-zrok/zrok2"]+_zs_args,capture_output=True,text=True,timeout=10)
+        print("COMMAND:",_zs_args,"EXIT:",_zs_result.returncode)
+        print((_zs_result.stdout+_zs_result.stderr)[-7500:])
+    _zr_log=repo_dir/"data/logs/zrok_share.log"
+    if _zr_log.exists():
+        print(_zr_log.read_text(errors="replace")[-5000:])
+    else:
+        print("Chưa có log share zrok. Nhập token rồi chạy ô ZROK_ENABLE_AND_SHARE.")
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo, zrok_access_code, zrok_url):
+    mo.md(rf"""
+    ## 🔗 Link truy cập zrok
+
+    {('[**Mở NovelReader qua zrok**](' + zrok_url + ')') if zrok_url else 'Link zrok chưa sẵn sàng; chạy lại ô Web + zrok.'}
+
+    **Địa chỉ:** {zrok_url or 'chưa sẵn sàng'}
+
+    **Mã truy cập:** {zrok_access_code or 'chưa tìm thấy'}
+
+    *Tự cập nhật mỗi lần chạy ô zrok.*
+    """)
     return
 
 
