@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-26T00:00:00Z",
+  "title": "Design System: NovelReader",
+  "extensions": {
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Source title",
+        "purpose": "Prominent source-book title; nearby sizes serve other page headings."
+      },
+      "data": {
+        "displayName": "Data and log",
+        "purpose": "Numbers and event telemetry, not general interface copy."
+      }
+    },
+    "shadows": [
+      {
+        "name": "notice",
+        "value": "0 8px 24px #0004",
+        "purpose": "Floating notice; ordinary panels and buttons stay flat."
+      }
+    ],
+    "motion": [
+      {
+        "name": "drawer",
+        "value": "transform 180ms ease-out",
+        "purpose": "Navigation drawer when reduced motion is not requested."
+      },
+      {
+        "name": "controls",
+        "value": "background-color 150ms, border-color 150ms",
+        "purpose": "Button and field state changes when reduced motion is not requested."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "studio-two-column-max",
+        "value": "1350px"
+      },
+      {
+        "name": "drawer-max",
+        "value": "900px"
+      },
+      {
+        "name": "stack-max",
+        "value": "600px"
+      }
+    ],
+    "focus": {
+      "value": "2px solid var(--accent)",
+      "offset": "3px",
+      "purpose": "Keyboard focus on interactive controls."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "High-contrast action for starting work or exporting.",
+      "html": "<button class=\"ds-primary\">Bắt đầu dịch</button>",
+      "css": ".ds-primary{font-family:var(--sans,Inter,system-ui,sans-serif);font-size:13px;font-weight:500;padding:8px 14px;min-height:40px;border:1px solid var(--border,#30373e);border-radius:8px;background:var(--primary-bg,#f4f5f6);color:var(--primary-ink,#111417);cursor:pointer;transition:background-color 150ms,border-color 150ms}.ds-primary:disabled{opacity:.45;cursor:not-allowed}.ds-primary{border-color:var(--primary-bg,#f4f5f6)}.ds-primary:hover:not(:disabled){opacity:.88}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-danger:focus-visible{outline:2px solid var(--accent,#f2f3f5);outline-offset:3px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Routine action on a raised neutral surface.",
+      "html": "<button class=\"ds-secondary\">Cài đặt</button>",
+      "css": ".ds-secondary{font-family:var(--sans,Inter,system-ui,sans-serif);font-size:13px;font-weight:500;padding:8px 14px;min-height:40px;border:1px solid var(--border,#30373e);border-radius:8px;background:var(--raised,#151a1f);color:var(--text,#f2f3f5);cursor:pointer;transition:background-color 150ms,border-color 150ms}.ds-secondary:disabled{opacity:.45;cursor:not-allowed}.ds-secondary:hover:not(:disabled){background:var(--raised-hover,#22282e);border-color:var(--text-muted,#a9b0b8)}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-danger:focus-visible{outline:2px solid var(--accent,#f2f3f5);outline-offset:3px}"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Red treatment for deleting a story.",
+      "html": "<button class=\"ds-danger\">Xóa truyện</button>",
+      "css": ".ds-danger{font-family:var(--sans,Inter,system-ui,sans-serif);font-size:13px;font-weight:500;padding:8px 14px;min-height:40px;border:1px solid var(--border,#30373e);border-radius:8px;background:var(--danger-soft,#3b131b);color:var(--danger,#ffb1b8);cursor:pointer;transition:background-color 150ms,border-color 150ms}.ds-danger:disabled{opacity:.45;cursor:not-allowed}.ds-danger{min-height:34px;border-color:transparent}.ds-danger:hover:not(:disabled){background:var(--raised-hover,#22282e);border-color:var(--text-muted,#a9b0b8)}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-danger:focus-visible{outline:2px solid var(--accent,#f2f3f5);outline-offset:3px}"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Canvas-colored field with a visible keyboard outline.",
+      "html": "<input class=\"ds-input\" aria-label=\"Tìm chương\" placeholder=\"Tìm chương truyện…\">",
+      "css": ".ds-input{font-family:var(--sans,Inter,system-ui,sans-serif);font-size:14px;min-height:40px;padding:8px 12px;border:1px solid var(--border,#30373e);border-radius:8px;background:var(--bg,#080b0d);color:var(--text,#f2f3f5)}.ds-input::placeholder{color:var(--text-muted,#a9b0b8)}.ds-input:focus-visible{outline:2px solid var(--accent,#f2f3f5);outline-offset:3px}"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Shared container for related controls.",
+      "html": "<section class=\"ds-panel\"><h2 class=\"ds-panel-title\">Phạm vi dịch</h2><p class=\"ds-panel-help\">Để trống để dịch toàn bộ.</p></section>",
+      "css": ".ds-panel{font-family:var(--sans,Inter,system-ui,sans-serif);padding:18px;border:1px solid var(--border-subtle,#252c32);border-radius:12px;background:var(--panel,#0e1215);color:var(--text,#f2f3f5)}.ds-panel-title{margin:0;font-size:18px;font-weight:600;line-height:1.5;letter-spacing:-.025em}.ds-panel-help{margin:12px 0 0;font-size:12px;line-height:1.65;color:var(--text-muted,#a9b0b8)}"
+    },
+    {
+      "name": "Active Navigation",
+      "kind": "nav",
+      "refersTo": "navigation-active",
+      "description": "Selected destination in the shared rail.",
+      "html": "<nav aria-label=\"Không gian làm việc\"><button class=\"ds-nav\" aria-current=\"page\">Dịch &amp; audio</button></nav>",
+      "css": ".ds-nav{font-family:var(--sans,Inter,system-ui,sans-serif);font-size:13px;font-weight:500;min-height:42px;width:100%;padding:10px 12px;text-align:left;border:1px solid var(--border,#30373e);border-radius:8px;background:var(--selection,#20262c);color:var(--text,#f2f3f5);cursor:pointer}.ds-nav:hover{background:var(--raised,#151a1f)}.ds-nav:focus-visible{outline:2px solid var(--accent,#f2f3f5);outline-offset:3px}"
+    },
+    {
+      "name": "Count Badge",
+      "kind": "chip",
+      "refersTo": "count",
+      "description": "Quiet chapter count metadata.",
+      "html": "<span class=\"ds-count\">35 chương</span>",
+      "css": ".ds-count{font:12px/1.5 var(--sans,Inter,system-ui,sans-serif);padding:4px 10px;border:1px solid var(--border-subtle,#252c32);border-radius:20px;background:var(--raised,#151a1f);color:var(--text,#f2f3f5)}"
+    },
+    {
+      "name": "Selected Chapter",
+      "kind": "custom",
+      "refersTo": "chapter-selected",
+      "description": "Bright outline keeps selection legible without a colored accent.",
+      "html": "<button class=\"ds-chapter\" aria-pressed=\"true\"><span class=\"ds-number\">#1</span><span>Lời mở đầu</span><span class=\"ds-state\">○ Chưa dịch</span></button>",
+      "css": ".ds-chapter{font-family:var(--sans,Inter,system-ui,sans-serif);display:grid;grid-template-columns:32px minmax(0,1fr) 76px;gap:8px;align-items:center;width:100%;min-height:44px;padding:8px;border:1px solid var(--text,#f2f3f5);border-radius:7px;background:var(--raised,#151a1f);color:var(--text,#f2f3f5);font-size:12px;text-align:left;cursor:pointer}.ds-number{font:11px var(--mono,'JetBrains Mono',Consolas,monospace);color:var(--text-muted,#a9b0b8)}.ds-state{font-size:10px;color:var(--text-muted,#a9b0b8);text-align:right}.ds-chapter:hover{background:var(--raised,#151a1f);border-color:var(--border,#30373e)}.ds-chapter:focus-visible{outline:2px solid var(--accent,#f2f3f5);outline-offset:3px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Bàn dịch truyện",
+    "overview": "A dark, task-focused translation workspace. The user-supplied reference establishes near-black surfaces, fine gray borders, bright text and white primary actions across every page. Density serves practical work: restrained headings, compact labels and clear groups keep long chapter lists and configuration readable.\n\nThe default is dark. A monochrome light companion preserves the same hierarchy and component geometry. The previous green theme is retired. This document records the implemented system; the surface brief owns the translation page's specific composition.",
+    "keyCharacteristics": [
+      "Near-black canvas with subtly separated charcoal surfaces.",
+      "White primary actions; red destructive actions and errors.",
+      "Inter for interface text; JetBrains Mono for data and logs.",
+      "Thin borders, gently rounded controls and contextual disclosure."
+    ],
+    "rules": [
+      {
+        "name": "The Monochrome Rule",
+        "body": "Keep navigation, progress and routine actions neutral in both themes. Do not reintroduce the retired green palette.",
+        "section": "colors"
+      },
+      {
+        "name": "The Data Type Rule",
+        "body": "Use mono to distinguish data and logs; retain sans for navigation, forms and explanatory copy.",
+        "section": "typography"
+      }
+    ],
+    "dos": [
+      "**Do** reuse the shared semantic variables in both themes.",
+      "**Do** use white primary actions in dark mode and the reversed light-mode pair.",
+      "**Do** preserve visible focus outlines and text labels for status.",
+      "**Do** keep advanced controls near the task they configure.",
+      "**Do** use real progress and event data, with honest empty states."
+    ],
+    "donts": [
+      "**Don't** restore green navigation, progress or action styling.",
+      "**Don't** use mono as the general interface font.",
+      "**Don't** add gradients or routine card shadows to this flat workspace.",
+      "**Don't** introduce a separate palette for a tool page or dialog."
+    ]
+  }
+}

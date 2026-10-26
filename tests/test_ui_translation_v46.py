@@ -103,7 +103,7 @@ def test_html_single_export_and_simple_sections():
  assert not html.select('.header-right #export-txt,.header-right #export-epub,.header-right #export-audio')
  assert html.select_one('#legacy-export-actions').has_attr('hidden')
  assert len(html.select('input[name="export-kind"]'))==3
- assert len(html.select('.settings-nav .modal-tab'))==5
+ assert len(html.select('.settings-nav .modal-tab'))==2
  assert html.select_one('#pane-tab-translation #opt-t2s')
  assert html.select_one('#pane-tab-backup #checkpoint-file')
  assert not html.select('#modal-auto-remove-toc')

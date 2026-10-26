@@ -3,6 +3,7 @@
 const $ = id => document.getElementById(id);
 let chapters = [], selected = null, state = { progress: { status: 'ready', active: false } };
 let visible = 100, busy = false, ws, retry = 1000;
+let chapterRequest = 0, pendingChapter = null;
 let availableModels = [];
 let currentHardware = null, isDownloadingModel = false;
 let currentFontSize = parseInt(localStorage.getItem('novel_font_size') || '17', 10);
@@ -19,7 +20,71 @@ const titles = {
   error: 'Lỗi'
 };
 
-const icons = { pending: '◷', translating: '⟳', done: '✓', error: '⚠' };
+// Keep one instance of every control while arranging the three work areas.
+function arrangeStudio() {
+  const grid = document.querySelector('.studio-grid');
+  const config = $('job-inspector');
+  const action = config.querySelector('.job-action');
+  const range = action.querySelector('.range-box');
+  const model = $('translation-controls');
+  const glossary = $('glossary').closest('.field-group');
+  const advanced = $('translation-advanced');
+  const progress = document.createElement('section');
+  progress.className = 'panel progress-panel';
+  progress.id = 'progress-desk';
+  progress.setAttribute('aria-labelledby', 'progress-heading');
+  progress.innerHTML = '<h2 id="progress-heading">Tiến trình</h2><div class="activity-heading"><h3>Nhật ký phiên</h3><span>Trực tiếp</span></div><ol id="activity-log" aria-label="Nhật ký tác vụ"><li class="activity-empty">Các cập nhật tác vụ sẽ xuất hiện tại đây.</li></ol>';
+  progress.insertBefore(action, progress.querySelector('.activity-heading'));
+  grid.append(progress);
+  action.insertBefore($('opt-audio').closest('.toggle-row'), action.querySelector('.controls'));
+  advanced.querySelector('.control-details-body').append($('control-summary'));
+  config.querySelector('.config-heading').remove();
+  range.classList.add('setup-card');
+  config.insertBefore(range, $('audio-controls'));
+  glossary.classList.add('setup-card', 'glossary-card');
+  config.insertBefore(glossary, $('audio-controls'));
+  model.classList.add('setup-card');
+  model.open = true;
+  const modelHelp = document.createElement('details');
+  modelHelp.className = 'model-help';
+  const modelSummary = document.createElement('summary');
+  modelSummary.textContent = 'Thông tin model';
+  modelHelp.append(modelSummary);
+  $('engine-note').before(modelHelp);
+  modelHelp.append($('engine-note'));
+  advanced.querySelector('.control-details-body').prepend(document.querySelector('.translation-settings-shortcut'));
+  advanced.querySelector('.control-details-body').append($('reset').closest('.reset-label'));
+  const output = document.querySelector('.output-dirs-hint');
+  $('book-title-panel').querySelector('.control-details-body').append(output, $('encoding'));
+  const audio = $('audio-controls');
+  audio.querySelector('summary > span').textContent = 'Tùy chọn nâng cao · Audio';
+  $('chapter-single-ops').querySelector('.reader-advanced-actions').prepend($('sync').closest('label'));
+  const groups = document.createElement('section');
+  groups.className = 'audio-merge-options';
+  groups.innerHTML = '<h3>Gộp & tải audio</h3><label for="modal-group-size">Số chương mỗi tập</label><div class="merge-options-row"><input id="modal-group-size" type="number" min="2" max="500" value="50"><button id="btn-run-merge" type="button">Gộp audio hiện có</button></div><div id="merged-groups-container"></div>';
+  $('tts-advanced').querySelector('.advanced-body').append(groups);
+  document.querySelector('.studio-jump').innerHTML = '<a href="#job-inspector">Cấu hình</a><a href="#progress-desk">Tiến trình</a><a href="#chapter-desk">Chương</a>';
+}
+arrangeStudio();
+
+let lastActivity = '';
+function recordActivity(message, error = false) {
+  if (!message || message === lastActivity) return;
+  lastActivity = message;
+  const log = $('activity-log');
+  log.querySelector('.activity-empty')?.remove();
+  const item = document.createElement('li');
+  const time = document.createElement('time');
+  time.textContent = new Date().toLocaleTimeString('vi-VN', {hour12:false});
+  const text = document.createElement('span');
+  text.textContent = message;
+  item.classList.toggle('activity-error', error);
+  item.append(time, text);
+  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
+  log.append(item);
+  while (log.children.length > 100) log.firstElementChild.remove();
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
 
 function notice(message, error = false) {
   $('notice-text').textContent = message;
@@ -64,7 +129,7 @@ async function safe(fn) {
 
 // ----------------- FONT & VIEW MODES -----------------
 function setFontSize(size) {
-  currentFontSize = Math.max(13, Math.min(26, size));
+  currentFontSize = Number.isFinite(size) ? Math.max(13, Math.min(26, size)) : 17;
   document.documentElement.style.setProperty('--reader-font-size', currentFontSize + 'px');
   $('font-val').textContent = currentFontSize + 'px';
   localStorage.setItem('novel_font_size', currentFontSize);
@@ -74,9 +139,12 @@ $('font-dec').onclick = () => setFontSize(currentFontSize - 1);
 $('font-inc').onclick = () => setFontSize(currentFontSize + 1);
 
 function setViewMode(mode) {
+  mode = ['parallel', 'target', 'source'].includes(mode) ? mode : 'parallel';
   currentViewMode = mode;
+  $('reader').dataset.view = mode;
   document.querySelectorAll('.view-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.mode === mode);
+    btn.setAttribute('aria-pressed', String(btn.dataset.mode === mode));
   });
   const panes = $('reading-panes');
   panes.classList.remove('mode-target', 'mode-source');
@@ -91,36 +159,116 @@ document.querySelectorAll('.view-btn').forEach(btn => {
 });
 
 // Copy current chapter translation
-$('copy-btn').onclick = () => {
+$('copy-btn').onclick = () => safe(async () => {
   const chapter = chapters.find(c => c.id === selected);
   if (!chapter) {
     notice('Chưa chọn chương để sao chép.');
     return;
   }
-  const paras = Array.from($('target-pane').querySelectorAll('.para'))
+  const paras = Array.from($('target-pane').querySelectorAll('.para:not(.waiting)'))
     .map(p => p.textContent.trim())
-    .filter(t => t && !t.startsWith('(') && !t.startsWith('Bản dịch sẽ') && !t.startsWith('Đang chờ'));
+    .filter(Boolean);
 
   const fullText = (chapter.translated_title || chapter.title) + '\n\n' + paras.join('\n\n');
-  navigator.clipboard.writeText(fullText).then(() => {
-    notice('✓ Đã sao chép bản dịch chương vào Clipboard!');
-  }).catch(() => {
-    notice('Không thể truy cập Clipboard.', true);
+  if (!paras.length) throw new Error('Chương này chưa có bản dịch để sao chép.');
+  if (!navigator.clipboard?.writeText) throw new Error('Trình duyệt không hỗ trợ sao chép ở địa chỉ này. Hãy mở web qua HTTPS hoặc localhost.');
+  await navigator.clipboard.writeText(fullText);
+  notice('✓ Đã sao chép bản dịch chương vào Clipboard!');
+});
+
+// Workspace navigation: chapter desk and full-width reader.
+const workspace = document.querySelector('.workspace');
+function showWorkspace(page, navId, title) {
+  workspace.dataset.page = page;
+  workspace.classList.toggle('show-reader', page === 'reader');
+  $('settings-modal').hidden = page !== 'settings';
+  $('monitor-page').hidden = page !== 'monitor';
+  $('workspace-title').textContent = title;
+  document.querySelectorAll('.app-nav .nav-item:not([data-theme-toggle])').forEach(button => {
+    const active = button.id === navId;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
   });
+  closeNavigation(true);
+}
+$('tab-sidebar').onclick = () => showWorkspace('studio', 'tab-sidebar', 'Dịch & audio');
+$('tab-reader').onclick = () => {
+  showWorkspace('reader', 'tab-reader', 'Đọc & đối chiếu');
+  requestAnimationFrame(equalizeRows);
 };
 
-// Mobile Tab Switcher
-const workspace = document.querySelector('.workspace');
-$('tab-sidebar').onclick = () => {
-  $('tab-sidebar').classList.add('active');
-  $('tab-reader').classList.remove('active');
-  workspace.classList.remove('show-reader');
+$('back-to-studio').onclick = () => {
+  $('tab-sidebar').click();
+  $('search').focus({preventScroll:true});
+  document.querySelector('.toc-panel').scrollIntoView({block:'start'});
 };
-$('tab-reader').onclick = () => {
-  $('tab-reader').classList.add('active');
-  $('tab-sidebar').classList.remove('active');
-  workspace.classList.add('show-reader');
+
+// Sidebar and theme preferences belong to the application shell.
+function closeNavigation(returnFocus = false) {
+  const wasOpen = document.body.classList.contains('nav-open');
+  document.body.classList.remove('nav-open');
+  $('mobile-nav-toggle').setAttribute('aria-expanded', 'false');
+  workspace.inert = false;
+  document.querySelector('.topbar').inert = false;
+  if (returnFocus && wasOpen) $('mobile-nav-toggle').focus({preventScroll:true});
+}
+$('mobile-nav-toggle').onclick = () => {
+  document.body.classList.add('nav-open');
+  $('mobile-nav-toggle').setAttribute('aria-expanded', 'true');
+  $('toggle-navigation').title = 'Đóng menu điều hướng';
+  $('toggle-navigation').setAttribute('aria-label', 'Đóng menu điều hướng');
+  workspace.inert = true;
+  document.querySelector('.topbar').inert = true;
+  $('toggle-navigation').focus({preventScroll:true});
 };
+$('close-navigation').onclick = () => closeNavigation(true);
+function setNavigationCollapsed(collapsed) {
+  document.body.classList.toggle('nav-collapsed', collapsed);
+  $('toggle-navigation').setAttribute('aria-expanded', String(!collapsed));
+  $('toggle-navigation').title = collapsed ? 'Mở rộng menu' : 'Thu gọn menu';
+  $('toggle-navigation').setAttribute('aria-label', $('toggle-navigation').title);
+  localStorage.setItem('novel_nav_collapsed', String(collapsed));
+}
+$('toggle-navigation').onclick = () => {
+  if (window.matchMedia('(max-width: 900px)').matches) closeNavigation(true);
+  else setNavigationCollapsed(!document.body.classList.contains('nav-collapsed'));
+  requestAnimationFrame(equalizeRows);
+};
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem('novel_theme', theme);
+  localStorage.setItem('novel_palette', 'monochrome-v1');
+  $('theme-label').textContent = theme === 'dark' ? 'Chế độ sáng' : 'Chế độ tối';
+  document.querySelectorAll('[data-theme-toggle]').forEach(button => {
+    button.setAttribute('aria-label', theme === 'dark' ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối');
+    button.title = button.getAttribute('aria-label');
+  });
+}
+document.querySelectorAll('[data-theme-toggle]').forEach(button => {
+  button.onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+});
+for (const [id, tab] of [['nav-audio','tab-tts'],['nav-storage','tab-cloud'],['nav-backup','tab-backup'],['nav-settings','tab-translation']]) {
+  $(id).onclick = () => { closeNavigation(true); openSettingsPage(tab); };
+}
+$('nav-monitor').onclick = () => {
+  showWorkspace('monitor', 'nav-monitor', 'Giám sát');
+  $('monitor-page-heading').focus({preventScroll:true});
+};
+document.addEventListener('keydown', event => {
+  if (!document.body.classList.contains('nav-open')) return;
+  if (event.key === 'Escape') { event.preventDefault(); closeNavigation(true); return; }
+  if (event.key !== 'Tab') return;
+  const items = [...$('app-navigation').querySelectorAll('button')].filter(el => el.getClientRects().length && !el.disabled);
+  const first = items[0], last = items[items.length-1];
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+});
+window.matchMedia('(max-width: 900px)').addEventListener('change', () => {
+  closeNavigation();
+  setNavigationCollapsed(document.body.classList.contains('nav-collapsed'));
+});
+setTheme(document.documentElement.dataset.theme);
+setNavigationCollapsed(localStorage.getItem('novel_nav_collapsed') === 'true');
 
 // Export buttons retain their download links; Hugging Face is the default destination.
 let huggingfaceExportBusy = false;
@@ -156,7 +304,7 @@ async function exportToHuggingFace(format) {
     const msg = err.message || String(err);
     if (msg.includes('HF_TOKEN') || msg.includes('401')) {
       notice('Hãy cấu hình HF_TOKEN có quyền ghi phía máy chủ.');
-      openSettingsModal('tab-cloud');
+      openSettingsPage('tab-cloud');
     } else {
       notice(`Lỗi Hugging Face: ${msg}`);
     }
@@ -186,7 +334,7 @@ async function loadHardware() {
     if (currentHardware) {
       const dev = currentHardware.is_gpu ? 'GPU' : (currentHardware.has_discrete_gpu ? 'GPU rời' : 'CPU');
       const devName = currentHardware.gpu_name ? ` (${currentHardware.gpu_name})` : '';
-      $('hw-pill').textContent = `⚡ ${dev}: ${currentHardware.cpu_count} luồng${devName}`;
+      $('hw-pill').textContent = `${dev}: ${currentHardware.cpu_count} luồng${devName}`;
       $('hw-pill').title = currentHardware.summary || '';
       if (currentHardware.batch_size && !$('batch').value) {
         $('batch').value = Math.max(1, Math.min(1024, currentHardware.batch_size));
@@ -217,7 +365,7 @@ async function loadModels() {
       const opt = document.createElement('option');
       opt.value = m.id;
       const sizeText = m.size_mb > 0 ? ` (~${m.size_mb} MB)` : '';
-      opt.textContent = `${m.name}${sizeText}`;
+      opt.textContent = `${m.name.replace(/^🌐\s*/u, '')}${sizeText}`;
       if (m.id.startsWith('space')) {
         spaceGroup.append(opt);
       } else {
@@ -236,6 +384,7 @@ async function loadModels() {
 }
 
 function updateModelInfo() {
+  updateControlSummary();
   const key = $('engine').value;
   const m = availableModels.find(x => x.id === key);
   const badge = $('model-badge');
@@ -260,14 +409,14 @@ function updateModelInfo() {
 
   if (m.id === 'space' || m.id.startsWith('space:')) {
     badge.className = 'badge badge-success';
-    badge.textContent = '🌐 Space Online';
+    badge.textContent = 'Space Online';
     if (btnBadge) btnBadge.style.display = 'none';
     if (downloadBox) downloadBox.style.display = 'none';
     $('engine-note-title').textContent = `${m.name} · Trực tuyến HF Space`;
     $('engine-note-desc').textContent = m.desc || 'Dịch trực tuyến qua HF Space (ngocdang83/HachimiMT-demo). Không tốn tài nguyên máy.';
   } else if (m.downloaded) {
     badge.className = 'badge badge-success';
-    badge.textContent = `✓ Sẵn sàng (${backendLabel})`;
+    badge.textContent = `Sẵn sàng (${backendLabel})`;
     if (btnBadge) btnBadge.style.display = 'none';
     if (downloadBox) downloadBox.style.display = 'none';
     $('engine-note-title').textContent = `${m.name} · Offline (${backendLabel})`;
@@ -519,23 +668,31 @@ if ($('audio-format') && $('modal-audio-format')) {
   };
 }
 
-// ----------------- SETTINGS MODAL & TABS -----------------
-let settingsReturnFocus = null;
-function openSettingsModal(tabId = 'tab-translation') {
-  settingsReturnFocus = document.activeElement;
-  if ($('settings-modal')) $('settings-modal').hidden = false;
+// ----------------- SETTINGS PAGES & TABS -----------------
+let settingsReturnFocus = null, settingsReturnView = 'studio';
+function openSettingsPage(tabId = 'tab-translation') {
+  if (workspace.dataset.page !== 'settings') {
+    settingsReturnFocus = document.activeElement;
+    settingsReturnView = workspace.dataset.page || (workspace.classList.contains('show-reader') ? 'reader' : 'studio');
+  }
+  showWorkspace('settings', 'nav-settings', 'Cài đặt');
   switchSettingsTab(tabId);
   loadHuggingFaceSettings();
   loadMergedGroups();
-  $('settings-modal').querySelector('.modal-tab.active')?.focus({preventScroll:true});
+  $('settings-heading').focus({preventScroll:true});
 }
-
-function closeSettingsModal() {
-  if ($('settings-modal')) $('settings-modal').hidden = true;
-  settingsReturnFocus?.focus({preventScroll:true});
+function closeSettingsPage() {
+  $({reader:'tab-reader',monitor:'nav-monitor'}[settingsReturnView] || 'tab-sidebar').click();
+  if (settingsReturnFocus?.getClientRects().length) settingsReturnFocus.focus({preventScroll:true});
 }
 
 function switchSettingsTab(tabId) {
+  const names = {'tab-translation':'Dịch thuật','tab-tts':'Giọng đọc','tab-cloud':'Lưu trữ','tab-backup':'Sao lưu','tab-cache':'Dọn dẹp'};
+  const nav = {'tab-tts':'nav-audio','tab-cloud':'nav-storage','tab-backup':'nav-backup'}[tabId] || 'nav-settings';
+  $('settings-heading').textContent = names[tabId] || 'Cài đặt';
+  $('settings-modal').dataset.tab = tabId;
+  $('btn-save-settings').hidden = ['tab-cloud','tab-cache'].includes(tabId);
+  if (workspace.dataset.page === 'settings') showWorkspace('settings', nav, names[tabId] || 'Cài đặt');
   document.querySelectorAll('.modal-tab').forEach(t => {
     t.classList.toggle('active', t.dataset.tab === tabId);
     t.setAttribute('aria-selected', String(t.dataset.tab === tabId));
@@ -545,7 +702,7 @@ function switchSettingsTab(tabId) {
     p.classList.remove('active');
     p.style.display = 'none';
   });
-  document.querySelector('#settings-modal .modal-body').scrollTop = 0;
+  $('settings-modal').scrollTop = 0;
   const activePane = $(`pane-${tabId}`);
   if (activePane) {
     activePane.classList.add('active');
@@ -553,21 +710,15 @@ function switchSettingsTab(tabId) {
   }
 }
 
-if ($('btn-open-settings')) $('btn-open-settings').onclick = () => openSettingsModal('tab-translation');
+if ($('btn-open-settings')) $('btn-open-settings').onclick = () => openSettingsPage('tab-translation');
 if ($('link-open-audio-settings')) {
   $('link-open-audio-settings').onclick = (e) => {
     e.preventDefault();
-    openSettingsModal('tab-tts');
+    openSettingsPage('tab-tts');
   };
 }
-if ($('btn-close-settings')) $('btn-close-settings').onclick = closeSettingsModal;
-if ($('btn-cancel-settings')) $('btn-cancel-settings').onclick = closeSettingsModal;
-if ($('settings-modal')) {
-  $('settings-modal').onclick = (e) => {
-    if (e.target === $('settings-modal')) closeSettingsModal();
-  };
-}
-
+if ($('btn-close-settings')) $('btn-close-settings').onclick = closeSettingsPage;
+if ($('btn-cancel-settings')) $('btn-cancel-settings').onclick = closeSettingsPage;
 document.querySelectorAll('.modal-tab').forEach(tab => {
   tab.onclick = () => switchSettingsTab(tab.dataset.tab);
   tab.onkeydown = event => {
@@ -697,8 +848,7 @@ if ($('btn-save-settings')) {
   $('btn-save-settings').onclick = () => safe(async () => {
     await api('/api/checkpoints/draft', buildTranslatePayload());
     await api('/api/settings/audio', buildAudioPayload());
-    closeSettingsModal();
-    notice('✓ Đã lưu cài đặt nâng cao.');
+    notice('Đã lưu cài đặt.');
   });
 }
 
@@ -707,7 +857,7 @@ function setPurgeStatus(msg, isError = false) {
   const el = $('purge-status-msg');
   if (el) {
     el.textContent = msg;
-    el.style.color = isError ? 'var(--red, #f87171)' : 'var(--green, #4ade80)';
+    el.style.color = isError ? 'var(--red, #f87171)' : 'var(--accent, #f2f3f5)';
   }
 }
 
@@ -826,7 +976,7 @@ async function loadMergedGroups() {
           const msg = err.message || String(err);
           if (msg.includes('HF_TOKEN') || msg.includes('401')) {
             notice('Hãy cấu hình HF_TOKEN có quyền ghi phía máy chủ.');
-            openSettingsModal('tab-cloud');
+            openSettingsPage('tab-cloud');
           } else {
             notice(`Lỗi Hugging Face: ${msg}`);
           }
@@ -875,6 +1025,7 @@ async function purgeEmptyChapters() {
   if (chapters.length) {
     await selectChapter(chapters[0].id);
   } else {
+    chapterRequest++;
     selected = null;
     $('reader-empty').hidden = false;
     $('reading-panes').hidden = true;
@@ -935,7 +1086,7 @@ function updateTranslationSummary() {
 }
 $('normalize-mode').onchange=()=>setNormalizeMode($('normalize-mode').value);
 $('opt-t2s').onchange=()=>setNormalizeMode($('opt-t2s').checked?lastEnabledNormalizeMode:'none');
-$('btn-translation-settings').onclick=()=>openSettingsModal('tab-translation');
+$('btn-translation-settings').onclick=()=>openSettingsPage('tab-translation');
 
 // ----------------- GLOSSARY FILE IMPORT -----------------
 $('btn-import-glossary').onclick = () => $('glossary-file').click();
@@ -974,13 +1125,15 @@ function renderProgress(progress) {
   $('progress-text').textContent = p.scope ? `${p.done} / ${p.total} chương (${p.scope})` : `${p.done} / ${p.total} chương`;
   $('percent').textContent = percent + '%';
   $('progress').value = percent;
+  $('progress').style.setProperty('--progress', percent + '%');
+  recordActivity(p.message || (p.active ? titles[p.status] : ''), p.status === 'error');
 
   $('start').disabled = p.active || !state.book || busy;
   $('pause').disabled = !p.active || p.status === 'stopping';
   $('stop').disabled = !p.active || p.status === 'stopping';
   $('pause').textContent = p.status === 'paused' ? '▷ Tiếp tục' : 'Ⅱ Tạm dừng';
 
-  const inputs = ['engine', 'glossary', 'batch', 'reset', 'load-path', 'file', 'opt-audio-pipeline', 'audio-workers', 'audio-queue-size', 'cloud-checkpoint-auto', 'checkpoint-include-audio', 'opt-honorific', 'opt-pronoun', 'opt-t2s', 'beam-size', 'normalize-mode', 'btn-delete-book', 'btn-save-book-title', 'book-output-title', 'btn-trans-range', 'btn-auto-group-audio', 'range-start', 'range-end', 'trans-range-start', 'trans-range-end', 'toc-group-size', 'btn-reset-current', 'btn-delete-current', 'btn-download-model', 'btn-download-model-action'];
+  const inputs = ['engine', 'glossary', 'batch', 'reset', 'load-path', 'file', 'opt-audio-pipeline', 'audio-workers', 'audio-queue-size', 'cloud-checkpoint-auto', 'checkpoint-include-audio', 'opt-honorific', 'opt-pronoun', 'opt-t2s', 'beam-size', 'normalize-mode', 'btn-delete-book', 'btn-save-book-title', 'book-output-title', 'btn-trans-range', 'btn-auto-group-audio', 'btn-run-merge', 'modal-group-size', 'range-start', 'range-end', 'trans-range-start', 'trans-range-end', 'toc-group-size', 'btn-reset-current', 'btn-delete-current', 'btn-download-model', 'btn-download-model-action'];
   inputs.forEach(id => {
     const el = $(id);
     if (el) el.disabled = p.active || busy || isDownloadingModel;
@@ -990,6 +1143,7 @@ function renderProgress(progress) {
   if ($('backend-ct2-label')) $('backend-ct2-label').style.pointerEvents = (p.active || busy) ? 'none' : 'auto';
   if ($('backend-torch-label')) $('backend-torch-label').style.pointerEvents = (p.active || busy) ? 'none' : 'auto';
 
+  document.querySelectorAll('input[name=backend],input[name=chunk_mode]').forEach(input => input.disabled = p.active || busy || isDownloadingModel);
   $('btn-save-settings').disabled = p.active || busy;
   $('btn-open-export').disabled = !state.book;
   $('save-note').textContent = p.message || 'Tiến độ được lưu tự động trên máy của bạn.';
@@ -999,6 +1153,7 @@ function renderProgress(progress) {
 }
 
 function updateBook(book) {
+  $('sidebar').classList.toggle('has-book', !!book);
   state.book = book;
   const outputFolder = book ? (book.output_folder || book.title) + '/' : '';
   if ($('output-text-path')) $('output-text-path').textContent = 'output_text/' + outputFolder;
@@ -1008,12 +1163,17 @@ function updateBook(book) {
     $('book-output-title').value = book?.title || '';
   }
   $('file-info').hidden = !book;
-  $('book-name').textContent = book ? book.title : 'Chưa nạp truyện';
+  $('dropzone').querySelector('strong').textContent = book ? 'Thay tệp truyện' : 'Nạp tệp truyện';
+  $('book-name').textContent = book ? book.title : 'Tạo bản dịch mới';
+  $('reader-book-name').textContent = book ? book.title : 'Chưa nạp truyện';
+  document.querySelector('.source-label .section-kicker').textContent = book ? 'Bản thảo nguồn' : 'NovelReader';
   if (book) {
     $('filename').textContent = book.filename;
+    $('book-format').textContent = book.filename?.split('.').pop().toUpperCase() || 'TXT';
     $('encoding').textContent = book.encoding + ' · Đã lưu trên máy';
   } else {
     $('chapter-single-ops').hidden = true;
+    $('book-format').textContent = 'TXT / EPUB';
   }
 }
 
@@ -1027,6 +1187,7 @@ function renderToc() {
   $('toc').replaceChildren();
   $('chapter-count').textContent = chapters.length + ' chương';
   $('toc-count').textContent = chapters.length;
+  $('trans-range-end').placeholder = String(chapters.length || 'Cuối');
 
   for (const c of filtered.slice(0, visible)) {
     const b = document.createElement('button');
@@ -1058,29 +1219,23 @@ function renderToc() {
 
     const icon = document.createElement('span');
     icon.className = 'state';
-    icon.textContent = icons[c.status] || '◷';
+    icon.textContent = {pending:'Chưa dịch',translating:'Đang dịch',done:'Đã dịch',error:'Lỗi dịch'}[c.status] || 'Chưa dịch';
 
-    if (c.audio_status === 'done') {
-      const audioBadge = document.createElement('span');
-      audioBadge.className = 'toc-audio-badge';
-      audioBadge.textContent = '🎧';
-      audioBadge.title = 'Đã có audio MP3';
-      b.append(n, name, audioBadge, icon);
-    } else if (['queued', 'generating'].includes(c.audio_status)) {
-      const audioBadge = document.createElement('span');
-      audioBadge.className = 'toc-audio-badge generating';
-      audioBadge.textContent = '🎙';
-      audioBadge.title = 'Đang tạo audio...';
-      b.append(n, name, audioBadge, icon);
-    } else {
-      b.append(n, name, icon);
-    }
+    const audioStatus = document.createElement('span');
+    audioStatus.className = 'toc-audio-status';
+    audioStatus.dataset.status = c.audio_status || 'pending';
+    audioStatus.textContent = {done:'Sẵn sàng',queued:'Đang chờ',generating:'Đang tạo',error:'Lỗi audio'}[c.audio_status] || '—';
+    audioStatus.hidden = audioStatus.textContent === '—';
+    b.append(n, name, icon, audioStatus);
     b.onclick = (e) => {
       if (isSelectMode && e.target.classList.contains('toc-checkbox')) return;
-      safe(() => selectChapter(c.id));
-      if (window.innerWidth <= 900) {
-        $('tab-reader').click();
-      }
+      safe(async () => {
+        await selectChapter(c.id);
+        if (selected === c.id && workspace.classList.contains('show-reader')) {
+          $('chapter-title').focus({preventScroll:true});
+        }
+      });
+      $('tab-reader').click();
     };
     $('toc').append(b);
   }
@@ -1096,7 +1251,7 @@ function renderToc() {
   if (!filtered.length) {
     const p = document.createElement('p');
     p.className = 'toc-empty';
-    p.textContent = chapters.length ? 'Không tìm thấy chương phù hợp.' : 'Chương truyện sẽ xuất hiện tại đây.';
+    p.textContent = chapters.length ? 'Không tìm thấy chương phù hợp.' : 'Nạp bản thảo TXT hoặc EPUB để quản lý, dịch và nghe từng chương tại đây.';
     $('toc').append(p);
   }
 
@@ -1121,13 +1276,21 @@ function equalizeRows() {
 }
 
 async function selectChapter(id, refresh = false) {
+  if (refresh && pendingChapter !== null) return;
+  if (!refresh) pendingChapter = id;
+  const request = ++chapterRequest;
   let chapter;
   try {
     chapter = await api('/api/chapters/' + id);
   } catch (err) {
-    console.warn(`Không thể tải chương ${id}:`, err);
+    if (request === chapterRequest) {
+      pendingChapter = null;
+      notice(`Không thể tải chương: ${err.message}`, true);
+    }
     return;
   }
+  if (request !== chapterRequest) return;
+  pendingChapter = null;
   if (!chapter) return;
   if (refresh && selected !== id) return;
   selected = id;
@@ -1136,7 +1299,7 @@ async function selectChapter(id, refresh = false) {
   $('reading-panes').hidden = false;
   $('chapter-single-ops').hidden = false;
 
-  $('chapter-index').textContent = `CHƯƠNG ${chapter.position.toString().padStart(2, '0')} / ${chapters.length}`;
+  $('chapter-index').textContent = `Chương ${chapter.position.toString().padStart(2, '0')} / ${chapters.length}`;
   $('chapter-title').textContent = chapter.translated_title || chapter.title;
   const sub = $('chapter-subtitle');
   if (sub) {
@@ -1238,6 +1401,8 @@ async function refreshAll() {
   renderProgress(s.progress);
   renderToc();
   if (!s.book || !chapters.length) {
+    chapterRequest++;
+    pendingChapter = null;
     selected = null;
     $('reader-empty').hidden = false;
     $('reading-panes').hidden = true;
@@ -1547,14 +1712,14 @@ function renderMergeResult(groups, groupSize) {
   }
 
   const groupListHtml = groups.map(g => `
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid rgba(74,222,128,0.15);">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid rgba(220,220,220,0.15);">
       <div>
-        <strong style="color:var(--green,#4ade80);">${g.title || g.filename}</strong>
+        <strong style="color:var(--accent,#f2f3f5);">${g.title || g.filename}</strong>
         <span style="color:#aaa; font-size:10px; margin-left:6px;">(${g.chapter_count} chương · ${g.size_mb} MB)</span>
       </div>
       <div style="display:flex; gap:6px;">
-        <a href="${g.url}" download="${g.filename}" style="font-size:11px; color:#4ade80; text-decoration:none;">⬇ Tải</a>
-        <button type="button" class="btn-play-group-item" data-url="${g.url}" data-name="${g.filename}" style="padding:2px 6px; font-size:10px; background:#1e2d23; border:1px solid #2d4534; border-radius:3px; color:#a7f3d0; cursor:pointer;">🎧 Nghe</button>
+        <a href="${g.url}" download="${g.filename}" style="font-size:11px; color:#f2f3f5; text-decoration:none;">⬇ Tải</a>
+        <button type="button" class="btn-play-group-item" data-url="${g.url}" data-name="${g.filename}" style="padding:2px 6px; font-size:10px; background:#343b43; border:1px solid #343b43; border-radius:3px; color:#f2f3f5; cursor:pointer;">🎧 Nghe</button>
       </div>
     </div>
   `).join('');
@@ -1563,7 +1728,7 @@ function renderMergeResult(groups, groupSize) {
   resultBox.className = 'merge-result-card';
   resultBox.innerHTML = `
     <div class="merge-result-msg">
-      <strong style="color:var(--green,#4ade80);">✓ Đã tự động gộp thành ${groups.length} file audio lớn (nhóm ${groupSize} chương):</strong>
+      <strong style="color:var(--accent,#f2f3f5);">✓ Đã tự động gộp thành ${groups.length} file audio lớn (nhóm ${groupSize} chương):</strong>
       <div style="margin-top:6px; max-height:160px; overflow-y:auto;">${groupListHtml}</div>
     </div>
   `;
@@ -1728,7 +1893,7 @@ $('next').onclick = () => safe(() => {
 
 // Keyboard navigation
 window.addEventListener('keydown', e => {
-  if (!$('settings-modal').hidden || document.querySelector('dialog[open]')) return;
+  if (document.body.classList.contains('nav-open') || !$('settings-modal').hidden || document.querySelector('dialog[open]')) return;
   if (['input', 'textarea', 'select'].includes(document.activeElement.tagName.toLowerCase())) return;
   if (e.key === '[' || e.key === 'ArrowLeft') {
     if (!$('prev').disabled) $('prev').click();
@@ -1755,6 +1920,7 @@ document.fonts.ready.then(equalizeRows);
 let updating = false, dirty = false;
 async function handleEvent(event) {
   if (event.progress) renderProgress(event.progress);
+  if (event.message || event.error) recordActivity(event.message || event.error, String(event.type).includes('error'));
   if (event.type === 'error') notice(event.message || 'Chương dịch lỗi.', true);
   if (event.type === 'cloud_checkpoint_done') { notice('Đã lưu checkpoint Hugging Face: ' + event.url); loadHuggingFaceSettings(); }
   if (event.type === 'cloud_checkpoint_error') notice('Lưu cloud thất bại, tiến độ cục bộ vẫn còn: ' + event.error, true);
@@ -1819,6 +1985,7 @@ function connect() {
 }
 
 // ----------------- INITIALIZATION -----------------
+$('translation-controls').open = true;
 safe(async () => {
   setFontSize(currentFontSize);
   setViewMode(currentViewMode);
@@ -1892,6 +2059,7 @@ safe(async () => {
   }
   if (!s.book) await applyAudioConfig((await api('/api/settings/audio')).settings);
   setNormalizeMode($('normalize-mode').value);
+  updateControlSummary();
   connect();
 });
 
@@ -1921,7 +2089,7 @@ function updateExportReview() {
  $('export-progress-summary').textContent=`${done}/${total} chương đã dịch · ${count} tệp audio`;
  $('export-result-summary').textContent=kind==='audio'?(dest==='huggingface'?'Từng tệp audio gốc, không ZIP':'Một file ZIP chứa audio đã có'):(kind==='epub'?'Một file EPUB':'Một file TXT UTF-8');
  $('export-format-hint').textContent=kind==='audio'?'Không tự tạo audio mới, không đổi giọng/bitrate khi xuất. Các tệp audio đã gộp (nếu có) cũng được xuất.': 'Xuất bản dịch hiện có theo thứ tự chương; chương chưa dịch được đánh dấu. Không xuất riêng dải chương ở bước này.';
- const problem=!state.book?'Nạp truyện trước khi xuất.':!exportOptions?'Chưa kiểm tra được dữ liệu. Đóng và mở lại bảng xuất.':kind==='audio'&&exportOptions.busy?'Dừng job trước khi xuất audio để tránh tệp thay đổi.':kind==='audio'&&!count?'Chưa có audio. Tạo audio trước khi xuất.':huggingfaceExportBusy?'Đang xuất dữ liệu, vui lòng đợi.':'';
+ const problem=!state.book?'Nạp truyện trước khi xuất.':!exportOptions?'Đang kiểm tra dữ liệu…':kind==='audio'&&exportOptions.busy?'Dừng job trước khi xuất audio để tránh tệp thay đổi.':kind==='audio'&&!count?'Chưa có audio. Tạo audio trước khi xuất.':huggingfaceExportBusy?'Đang xuất dữ liệu, vui lòng đợi.':'';
  $('export-inline-status').textContent=problem || (dest==='huggingface'?'Lưu vào uri410/novelreader-storage. Giữ runtime mở trong lúc tải.':'Bản gốc vẫn được giữ trên máy chạy tool.');
  $('btn-confirm-export').disabled=!!problem;
 }
@@ -1939,12 +2107,12 @@ $('btn-confirm-export').onclick=()=>{
  const kind=document.querySelector('input[name="export-kind"]:checked').value;
  $('export-dialog').close();$(`export-${kind}`).click();
 };
-$('export-storage-settings').onclick=()=>{$('export-dialog').close();openSettingsModal('tab-cloud');};
-$('settings-modal').addEventListener('keydown',event=>{
- if(event.key==='Escape'){event.preventDefault();closeSettingsModal();return;}
- if(event.key!=='Tab')return;
- const visible=[...$('settings-modal').querySelectorAll('button,input,select,summary,a[href],textarea')].filter(e=>!e.disabled&&e.getClientRects().length&&e.tabIndex!==-1);
- const first=visible[0],last=visible[visible.length-1];
- if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
- else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
-});
+$('export-storage-settings').onclick=()=>{$('export-dialog').close();openSettingsPage('tab-cloud');};
+
+function updateControlSummary() {
+  const engine = $('engine').selectedOptions[0]?.textContent.split(' (')[0] || 'Chọn model';
+  $('control-summary').textContent = engine + ' · ' + ($('opt-audio').checked ? 'Audio tự động' : 'Chỉ văn bản');
+}
+$('engine').addEventListener('change', updateControlSummary);
+$('opt-audio').addEventListener('change', updateControlSummary);
+updateControlSummary();
