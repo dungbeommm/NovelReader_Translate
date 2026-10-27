@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 import os
+import platform
 from translation.engines import list_available_models
 from translation.hardware import detect_hardware_profile
 from web import runtime
@@ -33,6 +34,25 @@ def download_model(payload: ModelDownloadInput):
         raise HTTPException(500, f"Lỗi khi tải model {payload.model_id}: {exc}")
 
 
+def cpu_name():
+    if os.name == 'nt':
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DESCRIPTION\System\CentralProcessor\0') as key:
+                return winreg.QueryValueEx(key, 'ProcessorNameString')[0].strip()
+        except OSError:
+            pass
+    try:
+        with open('/proc/cpuinfo', encoding='utf-8') as cpuinfo:
+            for line in cpuinfo:
+                key, sep, value = line.partition(':')
+                if sep and key.strip().lower() in ('model name', 'hardware') and value.strip():
+                    return value.strip()
+    except OSError:
+        pass
+    return platform.processor().strip() or 'CPU'
+
+
 @router.get('/api/hardware')
 def hardware():
     profile = detect_hardware_profile()
@@ -58,6 +78,7 @@ def hardware():
 
     if profile:
         return {
+            'cpu_name': cpu_name(),
             'cpu_count': profile.cpu_logical,
             'intra_threads': profile.ct2_threads,
             'is_gpu': has_cuda,
@@ -69,6 +90,7 @@ def hardware():
             'summary': profile.summary,
         }
     return {
+        'cpu_name': cpu_name(),
         'cpu_count': os.cpu_count() or 2,
         'intra_threads': max(1, min(8, (os.cpu_count() or 2) - 1)),
         'is_gpu': has_cuda,

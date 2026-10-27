@@ -1,0 +1,78 @@
+/* Flaticon Uicons Bold Rounded 3.0.0. https://www.flaticon.com/uicons
+   Attribution: Uicons by Flaticon. https://www.flaticon.com/uicons/get-started */
+@font-face {
+  font-family: 'uicons-bold-rounded';
+  src: url('./uicons-bold-rounded.woff2') format('woff2');
+  font-display: block;
+}
+.fi {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-style: normal;
+  line-height: 1;
+}
+.fi::before {
+  font-family: 'uicons-bold-rounded';
+  font-style: normal;
+  font-weight: normal;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.fi-br-book-alt::before {content: "\e21e";}
+.fi-br-list::before {content: "\eb5c";}
+.fi-br-cloud::before {content: "\e48f";}
+.fi-br-upload::before {content: "\f39a";}
+.fi-br-trash::before {content: "\f31c";}
+.fi-br-angle-small-down::before {content: "\e090";}
+.fi-br-angle-small-right::before {content: "\e092";}
+.fi-br-angle-left::before {content: "\e08e";}
+.fi-br-arrow-left::before {content: "\e0e6";}
+.fi-br-arrow-right::before {content: "\e0ec";}
+.fi-br-chart-histogram::before {content: "\e3b5";}
+.fi-br-check::before {content: "\e3d7";}
+.fi-br-cloud-download-alt::before {content: "\e497";}
+.fi-br-copy::before {content: "\e53c";}
+.fi-br-cross::before {content: "\e576";}
+.fi-br-download::before {content: "\e67e";}
+.fi-br-exclamation::before {content: "\e717";}
+.fi-br-folder::before {content: "\e837";}
+.fi-br-headphones::before {content: "\e99d";}
+.fi-br-hourglass-end::before {content: "\e9f3";}
+.fi-br-language::before {content: "\eae7";}
+.fi-br-layout-fluid::before {content: "\eb08";}
+.fi-br-menu-burger::before {content: "\ec09";}
+.fi-br-microphone::before {content: "\ec2d";}
+.fi-br-moon::before {content: "\ec7d";}
+.fi-br-pause::before {content: "\ed86";}
+.fi-br-play::before {content: "\ee6a";}
+.fi-br-rotate-right::before {content: "\efa7";}
+.fi-br-search::before {content: "\f015";}
+.fi-br-settings::before {content: "\f03d";}
+.fi-br-square::before {content: "\f158";}
+.fi-br-stop::before {content: "\f1ca";}
+.fi-br-sun::before {content: "\f1f7";}
+.fi-br-time-past::before {content: "\f2b3";}
+.fi-br-arrow-up-right::before {content: "\e108";}
+.fi-br-bolt::before {content: "\e212";}
+.fi-br-broom::before {content: "\e2be";}
+.fi-br-circle::before {content: "\e409";}
+.fi-br-folder-open::before {content: "\e84a";}
+.fi-br-info::before {content: "\ea4f";}
+.fi-br-volume::before {content: "\f44a";}
+.fi-br-document::before {content: "\e654";}
+.fi-br-disk::before {content: "\e63d";}
+.fi-br-layers::before {content: "\eb07";}
+.fi-br-user::before {content: "\f3a9";}
+.fi-br-waveform::before {content: "\f487";}
+.fi-br-tachometer::before {content: "\f235";}
+.fi-br-microchip::before {content: "\ec2b";}
+.fi-br-database::before {content: "\e5c7";}
+.fi-br-key::before {content: "\eab2";}
+.fi-br-home::before {content: "\e9d2";}
+.fi-br-apps::before {content: "\e0b3";}
+.fi-br-angle-right::before {content: "\e08f";}

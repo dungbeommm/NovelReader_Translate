@@ -1,9 +1,12 @@
 ﻿"""Browser regressions. Optional: pip install playwright; playwright install chromium."""
 import os
+import io
 import socket
 import subprocess
 import sys
 import time
+import wave
+from urllib.parse import parse_qs, urlsplit
 from pathlib import Path
 from urllib.request import urlopen
 
@@ -23,7 +26,7 @@ def browser_app(tmp_path_factory):
                NOVEL_OUTPUT_TEXT=str(root/'text'), NOVEL_OUTPUT_AUDIO=str(root/'audio'),
                HF_HUB_OFFLINE='1')
     # Never inherit a tunnel password or remote-host configuration for a local test.
-    for key in ('NOVEL_WEB_ACCESS_TOKEN', 'ALLOW_TUNNEL', 'ALLOWED_HOSTS', 'COLAB_GPU'):
+    for key in ('NOVEL_WEB_ACCESS_TOKEN', 'ALLOW_TUNNEL', 'ALLOWED_HOSTS', 'COLAB_GPU', 'HF_TOKEN'):
         env.pop(key, None)
     server = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'main:app', '--host',
                                '127.0.0.1', '--port', str(port)], cwd=ROOT, env=env,
@@ -161,11 +164,13 @@ def test_layout_settings_export_and_mobile_reader(page, width, height):
         navigate(page, 'tab-sidebar')
         assert page.locator('#sidebar').is_visible()
     page.locator('#btn-open-settings').click()
-    for tab in page.locator('.settings-nav .modal-tab').all():
-        tab.click()
-        panel = page.locator('#pane-'+tab.get_attribute('data-tab'))
-        assert panel.is_visible()
-        assert panel.evaluate('(e) => e.scrollWidth <= e.clientWidth + 1')
+    panel = page.locator('#pane-tab-translation')
+    assert panel.is_visible()
+    assert panel.evaluate('(e) => e.scrollWidth <= e.clientWidth + 1')
+    page.locator('.translation-advanced > summary').click()
+    page.locator('#btn-translation-cleanup').click()
+    assert page.locator('#pane-tab-cache').is_visible()
+    page.locator('#settings-nav-translation').click()
     page.keyboard.press('Escape')
     assert page.locator('#settings-modal').is_visible()
     page.locator('#btn-close-settings').click()
@@ -185,6 +190,12 @@ def test_layout_settings_export_and_mobile_reader(page, width, height):
         assert page.locator('#reader').bounding_box()['width'] == width - page.locator('#app-navigation').bounding_box()['width']
     assert page.locator('#source-pane .para').count() > 0
     assert page.locator('#source-pane').bounding_box()['height'] > 80
+    for selector in ('.chapter-toolbar', '.reading-panes'):
+        assert page.locator(selector).evaluate('(e) => e.scrollWidth <= e.clientWidth + 1')
+    assert page.locator('#source-heading').is_visible()
+    assert page.locator('#target-heading').is_visible()
+    assert abs(page.locator('.source-column').bounding_box()['width'] -
+               page.locator('.target-column').bounding_box()['width']) <= 1
     page.locator('#btn-open-export').click()
     assert page.locator('#export-dialog').is_visible()
     page.locator('input[name=export-kind][value=audio]').check()
@@ -236,7 +247,8 @@ def test_mobile_navigation_closes_and_restores_focus(page):
     page.locator('#nav-audio').click()
     assert page.locator('#settings-modal').is_visible()
     assert page.locator('#app-navigation').is_hidden()
-    page.locator('#btn-close-settings').click()
+    assert page.locator('#btn-close-settings').is_hidden()
+    navigate(page, 'tab-sidebar')
     assert page.evaluate("document.activeElement.id === 'mobile-nav-toggle'")
 
 
@@ -256,6 +268,9 @@ def test_tools_are_full_pages_and_dock_is_removed(page,width):
         assert page.locator('#settings-modal').bounding_box()['width'] == page.locator('.workspace').bounding_box()['width']
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         assert page.locator('#'+nav).get_attribute('aria-pressed') == 'true'
+        if nav == 'nav-audio':
+            for selector in ('#btn-close-settings', '.translation-tabs', '.glossary-box', '.translation-credits'):
+                assert page.locator(selector).is_hidden()
     navigate(page,'nav-monitor')
     assert page.locator('#monitor-page').is_visible()
     assert page.locator('#settings-modal').is_hidden()
@@ -269,10 +284,20 @@ def test_tools_are_full_pages_and_dock_is_removed(page,width):
 
 def test_saving_settings_keeps_tool_page_open(page):
     navigate(page,'nav-audio')
+    page.locator('#modal-audio-format').select_option('wav')
+    assert page.locator('#modal-audio-bitrate').is_disabled()
+    page.locator('#modal-audio-format').select_option('mp3')
+    assert page.locator('#modal-audio-bitrate').is_enabled()
+    page.locator('#modal-audio-bitrate').select_option('128k')
+    page.locator('#audio-speed').select_option('1.15')
     page.locator('#btn-save-settings').click()
     page.wait_for_function("document.querySelector('#notice-text').textContent === 'Đã lưu cài đặt.'")
     assert page.locator('#settings-modal').is_visible()
     assert page.locator('#pane-tab-tts').is_visible()
+    payload = page.evaluate('buildAudioPayload()')
+    assert payload['audio_format'] == 'mp3'
+    assert payload['audio_bitrate'] == '128k'
+    assert payload['audio_speed'] == 1.15
 
 
 def test_translation_choices_are_readable_and_keyboard_accessible(page):
@@ -317,12 +342,15 @@ def test_monochrome_studio_has_three_work_areas_and_reachable_advanced_controls(
     assert page.locator('#engine').is_visible()
     assert page.locator('#glossary').is_visible()
     assert page.locator('#opt-audio').is_visible()
-    page.locator('#translation-advanced > summary').click()
+    assert page.locator('#translation-advanced').count() == 0
+    assert page.locator('#audio-controls').count() == 0
+    navigate(page, 'nav-translation')
     assert page.locator('#batch').is_visible()
-    assert page.locator('#btn-translation-settings').is_visible()
-    page.locator('#audio-controls > summary').click()
+    assert page.locator('#pane-tab-translation #glossary').count() == 0
+    navigate(page, 'nav-audio')
     for target in ('opt-audio-pipeline','audio-workers','audio-queue-size','btn-auto-group-audio'):
         assert page.locator('#'+target).is_visible()
+    navigate(page, 'tab-sidebar')
     page.locator('#book-title-panel > summary').click()
     assert page.locator('#output-text-path').is_visible()
     assert page.locator('#encoding').is_visible()
@@ -335,3 +363,194 @@ def test_activity_log_uses_actual_messages_and_is_bounded(page):
     page.evaluate("for(let i=0;i<110;i++)recordActivity('Cập nhật '+i)")
     assert page.locator('#activity-log li').count() == 100
     assert page.locator('#activity-log li').last.inner_text().endswith('Cập nhật 109')
+
+
+@pytest.mark.parametrize('width', [1680, 768, 390])
+def test_source_card_keeps_proportions_while_loading(page, width):
+    page.on('dialog', lambda dialog: dialog.accept())
+    page.set_viewport_size({'width': width, 'height': 1000})
+    page.evaluate('updateBook(null)')
+    selectors = ['#project-source', '.book-cover-wrap', '.source-main-col',
+                 '.source-side-col', '#dropzone']
+    before = {selector: page.locator(selector).bounding_box() for selector in selectors}
+    held_uploads = []
+    page.route('**/api/upload', lambda route: held_uploads.append(route))
+    page.locator('#file').set_input_files({
+        'name': 'stable-layout.txt', 'mimeType': 'text/plain',
+        'buffer': '第一章 开始\n你好。'.encode(),
+    })
+    page.wait_for_function('busy === true')
+
+    def assert_proportions():
+        for selector, original in before.items():
+            current = page.locator(selector).bounding_box()
+            assert abs(current['width'] - original['width']) <= 1, selector
+        card = page.locator('#project-source')
+        assert card.evaluate('(e) => e.scrollWidth <= e.clientWidth + 1')
+        assert abs(card.bounding_box()['x'] - before['#project-source']['x']) <= 1
+
+    assert_proportions()
+    assert len(held_uploads) == 1
+    held_uploads[0].continue_()
+    page.wait_for_function("busy === false && document.querySelector('#filename').textContent === 'stable-layout.txt'")
+    navigate(page, 'tab-sidebar')
+    assert_proportions()
+
+
+def test_reader_audio_transport_and_view_modes(page):
+    audio = io.BytesIO()
+    with wave.open(audio, 'wb') as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(8000)
+        wav.writeframes(b'\0\0' * 8000 * 3)
+    def serve_audio(route):
+        data = audio.getvalue()
+        start = int(route.request.headers.get('range', 'bytes=0-').split('=')[1].split('-')[0])
+        route.fulfill(status=206, content_type='audio/wav', body=data[start:], headers={
+            'Accept-Ranges': 'bytes',
+            'Content-Range': f'bytes {start}-{len(data)-1}/{len(data)}',
+        })
+    page.route('**/api/chapters/*/audio', serve_audio)
+    page.evaluate('''async () => {''' + CHAPTERS + '''
+      chapters[0].audio_status = 'done';
+      api = async path => chapters.find(c => c.id === Number(path.split('/').pop()));
+      await selectChapter(1);
+    }''')
+    navigate(page, 'tab-reader')
+    page.wait_for_function("document.querySelector('#audio-player').duration === 3")
+    assert page.locator('#reader-audio-controls').is_visible()
+    assert page.locator('#reader-audio-time').inner_text() == '0:00 / 0:03'
+    page.locator('#reader-audio-play').click()
+    page.wait_for_function("document.querySelector('#audio-player').paused === false")
+    page.locator('#reader-audio-play').click()
+    assert page.locator('#audio-player').evaluate('(e) => e.paused')
+    page.locator('#reader-audio-volume').fill('0.4')
+    assert page.locator('#audio-player').evaluate('(e) => e.volume') == 0.4
+    page.locator('#reader-audio-speed').select_option('1.5')
+    assert page.locator('#audio-player').evaluate('(e) => e.playbackRate') == 1.5
+    page.locator('#reader-audio-seek').fill('50')
+    assert abs(page.locator('#audio-player').evaluate('(e) => e.currentTime') - 1.5) < .1
+    page.locator('.view-btn[data-mode=target]').click()
+    assert page.locator('.source-column').is_hidden()
+    assert page.locator('.target-column').is_visible()
+    page.locator('.view-btn[data-mode=parallel]').click()
+    assert page.locator('.source-column').is_visible()
+    page.evaluate('selectChapter(2)')
+    assert page.locator('#reader-audio-controls').is_hidden()
+    assert page.locator('#audio-player').get_attribute('src') is None
+
+
+def test_translation_settings_restore_and_save_without_removed_sections(page):
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.evaluate("updateBook({title:'Truyện kiểm thử',filename:'sample.txt',encoding:'UTF-8'})")
+    page.locator('#glossary').fill('姜尘 -> Khương Trần')
+    model = page.locator('#engine').input_value()
+    navigate(page, 'nav-translation')
+    assert page.locator('#nav-translation .nav-label').inner_text() == 'Dịch thuật'
+    assert page.locator('#engine').count() == 1
+    for selector in ('.translation-tabs', '.glossary-box', '.translation-credits'):
+        assert page.locator('#pane-tab-translation ' + selector).count() == 0
+    page.locator('#beam-size').fill('4')
+    page.locator('input[name=chunk_mode][value=paragraph]').check()
+    page.locator('#opt-honorific').uncheck()
+    page.locator('#batch').fill('64')
+    page.locator('#btn-reset-translation').click()
+    assert page.locator('#beam-size').input_value() == '2'
+    assert page.locator('input[name=chunk_mode][value=sentence]').is_checked()
+    assert page.locator('#opt-honorific').is_checked()
+    assert page.locator('#glossary').input_value() == '姜尘 -> Khương Trần'
+    assert page.locator('#engine').input_value() == model
+    page.locator('#btn-save-settings').click()
+    page.wait_for_function("document.querySelector('#notice-text').textContent === 'Đã lưu cài đặt.'")
+    saved = page.request.get(page.url.rstrip('/') + '/api/checkpoints/draft').json()['config']
+    assert saved['glossary'] == '姜尘 -> Khương Trần'
+    assert saved['beam_size'] == 2
+    assert not errors
+
+
+@pytest.fixture
+def storage_browser_page(page):
+    entries = {
+        '': [{'name': 'audio', 'path': 'audio', 'directory': True, 'size': None, 'updated_at': None}] +
+            [{'name': f'book-{i:02}.txt', 'path': f'book-{i:02}.txt', 'directory': False,
+              'size': 1024, 'updated_at': '2026-10-26T12:00:00+00:00'} for i in range(24)],
+        'audio': [{'name': 'chapter.mp3', 'path': 'audio/chapter.mp3', 'directory': False,
+                   'size': 4096, 'updated_at': None}],
+    }
+    operations = []
+    current_path = ''
+    page.route('**/api/storage/status', lambda route: route.fulfill(json={
+        'has_key': True, 'repo_id': 'uri410/novelreader-storage', 'default_destination': 'huggingface'}))
+    def list_files(route):
+        nonlocal current_path
+        current_path = parse_qs(urlsplit(route.request.url).query).get('path', [''])[0]
+        rows = entries.get(current_path, [])
+        route.fulfill(json={'path': current_path, 'entries': rows, 'truncated': False,
+                            'file_bytes': sum(row['size'] or 0 for row in rows)})
+    page.route('**/api/storage/files?*', list_files)
+    page.route('**/api/storage/test', lambda route: route.fulfill(json={
+        'ok': True, 'message': 'Đã kết nối kho.', 'username': 'reader', 'private': True}))
+    def create_folder(route):
+        payload = route.request.post_data_json
+        operations.append(('folder', payload))
+        path = (payload['path'] + '/' if payload['path'] else '') + payload['name']
+        entries.setdefault(payload['path'], []).append({'name': payload['name'], 'path': path,
+            'directory': True, 'size': None, 'updated_at': None})
+        entries[path] = []
+        route.fulfill(json={'ok': True, 'path': path})
+    page.route('**/api/storage/folders', create_folder)
+    def upload(route):
+        operations.append(('upload', route.request.post_data_buffer))
+        path = (current_path + '/' if current_path else '') + 'upload.txt'
+        entries[current_path].append({'name': 'upload.txt', 'path': path, 'directory': False,
+                                      'size': 4, 'updated_at': None})
+        route.fulfill(json={'ok': True, 'path': path})
+    page.route('**/api/storage/upload', upload)
+    page.route('**/api/storage/download?*', lambda route: route.fulfill(body=b'audio',
+        headers={'Content-Disposition': 'attachment; filename="chapter.mp3"'}, content_type='audio/mpeg'))
+    navigate(page, 'nav-storage')
+    page.wait_for_function('storageState.loaded === true')
+    return page, operations
+
+
+def test_storage_browser_navigation_upload_folder_and_download(storage_browser_page):
+    page, operations = storage_browser_page
+    assert page.locator('#pane-tab-cloud .fi').evaluate_all("items => items.every(e => !['none', 'normal', '\"\"'].includes(getComputedStyle(e, '::before').content))")
+    assert page.locator('#storage-file-rows tr').count() == 20
+    page.locator('#storage-page-next').click()
+    assert page.locator('#storage-file-rows tr').count() == 5
+    page.locator('#storage-search').fill('book-23')
+    assert page.locator('#storage-file-rows tr').count() == 1
+    page.locator('#storage-search').fill('')
+    page.locator('#storage-file-rows').get_by_role('button', name='audio', exact=True).click()
+    page.wait_for_function("storageState.path === 'audio' && storageState.loaded")
+    assert page.locator('#storage-file-rows tr').count() == 1
+    assert page.locator('#storage-byte-total').inner_text() == '4 KB'
+    page.locator('#storage-file-rows input[type=checkbox]').check()
+    with page.expect_download() as download:
+        page.locator('#storage-quick-download').click()
+    assert download.value.suggested_filename == 'chapter.mp3'
+    page.locator('#storage-view-grid').click()
+    assert page.locator('#storage-file-grid .storage-file-tile').count() == 1
+    assert page.locator('#storage-list-scroll').is_hidden()
+    page.locator('#storage-create-folder').click()
+    page.locator('#storage-folder-name').fill('new')
+    page.locator('#storage-folder-submit').click()
+    page.wait_for_function("storageState.entries.some(e => e.path === 'audio/new')")
+    assert operations[0] == ('folder', {'path': 'audio', 'name': 'new'})
+    page.locator('#storage-file-input').set_input_files({
+        'name': 'upload.txt', 'mimeType': 'text/plain', 'buffer': b'data'})
+    page.wait_for_function("storageState.entries.some(e => e.path === 'audio/upload.txt')")
+    assert operations[-1][0] == 'upload'
+    assert b'filename="upload.txt"' in operations[-1][1]
+    page.locator('#btn-test-huggingface').click()
+    page.wait_for_function("document.querySelector('#storage-account').textContent === 'reader'")
+    assert page.locator('#storage-privacy').inner_text() == 'Riêng tư'
+    page.route('**/api/storage/files?*', lambda route: route.fulfill(status=502,
+        json={'detail': 'Không truy cập được kho.'}))
+    page.locator('#storage-refresh').click()
+    page.wait_for_function('storageState.loaded === false && storageState.loading === false')
+    assert page.locator('#storage-feedback').inner_text() == 'Không truy cập được kho.'
+    assert page.locator('#storage-upload').is_disabled()

@@ -3,11 +3,12 @@ import json
 import shutil
 import tempfile
 import uuid
+from itertools import islice
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, unquote, urlsplit
 
-from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub import HfApi, RepoFolder, hf_hub_download
 from storage.cloud_settings import load_key
 from storage.files import export_txt, export_epub
 from storage.store import _safe_filename
@@ -26,9 +27,73 @@ def client():
 
 
 def check_connection():
-    info = client().repo_info(repo_id=REPO_ID, repo_type=REPO_TYPE)
+    api = client()
+    info = api.repo_info(repo_id=REPO_ID, repo_type=REPO_TYPE)
+    account = api.whoami()
     return {'ok': True, 'repo_id': REPO_ID, 'private': info.private,
+            'username': account.get('name') if isinstance(account, dict) else None,
             'message': f'Đã kết nối {REPO_ID}.'}
+
+
+def repository_path(value, *, allow_root=True):
+    if (not isinstance(value, str) or len(value) > 1024 or '\\' in value or ':' in value
+            or any(ord(c) < 32 for c in value) or value != value.strip()
+            or (not value and not allow_root)):
+        raise ValueError('Đường dẫn kho không hợp lệ.')
+    if value and (PurePosixPath(value).is_absolute() or
+                  any(part in {'', '.', '..'} for part in value.split('/'))):
+        raise ValueError('Đường dẫn kho không hợp lệ.')
+    return value
+
+
+def list_directory(path=''):
+    path = repository_path(path)
+    entries = list(islice(client().list_repo_tree(
+        REPO_ID, path_in_repo=path or None, repo_type=REPO_TYPE,
+        recursive=False, expand=True), 501))
+    rows = []
+    for entry in entries[:500]:
+        name = PurePosixPath(entry.path).name
+        if name == '.gitkeep':
+            continue
+        folder = isinstance(entry, RepoFolder)
+        commit = getattr(entry, 'last_commit', None)
+        date = getattr(commit, 'date', None)
+        rows.append({'name': name, 'path': entry.path, 'directory': folder,
+                     'size': None if folder else entry.size,
+                     'updated_at': date.isoformat() if date else None})
+    rows.sort(key=lambda row: (not row['directory'], row['name'].casefold()))
+    return {'path': path, 'entries': rows, 'truncated': len(entries) > 500,
+            'file_bytes': sum(row['size'] or 0 for row in rows),
+            'repo_id': REPO_ID}
+
+
+def upload_to_directory(data, filename, path='', *, folder=False):
+    path = repository_path(path)
+    name = repository_path(filename, allow_root=False)
+    if '/' in name:
+        raise ValueError('Tên không được chứa đường dẫn thư mục.')
+    destination = f'{path}/{name}' if path else name
+    api = client()
+    revision = api.repo_info(REPO_ID, repo_type=REPO_TYPE).sha
+    if api.get_paths_info(REPO_ID, [destination], repo_type=REPO_TYPE, revision=revision):
+        raise FileExistsError('Tên đã tồn tại trong thư mục.')
+    target = destination + '/.gitkeep' if folder else destination
+    api.upload_file(path_or_fileobj=b'' if folder else data, path_in_repo=target,
+                    repo_id=REPO_ID, repo_type=REPO_TYPE, parent_commit=revision,
+                    commit_message=f'NovelReader: add {destination}')
+    return {'ok': True, 'path': destination}
+
+
+def download_repository_file(path):
+    path = repository_path(path, allow_root=False)
+    api = client()
+    revision = api.repo_info(REPO_ID, repo_type=REPO_TYPE).sha
+    info = api.get_paths_info(REPO_ID, [path], repo_type=REPO_TYPE, revision=revision)
+    if len(info) != 1 or isinstance(info[0], RepoFolder):
+        raise ValueError('Không tìm thấy tệp.')
+    return hf_hub_download(repo_id=REPO_ID, filename=path, repo_type=REPO_TYPE,
+                           revision=revision, token=load_key(), endpoint=ENDPOINT)
 
 
 def batch_path(title, category):

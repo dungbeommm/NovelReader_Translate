@@ -1,10 +1,59 @@
 """The only remote export backend."""
-from fastapi import APIRouter, HTTPException
+from pathlib import PurePosixPath
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 from storage import huggingface_service as service
 from storage.cloud_settings import load_key
+from storage.files import MAX_FILE
 from web import runtime
 
 router = APIRouter()
+
+
+class StorageFolderInput(BaseModel):
+    path: str = Field(default='', max_length=1024)
+    name: str = Field(min_length=1, max_length=200)
+
+
+def storage_action(callback):
+    try:
+        return callback()
+    except HTTPException:
+        raise
+    except FileExistsError:
+        raise HTTPException(409, 'Tên đã tồn tại. Hãy chọn tên khác.')
+    except ValueError:
+        raise HTTPException(400, 'Đường dẫn không hợp lệ hoặc chưa cấu hình HF_TOKEN.')
+    except Exception:
+        raise HTTPException(502, 'Không truy cập được kho Hugging Face. Kiểm tra kết nối và quyền của token.')
+
+
+@router.get('/api/storage/files')
+def storage_files(path: str = ''):
+    return storage_action(lambda: service.list_directory(path))
+
+
+@router.post('/api/storage/folders')
+def storage_folder(payload: StorageFolderInput):
+    return storage_action(lambda: service.upload_to_directory(b'', payload.name, payload.path, folder=True))
+
+
+@router.post('/api/storage/upload')
+def storage_upload(file: UploadFile = File(...), path: str = Form('')):
+    try:
+        data = file.file.read(MAX_FILE + 1)
+        if len(data) > MAX_FILE:
+            raise HTTPException(413, 'Tệp tối đa 50 MB.')
+        return storage_action(lambda: service.upload_to_directory(data, file.filename, path))
+    finally:
+        file.file.close()
+
+
+@router.get('/api/storage/download')
+def storage_download(path: str):
+    filename = storage_action(lambda: service.download_repository_file(path))
+    return FileResponse(filename, filename=PurePosixPath(path).name)
 
 
 @router.get('/api/storage/status')

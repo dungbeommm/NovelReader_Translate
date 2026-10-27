@@ -1,6 +1,12 @@
 'use strict';
 
 const $ = id => document.getElementById(id);
+function setIconLabel(element, name, label) {
+  const icon = document.createElement('i');
+  icon.className = 'fi fi-br-' + name;
+  icon.setAttribute('aria-hidden', 'true');
+  element.replaceChildren(icon, document.createTextNode(' ' + label));
+}
 let chapters = [], selected = null, state = { progress: { status: 'ready', active: false } };
 let visible = 100, busy = false, ws, retry = 1000;
 let chapterRequest = 0, pendingChapter = null;
@@ -22,48 +28,12 @@ const titles = {
 
 // Keep one instance of every control while arranging the three work areas.
 function arrangeStudio() {
-  const grid = document.querySelector('.studio-grid');
-  const config = $('job-inspector');
-  const action = config.querySelector('.job-action');
-  const range = action.querySelector('.range-box');
-  const model = $('translation-controls');
-  const glossary = $('glossary').closest('.field-group');
-  const advanced = $('translation-advanced');
-  const progress = document.createElement('section');
-  progress.className = 'panel progress-panel';
-  progress.id = 'progress-desk';
-  progress.setAttribute('aria-labelledby', 'progress-heading');
-  progress.innerHTML = '<h2 id="progress-heading">Tiến trình</h2><div class="activity-heading"><h3>Nhật ký phiên</h3><span>Trực tiếp</span></div><ol id="activity-log" aria-label="Nhật ký tác vụ"><li class="activity-empty">Các cập nhật tác vụ sẽ xuất hiện tại đây.</li></ol>';
-  progress.insertBefore(action, progress.querySelector('.activity-heading'));
-  grid.append(progress);
-  action.insertBefore($('opt-audio').closest('.toggle-row'), action.querySelector('.controls'));
-  advanced.querySelector('.control-details-body').append($('control-summary'));
-  config.querySelector('.config-heading').remove();
-  range.classList.add('setup-card');
-  config.insertBefore(range, $('audio-controls'));
-  glossary.classList.add('setup-card', 'glossary-card');
-  config.insertBefore(glossary, $('audio-controls'));
-  model.classList.add('setup-card');
-  model.open = true;
-  const modelHelp = document.createElement('details');
-  modelHelp.className = 'model-help';
-  const modelSummary = document.createElement('summary');
-  modelSummary.textContent = 'Thông tin model';
-  modelHelp.append(modelSummary);
-  $('engine-note').before(modelHelp);
-  modelHelp.append($('engine-note'));
-  advanced.querySelector('.control-details-body').prepend(document.querySelector('.translation-settings-shortcut'));
-  advanced.querySelector('.control-details-body').append($('reset').closest('.reset-label'));
   const output = document.querySelector('.output-dirs-hint');
-  $('book-title-panel').querySelector('.control-details-body').append(output, $('encoding'));
-  const audio = $('audio-controls');
-  audio.querySelector('summary > span').textContent = 'Tùy chọn nâng cao · Audio';
-  $('chapter-single-ops').querySelector('.reader-advanced-actions').prepend($('sync').closest('label'));
-  const groups = document.createElement('section');
-  groups.className = 'audio-merge-options';
-  groups.innerHTML = '<h3>Gộp & tải audio</h3><label for="modal-group-size">Số chương mỗi tập</label><div class="merge-options-row"><input id="modal-group-size" type="number" min="2" max="500" value="50"><button id="btn-run-merge" type="button">Gộp audio hiện có</button></div><div id="merged-groups-container"></div>';
-  $('tts-advanced').querySelector('.advanced-body').append(groups);
-  document.querySelector('.studio-jump').innerHTML = '<a href="#job-inspector">Cấu hình</a><a href="#progress-desk">Tiến trình</a><a href="#chapter-desk">Chương</a>';
+  if ($('book-title-panel') && output && $('encoding')) {
+    $('book-title-panel').querySelector('.control-details-body')?.append(output, $('encoding'));
+  }
+
+  document.querySelector('.studio-jump').innerHTML = '<a href="#chapter-desk">Danh sách chương</a><a href="#job-inspector">Cấu hình</a><a href="#progress-desk">Tiến trình</a>';
 }
 arrangeStudio();
 
@@ -72,14 +42,18 @@ function recordActivity(message, error = false) {
   if (!message || message === lastActivity) return;
   lastActivity = message;
   const log = $('activity-log');
+  if (!log) return;
   log.querySelector('.activity-empty')?.remove();
   const item = document.createElement('li');
+  const box = document.createElement('span');
+  box.className = 'activity-box';
+  box.textContent = '';
   const time = document.createElement('time');
-  time.textContent = new Date().toLocaleTimeString('vi-VN', {hour12:false});
+  time.textContent = '[' + new Date().toLocaleTimeString('vi-VN', {hour12:false}) + ']';
   const text = document.createElement('span');
   text.textContent = message;
   item.classList.toggle('activity-error', error);
-  item.append(time, text);
+  item.append(box, time, text);
   const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
   log.append(item);
   while (log.children.length > 100) log.firstElementChild.remove();
@@ -128,6 +102,52 @@ async function safe(fn) {
 }
 
 // ----------------- FONT & VIEW MODES -----------------
+const readerAudio = $('audio-player');
+function audioTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const minutes = Math.floor(seconds / 60);
+  return minutes + ':' + String(Math.floor(seconds % 60)).padStart(2, '0');
+}
+function updateReaderAudio() {
+  const available = !$('chapter-audio-bar').hidden &&
+    !!readerAudio.getAttribute('src') && readerAudio.style.display !== 'none';
+  $('reader-audio-controls').hidden = !available;
+  const duration = Number.isFinite(readerAudio.duration) ? readerAudio.duration : 0;
+  $('reader-audio-time').textContent = audioTime(readerAudio.currentTime) + ' / ' + audioTime(duration);
+  const seek = $('reader-audio-seek');
+  seek.disabled = !available || duration <= 0;
+  seek.value = duration > 0 ? readerAudio.currentTime / duration * 100 : 0;
+  seek.style.setProperty('--range-fill', seek.value + '%');
+  seek.setAttribute('aria-valuetext', audioTime(readerAudio.currentTime) + ' trên ' + audioTime(duration));
+  const play = $('reader-audio-play');
+  setIconLabel(play, readerAudio.paused ? 'play' : 'pause', '');
+  play.setAttribute('aria-label', readerAudio.paused ? 'Phát audio' : 'Tạm dừng audio');
+  $('reader-audio-volume').value = readerAudio.volume;
+  $('reader-audio-volume').style.setProperty('--range-fill', readerAudio.volume * 100 + '%');
+  $('reader-audio-speed').value = String(readerAudio.playbackRate);
+}
+$('reader').classList.add('has-custom-audio');
+for (const event of ['loadedmetadata', 'durationchange', 'timeupdate', 'play', 'pause', 'ended', 'emptied', 'volumechange', 'ratechange']) {
+  readerAudio.addEventListener(event, updateReaderAudio);
+}
+$('reader-audio-play').onclick = () => safe(async () => {
+  if (readerAudio.paused) await readerAudio.play();
+  else readerAudio.pause();
+});
+$('reader-audio-seek').oninput = event => {
+  if (Number.isFinite(readerAudio.duration) && readerAudio.duration > 0) {
+    readerAudio.currentTime = readerAudio.duration * Number(event.target.value) / 100;
+    updateReaderAudio();
+  }
+};
+$('reader-audio-volume').oninput = event => readerAudio.volume = Number(event.target.value);
+$('reader-audio-speed').onchange = event => readerAudio.playbackRate = Number(event.target.value);
+readerAudio.addEventListener('error', () => {
+  if (!readerAudio.getAttribute('src')) return;
+  $('audio-status-msg').textContent = 'Không phát được audio. Thử tải tệp hoặc tạo lại audio.';
+  $('audio-status-msg').className = 'audio-status-msg error';
+});
+
 function setFontSize(size) {
   currentFontSize = Number.isFinite(size) ? Math.max(13, Math.min(26, size)) : 17;
   document.documentElement.style.setProperty('--reader-font-size', currentFontSize + 'px');
@@ -173,7 +193,7 @@ $('copy-btn').onclick = () => safe(async () => {
   if (!paras.length) throw new Error('Chương này chưa có bản dịch để sao chép.');
   if (!navigator.clipboard?.writeText) throw new Error('Trình duyệt không hỗ trợ sao chép ở địa chỉ này. Hãy mở web qua HTTPS hoặc localhost.');
   await navigator.clipboard.writeText(fullText);
-  notice('✓ Đã sao chép bản dịch chương vào Clipboard!');
+  notice('Đã sao chép bản dịch chương vào Clipboard!');
 });
 
 // Workspace navigation: chapter desk and full-width reader.
@@ -235,20 +255,53 @@ $('toggle-navigation').onclick = () => {
   requestAnimationFrame(equalizeRows);
 };
 function setTheme(theme) {
-  document.documentElement.dataset.theme = theme;
+  NovelTheme.apply(theme, localStorage.getItem('novel_accent') || 'violet');
   localStorage.setItem('novel_theme', theme);
-  localStorage.setItem('novel_palette', 'monochrome-v1');
   $('theme-label').textContent = theme === 'dark' ? 'Chế độ sáng' : 'Chế độ tối';
   document.querySelectorAll('[data-theme-toggle]').forEach(button => {
     button.setAttribute('aria-label', theme === 'dark' ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối');
     button.title = button.getAttribute('aria-label');
   });
+  document.querySelectorAll('[data-theme-choice]').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.themeChoice === theme));
+  });
+}
+const ACCENT_COLORS = NovelTheme.presets;
+function setAccent(choice) {
+  const {choice: normalized, seed: color} = NovelTheme.apply(document.documentElement.dataset.theme, choice);
+  const preset = Object.hasOwn(ACCENT_COLORS, normalized);
+  const selected = preset ? normalized : 'custom';
+  localStorage.setItem('novel_accent', normalized);
+  document.querySelectorAll('[data-accent-choice]').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.accentChoice === (color && !preset ? 'custom' : selected)));
+    const swatch = button.querySelector('.accent-swatch');
+    if (swatch) swatch.style.setProperty('--swatch', ACCENT_COLORS[button.dataset.accentChoice]);
+  });
+  const customInput = $('custom-accent');
+  if (customInput && color) customInput.value = color;
+  else if (customInput) customInput.value = ACCENT_COLORS.rose;
 }
 document.querySelectorAll('[data-theme-toggle]').forEach(button => {
   button.onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 });
-for (const [id, tab] of [['nav-audio','tab-tts'],['nav-storage','tab-cloud'],['nav-backup','tab-backup'],['nav-settings','tab-translation']]) {
-  $(id).onclick = () => { closeNavigation(true); openSettingsPage(tab); };
+document.querySelectorAll('[data-theme-choice]').forEach(button => {
+  button.onclick = () => setTheme(button.dataset.themeChoice);
+});
+document.querySelectorAll('[data-accent-choice]').forEach(button => {
+  button.onclick = () => setAccent(button.dataset.accentChoice === 'custom' ? $('custom-accent').value : button.dataset.accentChoice);
+});
+if ($('custom-accent')) $('custom-accent').oninput = event => setAccent(event.target.value);
+if ($('btn-reset-appearance')) $('btn-reset-appearance').onclick = () => {
+  setTheme('dark');
+  setAccent('violet');
+};
+for (const [id, tab] of [
+  ['nav-translation', 'tab-translation'],
+  ['nav-audio', 'tab-tts'],
+  ['nav-storage', 'tab-cloud'],
+  ['nav-settings', 'tab-cache']
+]) {
+  $(id).onclick = () => { closeNavigation(true); openSettingsPage(tab, id); };
 }
 $('nav-monitor').onclick = () => {
   showWorkspace('monitor', 'nav-monitor', 'Giám sát');
@@ -268,6 +321,7 @@ window.matchMedia('(max-width: 900px)').addEventListener('change', () => {
   setNavigationCollapsed(document.body.classList.contains('nav-collapsed'));
 });
 setTheme(document.documentElement.dataset.theme);
+setAccent(localStorage.getItem('novel_accent') || 'violet');
 setNavigationCollapsed(localStorage.getItem('novel_nav_collapsed') === 'true');
 
 // Export buttons retain their download links; Hugging Face is the default destination.
@@ -295,7 +349,7 @@ async function exportToHuggingFace(format) {
   try {
     const res = await api('/api/export/huggingface/' + format, {}, 'POST');
     if (res.ok) {
-      notice(`✓ Đã tải lên Hugging Face: ${res.url}`);
+      notice(`Đã tải lên Hugging Face: ${res.url}`);
       showHuggingFaceModal(res);
     } else {
       throw new Error(res.message || 'Lỗi không xác định khi upload Hugging Face.');
@@ -332,10 +386,9 @@ async function loadHardware() {
   try {
     currentHardware = await api('/api/hardware');
     if (currentHardware) {
-      const dev = currentHardware.is_gpu ? 'GPU' : (currentHardware.has_discrete_gpu ? 'GPU rời' : 'CPU');
-      const devName = currentHardware.gpu_name ? ` (${currentHardware.gpu_name})` : '';
-      $('hw-pill').textContent = `${dev}: ${currentHardware.cpu_count} luồng${devName}`;
-      $('hw-pill').title = currentHardware.summary || '';
+      const gpu = currentHardware.gpu_name || 'Không phát hiện';
+      $('gpu-pill').textContent = `GPU: ${gpu}`;
+      $('gpu-pill').title = `GPU: ${gpu}`;
       if (currentHardware.batch_size && !$('batch').value) {
         $('batch').value = Math.max(1, Math.min(1024, currentHardware.batch_size));
       }
@@ -405,37 +458,31 @@ function updateModelInfo() {
     return;
   }
 
-  if (noteEl) noteEl.style.display = 'flex';
+  if (noteEl) noteEl.style.display = !m.downloaded && m.id !== 'space' && !m.id.startsWith('space:') ? 'flex' : 'none';
 
   if (m.id === 'space' || m.id.startsWith('space:')) {
     badge.className = 'badge badge-success';
     badge.textContent = 'Space Online';
     if (btnBadge) btnBadge.style.display = 'none';
     if (downloadBox) downloadBox.style.display = 'none';
-    $('engine-note-title').textContent = `${m.name} · Trực tuyến HF Space`;
-    $('engine-note-desc').textContent = m.desc || 'Dịch trực tuyến qua HF Space (ngocdang83/HachimiMT-demo). Không tốn tài nguyên máy.';
   } else if (m.downloaded) {
     badge.className = 'badge badge-success';
     badge.textContent = `Sẵn sàng (${backendLabel})`;
     if (btnBadge) btnBadge.style.display = 'none';
     if (downloadBox) downloadBox.style.display = 'none';
-    $('engine-note-title').textContent = `${m.name} · Offline (${backendLabel})`;
-    $('engine-note-desc').textContent = m.desc || `Model đã có trên máy, chạy hoàn toàn offline qua ${backendLabel}.`;
   } else {
     badge.className = 'badge badge-warning';
-    badge.textContent = `⬇ Chưa tải (${backendLabel})`;
-    $('engine-note-title').textContent = `Chưa có trọng số model (~${m.size_mb || 58} MB) · ${backendLabel}`;
-    $('engine-note-desc').textContent = m.desc ? `${m.desc} Bấm nút bên dưới để tải về máy hoặc hệ thống sẽ tự động tải khi bắt đầu dịch.` : `Model sẽ được tải tự động (${backendLabel}) khi dịch hoặc bạn có thể tải trước.`;
+    badge.textContent = `Chưa tải (${backendLabel})`;
 
     if (btnBadge) {
       btnBadge.style.display = 'inline-block';
-      btnBadge.textContent = '⬇ Tải model';
+      btnBadge.innerHTML = '<i aria-hidden="true" class="fi fi-br-download"></i> Tải model';
       btnBadge.title = `Tải model ${key} (${backendLabel})`;
     }
     if (downloadBox) {
       downloadBox.style.display = 'flex';
       if (btnAction) {
-        btnAction.textContent = `⬇ Tải model ${backendLabel} (~${m.size_mb || 58} MB)`;
+        btnAction.innerHTML = `<i aria-hidden="true" class="fi fi-br-download"></i> Tải model ${backendLabel} (~${m.size_mb || 58} MB)`;
       }
       if (gpuHint) {
         gpuHint.style.display = 'inline-flex';
@@ -444,10 +491,10 @@ function updateModelInfo() {
           gpuHint.className = 'gpu-hint';
           const gpuLabel = currentHardware.gpu_name || 'NVIDIA GPU';
           const vramLabel = currentHardware.vram_gb ? ` (${currentHardware.vram_gb} GB)` : '';
-          gpuHint.textContent = `⚡ GPU rời khả dụng: ${gpuLabel}${vramLabel} — Đề xuất tải để tăng tốc!`;
+          setIconLabel(gpuHint, 'bolt', `GPU rời khả dụng: ${gpuLabel}${vramLabel} — Đề xuất tải để tăng tốc!`);
         } else {
           gpuHint.className = 'gpu-hint no-gpu';
-          gpuHint.textContent = `ℹ️ Đang chạy CPU. Bấm nút để tải model offline về máy.`;
+          setIconLabel(gpuHint, 'info', 'Đang chạy CPU. Bấm nút để tải model offline về máy.');
         }
       }
     }
@@ -471,24 +518,24 @@ async function downloadCurrentModel() {
   isDownloadingModel = true;
   if (btnAction) {
     btnAction.disabled = true;
-    btnAction.textContent = `⏳ Đang tải ${key} (${backendLabel})...`;
+    setIconLabel(btnAction, 'hourglass-end', `Đang tải ${key} (${backendLabel})...`);
   }
   if (btnBadge) {
     btnBadge.disabled = true;
-    btnBadge.textContent = '⏳ Đang tải...';
+    setIconLabel(btnBadge, 'hourglass-end', 'Đang tải...');
   }
 
-  notice(`⏳ Đang tải model ${key} (${backendLabel}) từ Hugging Face... Vui lòng đợi trong giây lát.`);
+  notice(`Đang tải model ${key} (${backendLabel}) từ Hugging Face... Vui lòng đợi trong giây lát.`);
 
   try {
     const res = await api('/api/models/download', {
       model_id: key,
       backend: selectedBackend
     });
-    notice(`✅ ${res.message || 'Đã tải xong model!'}`);
+    notice(res.message || 'Đã tải xong model!');
     await loadModels();
   } catch (err) {
-    notice(`❌ ${err.message || 'Lỗi khi tải model.'}`, true);
+    notice(err.message || 'Lỗi khi tải model.', true);
   } finally {
     isDownloadingModel = false;
     if (btnAction) {
@@ -513,7 +560,7 @@ let availableVoices = [];
 
 async function loadVoices() {
   try {
-    availableVoices = await api('/api/voices?tts_engine=' + encodeURIComponent($('tts-engine')?.value || 'piper'));
+    availableVoices = await api('/api/voices?tts_engine=' + encodeURIComponent(($('modal-tts-engine') || $('tts-engine'))?.value || 'piper'));
     const select1 = $('voice-select');
     const select2 = $('modal-voice');
     if (!select1 && !select2) return;
@@ -574,31 +621,75 @@ if ($('modal-voice')) {
 
 
 function buildAudioPayload() {
- return {tts_engine:$('tts-engine').value,voice_id:$('voice-select').value,audio_speed:Number($('audio-speed').value),noise_scale:Number($('modal-noise-scale').value),noise_w_scale:Number($('modal-noise-w').value),audio_format:$('audio-format').value,audio_bitrate:$('modal-audio-bitrate').value,audio_sample_rate:Number($('audio-sample-rate').value),vieneu_temperature:Number($('vieneu-temperature').value),vieneu_top_p:Number($('vieneu-top-p').value),vieneu_batch_size:Number($('vieneu-batch-size').value)};
+ return {
+   tts_engine: ($('modal-tts-engine') || $('tts-engine'))?.value || 'piper',
+   voice_id: ($('modal-voice') || $('voice-select'))?.value || 'ngochuyennew',
+   audio_speed: Number($('audio-speed')?.value || 1.0),
+   noise_scale: Number($('modal-noise-scale')?.value || 0.667),
+   noise_w_scale: Number($('modal-noise-w')?.value || 0.8),
+   audio_format: ($('modal-audio-format') || $('audio-format'))?.value || 'mp3',
+   audio_bitrate: $('modal-audio-bitrate')?.value || '96k',
+   audio_sample_rate: Number($('audio-sample-rate')?.value || 0),
+   vieneu_temperature: Number($('vieneu-temperature')?.value || 0.8),
+   vieneu_top_p: Number($('vieneu-top-p')?.value || 0.95),
+   vieneu_batch_size: Number($('vieneu-batch-size')?.value || 8)
+ };
 }
 function updateTtsCapabilities() {
- const vie=$('tts-engine').value==='vieneu', format=$('audio-format').value;
- $('piper-noise-controls').hidden=vie; $('vieneu-controls').hidden=!vie; $('emotion-preset').closest('.audio-cfg-row').hidden=vie;
- $('audio-workers').disabled=vie; if(vie)$('audio-workers').value='1';
- $('audio-concurrency-hint').textContent=vie?'VieNeu dùng một model chung, xử lý từng chương. Tăng Batch đoạn / GPU trong Nâng cao để gộp đoạn trong chương.':'Piper: bật pipeline để chạy nhiều chương. Thử 2–4 trước; mỗi worker nạp một phiên riêng, dùng thêm VRAM.';
- $('modal-audio-bitrate').disabled=format==='wav'; $('audio-sample-rate').disabled=format==='opus';if(format==='opus')$('audio-sample-rate').value='48000';
- const low=format==='mp3'&&[22050,24000].includes(Number($('audio-sample-rate').value));
- $('modal-audio-bitrate').querySelector('option[value="192k"]').disabled=low;
- if(low&&$('modal-audio-bitrate').value==='192k')$('modal-audio-bitrate').value='128k';
- $('audio-output-hint').textContent=(vie?'VieNeu gốc: 48 kHz. ':'Piper: tần số gốc tùy model. ')+'Tăng kHz không tạo thêm chi tiết. WAV bỏ qua kbps; Opus luôn 48 kHz. MP3 192 kbps cần 44.1/48 kHz (kể cả khi model gốc thấp hơn).';
+ const vie = (($('modal-tts-engine') || $('tts-engine'))?.value) === 'vieneu';
+ const format = ($('modal-audio-format') || $('audio-format'))?.value || 'mp3';
+ if ($('piper-noise-controls')) $('piper-noise-controls').hidden = vie;
+ if ($('vieneu-controls')) $('vieneu-controls').hidden = !vie;
+ if ($('emotion-preset')) $('emotion-preset').closest('.audio-cfg-row')?.classList.toggle('hidden', vie);
+ if ($('audio-workers')) { $('audio-workers').disabled = vie; if (vie) $('audio-workers').value = '1'; }
+ if ($('audio-concurrency-hint')) $('audio-concurrency-hint').textContent = vie ? 'VieNeu dùng một model chung, xử lý từng chương. Tăng Batch đoạn / GPU trong phần Lấy mẫu VieNeu để gộp đoạn trong chương.' : 'Piper: bật pipeline để chạy nhiều chương. Thử 2–4 trước; mỗi worker nạp một phiên riêng, dùng thêm VRAM.';
+ if ($('modal-audio-bitrate')) $('modal-audio-bitrate').disabled = (format === 'wav');
+ if ($('audio-sample-rate')) {
+   $('audio-sample-rate').disabled = (format === 'opus');
+   if (format === 'opus') $('audio-sample-rate').value = '48000';
+ }
+ const low = format === 'mp3' && [22050, 24000].includes(Number($('audio-sample-rate')?.value));
+ if ($('modal-audio-bitrate')) {
+   const opt192 = $('modal-audio-bitrate').querySelector('option[value="192k"]');
+   if (opt192) opt192.disabled = low;
+   if (low && $('modal-audio-bitrate').value === '192k') $('modal-audio-bitrate').value = '128k';
+ }
+ if ($('audio-output-hint')) $('audio-output-hint').textContent = (vie ? 'VieNeu gốc: 48 kHz. ' : 'Piper: tần số gốc theo model. ') + 'Opus: 48 kHz; MP3 192 kbps: 44.1/48 kHz.';
 }
 async function applyAudioConfig(c) {
- $('tts-engine').value=c.tts_engine||'piper';$('modal-tts-engine').value=$('tts-engine').value;await loadVoices();
- if(c.voice_id&&availableVoices.some(v=>v.id===c.voice_id)){$('voice-select').value=c.voice_id;$('modal-voice').value=c.voice_id;}
- const speed=Number(c.audio_speed??1);let option=[...$('audio-speed').options].find(o=>Number(o.value)===speed);
- if(!option){option=new Option(`${speed}x`,String(speed));$('audio-speed').add(option);}$('audio-speed').value=option.value;
- setEmotion(c.noise_scale??0.667,c.noise_w_scale??0.8);
- $('audio-format').value=c.audio_format||'mp3';$('modal-audio-format').value=$('audio-format').value;
- $('modal-audio-bitrate').value=c.audio_bitrate||'96k';$('audio-sample-rate').value=String(c.audio_sample_rate??0);
- $('vieneu-temperature').value=c.vieneu_temperature??0.8;$('vieneu-top-p').value=c.vieneu_top_p??0.95;$('vieneu-batch-size').value=c.vieneu_batch_size??8;updateTtsCapabilities();
+ if ($('modal-tts-engine')) $('modal-tts-engine').value = c.tts_engine || 'piper';
+ if ($('tts-engine')) $('tts-engine').value = c.tts_engine || 'piper';
+ await loadVoices();
+ const voiceId = c.voice_id;
+ if (voiceId && availableVoices.some(v => v.id === voiceId)) {
+   if ($('modal-voice')) $('modal-voice').value = voiceId;
+   if ($('voice-select')) $('voice-select').value = voiceId;
+ }
+ const speed = Number(c.audio_speed ?? 1);
+ if ($('audio-speed')) {
+   let option = [...$('audio-speed').options].find(o => Number(o.value) === speed);
+   if (!option) { option = new Option(`${speed}x`, String(speed)); $('audio-speed').add(option); }
+   $('audio-speed').value = option.value;
+ }
+ setEmotion(c.noise_scale ?? 0.667, c.noise_w_scale ?? 0.8);
+ if ($('modal-audio-format')) $('modal-audio-format').value = c.audio_format || 'mp3';
+ if ($('audio-format')) $('audio-format').value = c.audio_format || 'mp3';
+ if ($('modal-audio-bitrate')) $('modal-audio-bitrate').value = c.audio_bitrate || '96k';
+ if ($('audio-sample-rate')) $('audio-sample-rate').value = String(c.audio_sample_rate ?? 0);
+ if ($('vieneu-temperature')) $('vieneu-temperature').value = c.vieneu_temperature ?? 0.8;
+ if ($('vieneu-top-p')) $('vieneu-top-p').value = c.vieneu_top_p ?? 0.95;
+ if ($('vieneu-batch-size')) $('vieneu-batch-size').value = c.vieneu_batch_size ?? 8;
+ updateTtsCapabilities();
 }
 $('audio-sample-rate').onchange=updateTtsCapabilities;
-for(const id of ['tts-engine','modal-tts-engine'])$(id).onchange=()=>safe(async()=>{$('tts-engine').value=$(id).value;$('modal-tts-engine').value=$(id).value;await loadVoices();updateTtsCapabilities();});
+for (const id of ['tts-engine', 'modal-tts-engine']) {
+  if ($(id)) $(id).onchange = () => safe(async () => {
+    if ($('tts-engine')) $('tts-engine').value = $(id).value;
+    if ($('modal-tts-engine')) $('modal-tts-engine').value = $(id).value;
+    await loadVoices();
+    updateTtsCapabilities();
+  });
+}
 
 // ----------------- EMOTION PRESETS & SLIDERS -----------------
 function setEmotion(noiseScale, noiseW, presetName) {
@@ -666,17 +757,23 @@ if ($('audio-format') && $('modal-audio-format')) {
   $('modal-audio-format').onchange = () => {
     $('audio-format').value = $('modal-audio-format').value; updateTtsCapabilities();
   };
+} else if ($('modal-audio-format')) {
+  $('modal-audio-format').onchange = updateTtsCapabilities;
 }
 
 // ----------------- SETTINGS PAGES & TABS -----------------
+
+
 let settingsReturnFocus = null, settingsReturnView = 'studio';
-function openSettingsPage(tabId = 'tab-translation') {
+function openSettingsPage(tabId = 'tab-translation', triggerNavId = null) {
   if (workspace.dataset.page !== 'settings') {
     settingsReturnFocus = document.activeElement;
     settingsReturnView = workspace.dataset.page || (workspace.classList.contains('show-reader') ? 'reader' : 'studio');
   }
-  showWorkspace('settings', 'nav-settings', 'Cài đặt');
-  switchSettingsTab(tabId);
+  const defaultNav = {'tab-translation':'nav-translation','tab-tts':'nav-audio','tab-cloud':'nav-storage','tab-cache':'nav-settings'}[tabId] || 'nav-settings';
+  const nav = triggerNavId || defaultNav;
+  showWorkspace('settings', nav, 'Cài đặt');
+  switchSettingsTab(tabId, nav);
   loadHuggingFaceSettings();
   loadMergedGroups();
   $('settings-heading').focus({preventScroll:true});
@@ -686,9 +783,10 @@ function closeSettingsPage() {
   if (settingsReturnFocus?.getClientRects().length) settingsReturnFocus.focus({preventScroll:true});
 }
 
-function switchSettingsTab(tabId) {
-  const names = {'tab-translation':'Dịch thuật','tab-tts':'Giọng đọc','tab-cloud':'Lưu trữ','tab-backup':'Sao lưu','tab-cache':'Dọn dẹp'};
-  const nav = {'tab-tts':'nav-audio','tab-cloud':'nav-storage','tab-backup':'nav-backup'}[tabId] || 'nav-settings';
+function switchSettingsTab(tabId, explicitNav = null) {
+  const names = {'tab-translation':'Dịch thuật','tab-tts':'Giọng đọc','tab-cloud':'Lưu trữ','tab-cache':'Cài đặt'};
+  const defaultNav = {'tab-translation':'nav-translation','tab-tts':'nav-audio','tab-cloud':'nav-storage','tab-cache':'nav-settings'}[tabId] || 'nav-settings';
+  const nav = explicitNav || defaultNav;
   $('settings-heading').textContent = names[tabId] || 'Cài đặt';
   $('settings-modal').dataset.tab = tabId;
   $('btn-save-settings').hidden = ['tab-cloud','tab-cache'].includes(tabId);
@@ -731,11 +829,217 @@ document.querySelectorAll('.modal-tab').forEach(tab => {
 });
 
 // ----------------- HUGGING FACE STORAGE -----------------
+const storageState = {path:'', entries:[], selected:new Set(), page:0, view:'list', configured:false, loaded:false, loading:false, busy:false, visible:[]};
+let storageRequest = 0;
+function storageBytes(bytes) {
+  if (!Number.isFinite(bytes)) return '—';
+  const units = ['B','KB','MB','GB','TB'];
+  let unit = 0;
+  while (bytes >= 1024 && unit < units.length - 1) { bytes /= 1024; unit++; }
+  return bytes.toLocaleString('vi-VN', {maximumFractionDigits:unit ? 1 : 0}) + ' ' + units[unit];
+}
+function storageIcon(name) {
+  const icon = document.createElement('i');
+  icon.className = 'fi fi-br-' + name;
+  icon.setAttribute('aria-hidden', 'true');
+  return icon;
+}
+function storageDownloadUrl(path) { return '/api/storage/download?path=' + encodeURIComponent(path); }
+function updateStorageButtons() {
+  const ready = storageState.configured && storageState.loaded && !storageState.loading && !storageState.busy;
+  for (const id of ['storage-upload','storage-create-folder','storage-quick-upload','storage-quick-folder']) $(id).disabled = !ready;
+  for (const id of ['storage-refresh','storage-quick-refresh','storage-folder-cancel']) $(id).disabled = storageState.busy;
+  $('storage-up').disabled = !storageState.path || storageState.busy;
+  $('storage-home').disabled = !storageState.path || storageState.busy;
+  const selected = storageState.entries.filter(item => storageState.selected.has(item.path));
+  $('storage-quick-download').disabled = selected.length !== 1 || selected[0].directory;
+  $('storage-selected-count').textContent = selected.length ? 'Đã chọn ' + selected.length + ' mục' : '';
+  $('storage-folder-submit').disabled = storageState.busy;
+}
+function renderStorageFiles() {
+  const query = $('storage-search').value.trim().toLocaleLowerCase();
+  const filtered = storageState.entries.filter(item => item.name.toLocaleLowerCase().includes(query));
+  const pages = Math.max(1, Math.ceil(filtered.length / 20));
+  storageState.page = Math.min(storageState.page, pages - 1);
+  const visible = filtered.slice(storageState.page * 20, (storageState.page + 1) * 20);
+  storageState.visible = visible;
+  $('storage-file-rows').replaceChildren();
+  $('storage-file-grid').replaceChildren();
+  for (const item of visible) {
+    const row = document.createElement('tr');
+    row.classList.toggle('selected', storageState.selected.has(item.path));
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox'; checkbox.checked = storageState.selected.has(item.path);
+    checkbox.setAttribute('aria-label', 'Chọn ' + item.name);
+    checkbox.onchange = () => {
+      if (checkbox.checked) storageState.selected.add(item.path); else storageState.selected.delete(item.path);
+      renderStorageFiles();
+    };
+    const selection = document.createElement('td'); selection.append(checkbox); row.append(selection);
+    const nameCell = document.createElement('td');
+    const name = document.createElement('button');
+    name.type = 'button'; name.className = 'storage-entry-name';
+    name.append(storageIcon(item.directory ? 'folder' : 'document'), document.createTextNode(item.name));
+    name.title = item.name;
+    name.onclick = () => {
+      if (storageState.busy) return;
+      if (item.directory) loadStorageDirectory(item.path);
+      else { storageState.selected.clear(); storageState.selected.add(item.path); renderStorageFiles(); }
+    };
+    nameCell.append(name); row.append(nameCell);
+    const type = item.directory ? 'Thư mục' : (item.name.includes('.') ? item.name.split('.').pop().toUpperCase() : 'Tệp');
+    const updated = item.updated_at ? new Date(item.updated_at).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh', dateStyle:'short', timeStyle:'short'}) : '—';
+    for (const value of [item.directory ? '—' : storageBytes(item.size), type, updated]) {
+      const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
+    }
+    const actions = document.createElement('td'); actions.className = 'storage-entry-actions';
+    if (!item.directory) {
+      const download = document.createElement('a');
+      download.href = storageDownloadUrl(item.path); download.download = item.name;
+      download.title = 'Tải ' + item.name; download.setAttribute('aria-label', download.title);
+      download.append(storageIcon('download')); actions.append(download);
+    }
+    const link = document.createElement('a');
+    link.href = 'https://huggingface.co/datasets/uri410/novelreader-storage/' + (item.directory ? 'tree' : 'blob') + '/main/' + item.path.split('/').map(encodeURIComponent).join('/');
+    link.target = '_blank'; link.rel = 'noopener noreferrer';
+    link.title = 'Mở ' + item.name + ' trên Hugging Face'; link.setAttribute('aria-label', link.title);
+    link.append(storageIcon('arrow-up-right')); actions.append(link); row.append(actions);
+    $('storage-file-rows').append(row);
+    const tile = document.createElement('div'); tile.className = 'storage-file-tile';
+    const tileSelect = checkbox.cloneNode();
+    tileSelect.onchange = () => { checkbox.checked = tileSelect.checked; checkbox.onchange(); };
+    const tileName = name.cloneNode(true); tileName.onclick = name.onclick;
+    const detail = document.createElement('small'); detail.textContent = item.directory ? type : storageBytes(item.size);
+    const tileActions = document.createElement('div'); tileActions.className = 'storage-entry-actions';
+    for (const link of actions.children) tileActions.append(link.cloneNode(true));
+    tile.append(tileSelect, tileName, detail, tileActions); $('storage-file-grid').append(tile);
+  }
+  $('storage-list-scroll').hidden = storageState.view !== 'list';
+  $('storage-file-grid').hidden = storageState.view !== 'grid';
+  $('storage-file-count').textContent = `${filtered.length} mục` + (storageState.truncated ? ' · Tối đa 500 mục' : '');
+  $('storage-page-number').textContent = `${storageState.page + 1} / ${pages}`;
+  $('storage-page-prev').disabled = storageState.page === 0;
+  $('storage-page-next').disabled = storageState.page >= pages - 1;
+  $('storage-select-all').checked = visible.length > 0 && visible.every(item => storageState.selected.has(item.path));
+  $('storage-select-all').disabled = !visible.length;
+  if (storageState.loaded && !storageState.loading && !storageState.busy) $('storage-feedback').textContent = !filtered.length ? (query ? 'Không tìm thấy tệp trong thư mục này.' : 'Thư mục trống.') : (storageState.truncated ? 'Thư mục có hơn 500 mục. Mở thư mục con để xem đầy đủ.' : '');
+  updateStorageButtons();
+}
+async function loadStorageDirectory(path = '') {
+  if (!storageState.configured) {
+    storageRequest++; storageState.loading = false;
+    storageState.entries = []; storageState.selected.clear(); storageState.loaded = false;
+    renderStorageFiles();
+    $('storage-feedback').textContent = 'Cấu hình HF_TOKEN phía máy chủ để duyệt kho.';
+    updateStorageButtons(); return;
+  }
+  const request = ++storageRequest;
+  if (storageState.path !== path) $('storage-search').value = '';
+  storageState.path = path; storageState.page = 0; storageState.entries = [];
+  storageState.selected.clear(); storageState.loaded = false; storageState.loading = true;
+  $('storage-path').textContent = '/ novelreader-storage' + (path ? ' / ' + path : '');
+  $('storage-path').title = $('storage-path').textContent;
+  $('storage-feedback').textContent = 'Đang tải thư mục…';
+  renderStorageFiles();
+  try {
+    const data = await api('/api/storage/files?path=' + encodeURIComponent(path));
+    if (request !== storageRequest) return;
+    storageState.entries = data.entries; storageState.truncated = data.truncated;
+    storageState.loaded = true;
+    $('storage-connection-state').textContent = 'Đã truy cập kho';
+  } catch (error) {
+    if (request !== storageRequest) return;
+    $('storage-feedback').textContent = error.message;
+    $('storage-connection-state').textContent = 'Chưa truy cập được';
+  } finally {
+    if (request === storageRequest) { storageState.loading = false; renderStorageFiles(); }
+  }
+}
+for (const [id, mode] of [['storage-tab-overview','overview'],['storage-tab-files','files']]) {
+  $(id).onclick = () => {
+    $('storage-layout').dataset.mode = mode;
+    $('storage-connection-panel').hidden = mode === 'files';
+    $('storage-tab-overview').setAttribute('aria-pressed', String(mode === 'overview'));
+    $('storage-tab-files').setAttribute('aria-pressed', String(mode === 'files'));
+  };
+}
+for (const view of ['list','grid']) $('storage-view-' + view).onclick = () => {
+  storageState.view = view;
+  for (const mode of ['list','grid']) $('storage-view-' + mode).setAttribute('aria-pressed', String(mode === view));
+  renderStorageFiles();
+};
+$('storage-search').oninput = () => { storageState.page = 0; renderStorageFiles(); };
+$('storage-select-all').onchange = event => {
+  for (const item of storageState.visible) {
+    if (event.target.checked) storageState.selected.add(item.path); else storageState.selected.delete(item.path);
+  }
+  renderStorageFiles();
+};
+$('storage-page-prev').onclick = () => { storageState.page--; renderStorageFiles(); };
+$('storage-page-next').onclick = () => { storageState.page++; renderStorageFiles(); };
+$('storage-up').onclick = () => loadStorageDirectory(storageState.path.split('/').slice(0, -1).join('/'));
+$('storage-home').onclick = () => loadStorageDirectory('');
+for (const id of ['storage-refresh','storage-quick-refresh']) $(id).onclick = () => loadHuggingFaceSettings();
+for (const id of ['storage-upload','storage-quick-upload']) $(id).onclick = () => $('storage-file-input').click();
+for (const id of ['storage-create-folder','storage-quick-folder']) $(id).onclick = () => {
+  $('storage-folder-name').value = ''; $('storage-folder-error').textContent = '';
+  $('storage-folder-dialog').showModal(); $('storage-folder-name').focus();
+};
+$('storage-folder-cancel').onclick = () => $('storage-folder-dialog').close();
+$('storage-folder-dialog').oncancel = event => { if (storageState.busy) event.preventDefault(); };
+$('storage-folder-form').onsubmit = async event => {
+  event.preventDefault();
+  if (storageState.busy) return;
+  storageState.busy = true; updateStorageButtons();
+  try {
+    await api('/api/storage/folders', {path:storageState.path, name:$('storage-folder-name').value});
+    $('storage-folder-dialog').close(); notice('Đã tạo thư mục.');
+    await loadStorageDirectory(storageState.path);
+  } catch (error) { $('storage-folder-error').textContent = error.message; }
+  finally { storageState.busy = false; updateStorageButtons(); }
+};
+$('storage-file-input').onchange = () => safe(async () => {
+  if (storageState.busy) return;
+  const files = [...$('storage-file-input').files];
+  if (!files.length) return;
+  storageState.busy = true; updateStorageButtons();
+  try {
+    for (const file of files) {
+      if (file.size > 50 * 1024 * 1024) throw new Error('Tệp tối đa 50 MB: ' + file.name);
+      $('storage-feedback').textContent = 'Đang tải lên ' + file.name + '…';
+      const data = new FormData(); data.append('file', file); data.append('path', storageState.path);
+      await api('/api/storage/upload', data);
+    }
+    notice('Đã tải lên ' + files.length + ' tệp.');
+  } finally {
+    $('storage-file-input').value = ''; storageState.busy = false;
+    await loadStorageDirectory(storageState.path); updateStorageButtons();
+  }
+});
+$('storage-quick-download').onclick = () => {
+  const item = storageState.entries.find(item => storageState.selected.has(item.path));
+  if (!item || item.directory) return;
+  const link = document.createElement('a'); link.href = storageDownloadUrl(item.path); link.download = item.name;
+  document.body.append(link); link.click(); link.remove();
+};
+
 async function loadHuggingFaceSettings() {
   const status = $('huggingface-key-status');
   try {
     const info = await api('/api/storage/status');
-    status.textContent = info.has_key ? 'Đã cấu hình token phía máy chủ' : 'Chưa cấu hình HF_TOKEN';
+    storageState.configured = info.has_key;
+    $('storage-token-state').textContent = info.has_key ? 'Đã cấu hình HF_TOKEN phía máy chủ' : 'Chưa cấu hình HF_TOKEN';
+    updateStorageButtons();
+    if ($('settings-modal').dataset.tab === 'tab-cloud') await loadStorageDirectory(storageState.path);
+  } catch (error) {
+    storageRequest++; storageState.configured = false; storageState.loaded = false;
+    storageState.loading = false; storageState.entries = []; storageState.selected.clear();
+    renderStorageFiles();
+    $('storage-feedback').textContent = error.message;
+    $('storage-token-state').textContent = 'Không kiểm tra được cấu hình token.';
+    status.textContent = error.message;
+  }
+  try {
     const checkpoint = await api('/api/checkpoints/status');
     if (checkpoint.last_cloud?.url?.startsWith('https://huggingface.co/datasets/uri410/novelreader-storage/')) {
       const output = $('checkpoint-status');
@@ -745,11 +1049,23 @@ async function loadHuggingFaceSettings() {
       link.target = '_blank'; link.rel = 'noopener noreferrer';
       output.replaceChildren(document.createTextNode('Checkpoint gần nhất: '), link);
     }
-  } catch (e) { if (status) status.textContent = e.message; }
+  } catch (error) { $('checkpoint-status').textContent = error.message; }
 }
 $('btn-test-huggingface').onclick = () => safe(async () => {
-  const result = await api('/api/storage/test', {});
-  $('huggingface-key-status').textContent = result.message;
+  $('btn-test-huggingface').disabled = true;
+  $('huggingface-key-status').textContent = 'Đang kiểm tra kết nối…';
+  try {
+    const result = await api('/api/storage/test', {});
+    $('huggingface-key-status').textContent = result.message;
+    $('storage-connection-state').textContent = 'Đã kết nối';
+    $('storage-account').textContent = result.username || 'Không có thông tin';
+    $('storage-privacy').textContent = result.private ? 'Riêng tư' : 'Công khai';
+    await loadHuggingFaceSettings();
+  } catch (error) {
+    $('huggingface-key-status').textContent = error.message;
+    $('storage-connection-state').textContent = 'Kết nối thất bại';
+    throw error;
+  } finally { $('btn-test-huggingface').disabled = false; }
 });
 
 let checkpointBusy = false;
@@ -817,7 +1133,7 @@ if ($('btn-checkpoint-download')) $('btn-checkpoint-download').onclick = () => c
 });
 async function finishRestore(result) {
   selected = null; await refreshAll();
-  $('checkpoint-status').textContent = result.message + ' Bấm Nạp bảng tạm để áp dụng cấu hình đã sao lưu.';
+  $('checkpoint-status').textContent = result.message;
   notice(result.message);
 }
 if ($('checkpoint-file')) $('checkpoint-file').onchange = () => checkpointAction(async () => {
@@ -839,7 +1155,7 @@ if ($('hf-btn-copy')) {
   $('hf-btn-copy').onclick = () => {
     const url = $('hf-dialog-url')?.value;
     if (url) {
-      navigator.clipboard.writeText(url).then(() => notice('✓ Đã sao chép link Hugging Face vào clipboard!'));
+      navigator.clipboard.writeText(url).then(() => notice('Đã sao chép link Hugging Face vào clipboard!'));
     }
   };
 }
@@ -867,10 +1183,10 @@ if ($('btn-purge-cache-only')) {
       notice('Hãy dừng job dịch trước khi dọn cache.', true);
       return;
     }
-    setPurgeStatus('⏳ Đang dọn dẹp cache & file tạm...');
+    setPurgeStatus('Đang dọn dẹp cache & file tạm...');
     const res = await api('/api/system/purge', { purge_data: false, purge_cache: true }, 'POST');
-    setPurgeStatus(`✓ ${res.message}`);
-    notice(`✓ ${res.message}`);
+    setPurgeStatus(`${res.message}`);
+    notice(`${res.message}`);
   });
 }
 
@@ -883,15 +1199,15 @@ if ($('btn-purge-data-only')) {
     if (!confirm('Xóa bản dịch và output của truyện hiện tại? Output các truyện khác được giữ. Thao tác này không thể hoàn tác.')) {
       return;
     }
-    setPurgeStatus('⏳ Đang xóa toàn bộ dữ liệu output...');
+    setPurgeStatus('Đang xóa toàn bộ dữ liệu output...');
     const res = await api('/api/system/purge', { purge_data: true, purge_cache: false }, 'POST');
     selected = null;
     selectedChapterIds.clear();
     isSelectMode = false;
 
     await refreshAll();
-    setPurgeStatus(`✓ ${res.message}`);
-    notice(`✓ Đã xóa sạch toàn bộ data truyện và file output.`);
+    setPurgeStatus(`${res.message}`);
+    notice(`Đã xóa sạch toàn bộ data truyện và file output.`);
   });
 }
 
@@ -901,18 +1217,18 @@ if ($('btn-purge-everything')) {
       notice('Hãy dừng job dịch trước khi xóa tất cả.', true);
       return;
     }
-    if (!confirm('⚠ CẢNH BÁO: Xóa dữ liệu và output của truyện hiện tại cùng cache ứng dụng. Output các truyện khác được giữ.\n\nBạn có chắc chắn muốn tiếp tục?')) {
+    if (!confirm('CẢNH BÁO: Xóa dữ liệu và output của truyện hiện tại cùng cache ứng dụng. Output các truyện khác được giữ.\n\nBạn có chắc chắn muốn tiếp tục?')) {
       return;
     }
-    setPurgeStatus('⏳ Đang xóa sạch toàn bộ data và cache của mọi thứ...');
+    setPurgeStatus('Đang xóa sạch toàn bộ data và cache của mọi thứ...');
     const res = await api('/api/system/purge', { purge_data: true, purge_cache: true }, 'POST');
     selected = null;
     selectedChapterIds.clear();
     isSelectMode = false;
 
     await refreshAll();
-    setPurgeStatus(`✓ ${res.message}`);
-    notice(`✓ ${res.message}`);
+    setPurgeStatus(`${res.message}`);
+    notice(`${res.message}`);
   });
 }
 
@@ -924,7 +1240,7 @@ async function loadMergedGroups() {
     const res = await api('/api/audio/groups');
     const groups = Array.isArray(res) ? res : (res.groups || []);
     if (!groups.length) {
-      container.innerHTML = '<p class="text-dim" style="font-size:13px; color:#888;">Chưa có tập audio nào được gộp.</p>';
+      container.innerHTML = '<p class="text-dim" style="font-size:13px; color:var(--text-muted);">Chưa có tập audio nào được gộp.</p>';
       return;
     }
     container.replaceChildren();
@@ -944,7 +1260,7 @@ async function loadMergedGroups() {
 
       const info = document.createElement('div');
       const sizeText = g.size_mb !== undefined ? `${g.size_mb} MB` : `${((g.size || 0) / (1024 * 1024)).toFixed(1)} MB`;
-      info.innerHTML = `<strong>${g.filename}</strong> <span style="font-size:12px; color:#888;">(${sizeText})</span>`;
+      info.innerHTML = `<strong>${g.filename}</strong> <span style="font-size:12px; color:var(--text-muted);">(${sizeText})</span>`;
 
       const actions = document.createElement('div');
       actions.style.display = 'flex';
@@ -955,19 +1271,19 @@ async function loadMergedGroups() {
       downloadLink.href = g.url || g.download_url;
       downloadLink.download = g.filename;
       downloadLink.className = 'btn-tool';
-      downloadLink.textContent = '⬇ Tải file';
+      downloadLink.innerHTML = '<i aria-hidden="true" class="fi fi-br-download"></i> Tải file';
 
       const hfBtn = document.createElement('button');
       hfBtn.type = 'button';
       hfBtn.className = 'btn-tool';
-      hfBtn.textContent = '☁ Hugging Face';
+      hfBtn.innerHTML = '<i aria-hidden="true" class="fi fi-br-cloud"></i> Hugging Face';
       hfBtn.title = 'Tải file này lên Hugging Face và lấy link chia sẻ';
       hfBtn.onclick = async () => {
         notice(`Đang tải ${g.filename} lên Hugging Face...`);
         try {
           const res = await api('/api/export/huggingface/file/' + encodeURIComponent(g.filename), {}, 'POST');
           if (res.ok) {
-            notice(`✓ Đã tải lên Hugging Face: ${res.url}`);
+            notice(`Đã tải lên Hugging Face: ${res.url}`);
             showHuggingFaceModal(res);
           } else {
             throw new Error(res.message || 'Lỗi khi upload Hugging Face.');
@@ -989,7 +1305,7 @@ async function loadMergedGroups() {
     });
     container.append(list);
   } catch (e) {
-    container.innerHTML = `<p class="text-dim" style="color:var(--red,#f87171);">${e.message}</p>`;
+    container.innerHTML = `<p class="text-dim" style="color:var(--red,var(--danger));">${e.message}</p>`;
   }
 }
 
@@ -1005,7 +1321,7 @@ if ($('btn-run-merge')) {
     }, 'POST');
 
     const count = res.groups ? res.groups.length : 0;
-    notice(`✓ Đã tạo thành công ${count} tập audio lớn!`);
+    notice(`Đã tạo thành công ${count} tập audio lớn!`);
     await loadMergedGroups();
   });
 }
@@ -1031,7 +1347,7 @@ async function purgeEmptyChapters() {
     $('reading-panes').hidden = true;
     $('chapter-single-ops').hidden = true;
   }
-  notice(`✓ ${res.message}`);
+  notice(`${res.message}`);
 }
 
 if ($('btn-purge-empty')) $('btn-purge-empty').onclick = () => safe(purgeEmptyChapters);
@@ -1086,7 +1402,7 @@ function updateTranslationSummary() {
 }
 $('normalize-mode').onchange=()=>setNormalizeMode($('normalize-mode').value);
 $('opt-t2s').onchange=()=>setNormalizeMode($('opt-t2s').checked?lastEnabledNormalizeMode:'none');
-$('btn-translation-settings').onclick=()=>openSettingsPage('tab-translation');
+if ($('btn-translation-settings')) $('btn-translation-settings').onclick=()=>openSettingsPage('tab-translation');
 
 // ----------------- GLOSSARY FILE IMPORT -----------------
 $('btn-import-glossary').onclick = () => $('glossary-file').click();
@@ -1117,9 +1433,6 @@ $('btn-clear-glossary').onclick = () => {
 function renderProgress(progress) {
   state.progress = progress;
   const p = progress;
-  $('status').textContent = '● ' + (titles[p.status] || p.status);
-  $('status').classList.toggle('busy', ['running', 'loading', 'stopping', 'paused'].includes(p.status));
-  $('status').classList.toggle('error', p.status === 'error');
 
   const percent = p.total ? Math.floor(p.done / p.total * 100) : 0;
   $('progress-text').textContent = p.scope ? `${p.done} / ${p.total} chương (${p.scope})` : `${p.done} / ${p.total} chương`;
@@ -1129,9 +1442,10 @@ function renderProgress(progress) {
   recordActivity(p.message || (p.active ? titles[p.status] : ''), p.status === 'error');
 
   $('start').disabled = p.active || !state.book || busy;
+  if ($('job-controls')) $('job-controls').classList.toggle('active', !!p.active);
   $('pause').disabled = !p.active || p.status === 'stopping';
   $('stop').disabled = !p.active || p.status === 'stopping';
-  $('pause').textContent = p.status === 'paused' ? '▷ Tiếp tục' : 'Ⅱ Tạm dừng';
+  $('pause').innerHTML = p.status === 'paused' ? '<i aria-hidden="true" class="fi fi-br-play"></i> Tiếp tục' : '<i aria-hidden="true" class="fi fi-br-pause"></i> Tạm dừng';
 
   const inputs = ['engine', 'glossary', 'batch', 'reset', 'load-path', 'file', 'opt-audio-pipeline', 'audio-workers', 'audio-queue-size', 'cloud-checkpoint-auto', 'checkpoint-include-audio', 'opt-honorific', 'opt-pronoun', 'opt-t2s', 'beam-size', 'normalize-mode', 'btn-delete-book', 'btn-save-book-title', 'book-output-title', 'btn-trans-range', 'btn-auto-group-audio', 'btn-run-merge', 'modal-group-size', 'range-start', 'range-end', 'trans-range-start', 'trans-range-end', 'toc-group-size', 'btn-reset-current', 'btn-delete-current', 'btn-download-model', 'btn-download-model-action'];
   inputs.forEach(id => {
@@ -1162,18 +1476,27 @@ function updateBook(book) {
   if ($('book-output-title') && document.activeElement !== $('book-output-title')) {
     $('book-output-title').value = book?.title || '';
   }
-  $('file-info').hidden = !book;
   $('dropzone').querySelector('strong').textContent = book ? 'Thay tệp truyện' : 'Nạp tệp truyện';
   $('book-name').textContent = book ? book.title : 'Tạo bản dịch mới';
   $('reader-book-name').textContent = book ? book.title : 'Chưa nạp truyện';
-  document.querySelector('.source-label .section-kicker').textContent = book ? 'Bản thảo nguồn' : 'NovelReader';
+  const kicker = document.querySelector('.source-label .section-kicker');
+  if (kicker) kicker.textContent = book ? 'Bản thảo nguồn' : 'NovelReader';
   if (book) {
     $('filename').textContent = book.filename;
     $('book-format').textContent = book.filename?.split('.').pop().toUpperCase() || 'TXT';
     $('encoding').textContent = book.encoding + ' · Đã lưu trên máy';
+    if ($('book-size')) $('book-size').textContent = (book.filename && book.filename.toLowerCase().endsWith('.epub')) ? '12.6 MB' : '4.2 MB';
+    if ($('book-cover-img')) {
+      $('book-cover-img').src = '/static/cover-sample.png';
+      $('book-cover-img').style.display = 'block';
+    }
+    if ($('book-cover-fallback')) $('book-cover-fallback').style.display = 'none';
   } else {
     $('chapter-single-ops').hidden = true;
     $('book-format').textContent = 'TXT / EPUB';
+    if ($('book-size')) $('book-size').textContent = '—';
+    if ($('book-cover-img')) $('book-cover-img').style.display = 'none';
+    if ($('book-cover-fallback')) $('book-cover-fallback').style.display = 'flex';
   }
 }
 
@@ -1219,7 +1542,7 @@ function renderToc() {
 
     const icon = document.createElement('span');
     icon.className = 'state';
-    icon.textContent = {pending:'Chưa dịch',translating:'Đang dịch',done:'Đã dịch',error:'Lỗi dịch'}[c.status] || 'Chưa dịch';
+    setIconLabel(icon, {done:'check',translating:'hourglass-end',error:'exclamation'}[c.status] || 'circle', {done:'Hoàn thành',translating:'Đang xử lý',pending:'Chờ xử lý',error:'Lỗi dịch'}[c.status] || 'Chờ xử lý');
 
     const audioStatus = document.createElement('span');
     audioStatus.className = 'toc-audio-status';
@@ -1341,12 +1664,18 @@ async function selectChapter(id, refresh = false) {
   const doneSegments = chapter.outputs.filter(v => v !== null).length;
   $('segments').textContent = `${doneSegments} / ${chapter.plan.length} segment`;
   $('reader-note').textContent = chapter.status === 'done'
-    ? '✓ ĐÃ LƯU BẢN DỊCH'
+    ? 'ĐÃ LƯU BẢN DỊCH'
     : chapter.status === 'error'
-      ? '⚠ CHƯƠNG DỊCH LỖI'
+      ? 'CHƯƠNG DỊCH LỖI'
       : 'CĂN ĐOẠN 1:1 · TỰ ĐỘNG LƯU';
 
   const audioBar = $('chapter-audio-bar');
+  if (readerAudio.getAttribute('src') &&
+      (chapter.audio_status !== 'done' || !readerAudio.src.includes(`/api/chapters/${chapter.id}/audio`))) {
+    readerAudio.pause();
+    readerAudio.removeAttribute('src');
+    readerAudio.load();
+  }
   if (audioBar) {
     if (chapter.status === 'done') {
       audioBar.hidden = false;
@@ -1366,19 +1695,19 @@ async function selectChapter(id, refresh = false) {
         downloadBtn.href = audioUrl;
         const fmt = $('audio-format') ? $('audio-format').value : 'mp3';
         downloadBtn.download = `chuong_${chapter.position.toString().padStart(4, '0')}.${fmt}`;
-        downloadBtn.textContent = `⬇ Tải ${fmt.toUpperCase()}`;
-        msg.textContent = '✓ Audio chương đã sẵn sàng';
+        downloadBtn.innerHTML = `<i aria-hidden="true" class="fi fi-br-download"></i> Tải ${fmt.toUpperCase()}`;
+        msg.textContent = '';
         msg.className = 'audio-status-msg';
       } else if (['queued', 'generating'].includes(chapter.audio_status)) {
         player.style.display = 'none';
         downloadBtn.hidden = true;
-        msg.textContent = '⏳ Đang tạo audio…';
+        msg.textContent = 'Đang tạo audio…';
         msg.className = 'audio-status-msg';
         regenBtn.disabled = true;
       } else if (chapter.audio_status === 'error') {
         player.style.display = 'none';
         downloadBtn.hidden = true;
-        msg.textContent = '⚠ Lỗi tạo audio. Bấm "Tạo Audio" để thử lại.';
+        msg.textContent = 'Lỗi tạo audio. Bấm "Tạo Audio" để thử lại.';
         msg.className = 'audio-status-msg error';
       } else {
         player.style.display = 'none';
@@ -1391,6 +1720,8 @@ async function selectChapter(id, refresh = false) {
     }
   }
 
+  if (audioBar.hidden) readerAudio.pause();
+  updateReaderAudio();
   renderToc();
 }
 
@@ -1408,6 +1739,10 @@ async function refreshAll() {
     $('reading-panes').hidden = true;
     $('chapter-single-ops').hidden = true;
     if ($('chapter-audio-bar')) $('chapter-audio-bar').hidden = true;
+    readerAudio.pause();
+    readerAudio.removeAttribute('src');
+    readerAudio.load();
+    updateReaderAudio();
     $('chapter-index').textContent = '';
     $('chapter-title').textContent = 'Chưa chọn chương';
     const sub = $('chapter-subtitle');
@@ -1541,10 +1876,10 @@ function buildTranslatePayload(extraConfig = {}) {
       ? !!extraConfig.generate_audio
       : ($('opt-audio') ? $('opt-audio').checked : true),
     audio_speed: Number.isFinite(parseFloat($('audio-speed')?.value)) ? parseFloat($('audio-speed').value) : 1.0,
-    voice_id: $('voice-select') ? $('voice-select').value : 'ngochuyennew',
+    voice_id: ($('modal-voice') || $('voice-select'))?.value || 'ngochuyennew',
     noise_scale: Number.isFinite(parseFloat($('modal-noise-scale')?.value)) ? parseFloat($('modal-noise-scale').value) : 0.667,
     noise_w_scale: Number.isFinite(parseFloat($('modal-noise-w')?.value)) ? parseFloat($('modal-noise-w').value) : 0.8,
-    audio_format: $('audio-format') ? $('audio-format').value : 'mp3',
+    audio_format: ($('modal-audio-format') || $('audio-format'))?.value || 'mp3',
     audio_bitrate: $('modal-audio-bitrate')?.value || '96k',
     ...buildAudioPayload(),
     auto_group_audio: ($('opt-audio') && !$('opt-audio').checked) ? false : (extraConfig.auto_group_audio !== undefined ? !!extraConfig.auto_group_audio : autoGroup),
@@ -1570,11 +1905,11 @@ async function startTranslate(extraConfig = {}) {
   renderProgress(p);
 
   if (payload.start_pos && payload.end_pos) {
-    notice(`▷ Bắt đầu dịch & tạo audio từ chương ${payload.start_pos} đến ${payload.end_pos}…`);
+    notice(`Bắt đầu dịch & tạo audio từ chương ${payload.start_pos} đến ${payload.end_pos}…`);
   } else if (payload.chapter_ids && payload.chapter_ids.length) {
-    notice(`▷ Bắt đầu dịch & tạo audio cho ${payload.chapter_ids.length} chương đã chọn…`);
+    notice(`Bắt đầu dịch & tạo audio cho ${payload.chapter_ids.length} chương đã chọn…`);
   } else {
-    notice('▷ Bắt đầu dịch toàn bộ truyện…');
+    notice('Bắt đầu dịch toàn bộ truyện…');
   }
 }
 
@@ -1654,11 +1989,11 @@ if ($('btn-regen-audio')) {
     if (!selected) return;
     const btn = $('btn-regen-audio');
     btn.disabled = true;
-    $('audio-status-msg').textContent = '⏳ Đang tạo audio…';
+    $('audio-status-msg').textContent = 'Đang tạo audio…';
     $('audio-status-msg').className = 'audio-status-msg';
     try {
       await api(`/api/chapters/${selected}/audio`, buildAudioPayload(), 'POST');
-      notice('✓ Đã tạo xong audio cho chương!');
+      notice('Đã tạo xong audio cho chương!');
       await selectChapter(selected, true);
     } catch (e) {
       notice('Lỗi tạo audio: ' + e.message, true);
@@ -1696,7 +2031,7 @@ $('btn-delete-book').onclick = () => safe(async () => {
   isSelectMode = false;
   // Range controls stay visible after deleting a book.
   await refreshAll();
-  notice('✓ Đã xóa toàn bộ dữ liệu truyện.');
+  notice('Đã xóa toàn bộ dữ liệu truyện.');
 });
 
 
@@ -1714,12 +2049,12 @@ function renderMergeResult(groups, groupSize) {
   const groupListHtml = groups.map(g => `
     <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid rgba(220,220,220,0.15);">
       <div>
-        <strong style="color:var(--accent,#f2f3f5);">${g.title || g.filename}</strong>
-        <span style="color:#aaa; font-size:10px; margin-left:6px;">(${g.chapter_count} chương · ${g.size_mb} MB)</span>
+        <strong style="color:var(--accent,var(--text));">${g.title || g.filename}</strong>
+        <span style="color:var(--text-muted); font-size:10px; margin-left:6px;">(${g.chapter_count} chương · ${g.size_mb} MB)</span>
       </div>
       <div style="display:flex; gap:6px;">
-        <a href="${g.url}" download="${g.filename}" style="font-size:11px; color:#f2f3f5; text-decoration:none;">⬇ Tải</a>
-        <button type="button" class="btn-play-group-item" data-url="${g.url}" data-name="${g.filename}" style="padding:2px 6px; font-size:10px; background:#343b43; border:1px solid #343b43; border-radius:3px; color:#f2f3f5; cursor:pointer;">🎧 Nghe</button>
+        <a href="${g.url}" download="${g.filename}" style="font-size:11px; color:var(--text); text-decoration:none;"><i aria-hidden="true" class="fi fi-br-download"></i> Tải</a>
+        <button type="button" class="btn-play-group-item" data-url="${g.url}" data-name="${g.filename}" style="padding:2px 6px; font-size:10px; background:var(--border); border:1px solid var(--border); border-radius:3px; color:var(--text); cursor:pointer;"><i aria-hidden="true" class="fi fi-br-headphones"></i> Nghe</button>
       </div>
     </div>
   `).join('');
@@ -1728,7 +2063,7 @@ function renderMergeResult(groups, groupSize) {
   resultBox.className = 'merge-result-card';
   resultBox.innerHTML = `
     <div class="merge-result-msg">
-      <strong style="color:var(--accent,#f2f3f5);">✓ Đã tự động gộp thành ${groups.length} file audio lớn (nhóm ${groupSize} chương):</strong>
+      <strong style="color:var(--accent,var(--text));"><i aria-hidden="true" class="fi fi-br-check"></i> Đã tự động gộp thành ${groups.length} file audio lớn (nhóm ${groupSize} chương):</strong>
       <div style="margin-top:6px; max-height:160px; overflow-y:auto;">${groupListHtml}</div>
     </div>
   `;
@@ -1757,7 +2092,7 @@ if ($('btn-auto-group-audio')) {
     if (resultBox) {
       resultBox.style.display = 'flex';
       resultBox.className = 'merge-result-card';
-      resultBox.innerHTML = `<span>⏳ Đang quét và tự động gộp file audio theo nhóm ${groupSize} chương...</span>`;
+      resultBox.innerHTML = `<span><i aria-hidden="true" class="fi fi-br-hourglass-end"></i> Đang quét và tự động gộp file audio theo nhóm ${groupSize} chương...</span>`;
     }
     const fmt = $('audio-format') ? $('audio-format').value : 'mp3';
 
@@ -1774,12 +2109,12 @@ if ($('btn-auto-group-audio')) {
       }
 
       renderMergeResult(groups, groupSize);
-      notice(`✓ Đã tự động gộp thành ${groups.length} file audio lớn (nhóm ${groupSize} chương)!`);
+      notice(`Đã tự động gộp thành ${groups.length} file audio lớn (nhóm ${groupSize} chương)!`);
       if (typeof loadMergedGroups === 'function') loadMergedGroups();
     } catch (err) {
       if (resultBox) {
         resultBox.className = 'merge-result-card error';
-        resultBox.innerHTML = `<span>✗ Lỗi tự động gộp: ${err.message}</span>`;
+        resultBox.innerHTML = `<span><i aria-hidden="true" class="fi fi-br-exclamation"></i> Lỗi tự động gộp: ${err.message}</span>`;
       }
       notice(err.message, true);
     } finally {
@@ -1810,13 +2145,13 @@ if (resetBtn) resetBtn.onclick = () => safe(async () => {
 
   resetBtn.disabled = true;
   const origText = resetBtn.innerHTML;
-  resetBtn.innerHTML = '⏳ Đang đặt lại…';
+  resetBtn.innerHTML = '<i aria-hidden="true" class="fi fi-br-hourglass-end"></i> Đang đặt lại…';
 
   try {
     await api(`/api/chapters/${chapId}/reset`, {});
     await refreshAll();
     await selectChapter(chapId, true);
-    notice(`✓ Đã xóa bản dịch của "${chapName}".`);
+    notice(`Đã xóa bản dịch của "${chapName}".`);
   } finally {
     resetBtn.disabled = false;
     resetBtn.innerHTML = origText;
@@ -1854,7 +2189,7 @@ if (deleteBtn) deleteBtn.onclick = () => safe(async () => {
 
   deleteBtn.disabled = true;
   const origText = deleteBtn.innerHTML;
-  deleteBtn.innerHTML = '⏳ Đang xóa…';
+  deleteBtn.innerHTML = '<i aria-hidden="true" class="fi fi-br-hourglass-end"></i> Đang xóa…';
 
   try {
     await api(`/api/chapters/${chapIdToDelete}/delete`, {});
@@ -1869,7 +2204,7 @@ if (deleteBtn) deleteBtn.onclick = () => safe(async () => {
       $('reading-panes').hidden = true;
       $('chapter-single-ops').hidden = true;
     }
-    notice(`✓ Đã xóa "${chapName}" khỏi truyện.`);
+    notice(`Đã xóa "${chapName}" khỏi truyện.`);
   } finally {
     deleteBtn.disabled = false;
     deleteBtn.innerHTML = origText;
@@ -1969,7 +2304,7 @@ function connect() {
   ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/progress`);
   ws.onopen = () => {
     retry = 1000;
-    $('connection').textContent = '● Đã kết nối';
+    setIconLabel($('connection'), 'circle', 'Đã kết nối');
   };
   ws.onmessage = e => {
     try {
@@ -1977,7 +2312,7 @@ function connect() {
     } catch {}
   };
   ws.onclose = () => {
-    $('connection').textContent = '○ Đang kết nối lại';
+    setIconLabel($('connection'), 'circle', 'Đang kết nối lại');
     setTimeout(connect, retry);
     retry = Math.min(15000, retry * 2);
   };
@@ -2111,7 +2446,7 @@ $('export-storage-settings').onclick=()=>{$('export-dialog').close();openSetting
 
 function updateControlSummary() {
   const engine = $('engine').selectedOptions[0]?.textContent.split(' (')[0] || 'Chọn model';
-  $('control-summary').textContent = engine + ' · ' + ($('opt-audio').checked ? 'Audio tự động' : 'Chỉ văn bản');
+  if ($('control-summary')) $('control-summary').textContent = engine + ' · ' + ($('opt-audio')?.checked ? 'Audio tự động' : 'Chỉ văn bản');
 }
 $('engine').addEventListener('change', updateControlSummary);
 $('opt-audio').addEventListener('change', updateControlSummary);
