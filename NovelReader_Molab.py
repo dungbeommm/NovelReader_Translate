@@ -1130,34 +1130,10 @@ def _(Path, json, mo, os, repo_dir, subprocess, sys, urllib, zr_account_token):
 
 
 @app.cell
-def _(json, urllib):
-    # ZROK_RELEASE_CHECK
-    with urllib.request.urlopen("https://api.github.com/repos/openziti/zrok/releases?per_page=10",timeout=15) as _zr_meta:
-        _zr_releases=json.load(_zr_meta)
-    print([(r["tag_name"],[a["name"] for a in r["assets"] if "linux_amd64" in a["name"]]) for r in _zr_releases])
-    return
-
-
-@app.cell
 def _(os):
     # ZROK_ACCOUNT_TOKEN_INPUT: set a new token in the MoLab runtime environment.
     zr_account_token = os.environ.get("ZROK_ACCOUNT_TOKEN", "").strip()
     return (zr_account_token,)
-
-
-@app.cell
-def _(repo_dir, subprocess):
-    # ZROK_STATUS_CHECK
-    for _zs_args in [["status"],["enable","--help"],["share","public","--help"]]:
-        _zs_result=subprocess.run(["/tmp/novelreader-zrok/zrok2"]+_zs_args,capture_output=True,text=True,timeout=10)
-        print("COMMAND:",_zs_args,"EXIT:",_zs_result.returncode)
-        print((_zs_result.stdout+_zs_result.stderr)[-7500:])
-    _zr_log=repo_dir/"data/logs/zrok_share.log"
-    if _zr_log.exists():
-        print(_zr_log.read_text(errors="replace")[-5000:])
-    else:
-        print("Chưa có log share zrok. Nhập token rồi chạy ô ZROK_ENABLE_AND_SHARE.")
-    return
 
 
 @app.cell(hide_code=True)

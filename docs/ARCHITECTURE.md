@@ -25,7 +25,6 @@ flowchart TD
 ```text
 NovelReader_Translate/
 ├── NovelReader_Molab.py        # Giao diện notebook và runtime launcher
-├── NovelReader_Colab.ipynb    # Notebook Colab cũ; cần tái đóng gói sau khi pull
 ├── main.py                    # Uvicorn import ổn định
 ├── core/
 │   ├── config.py              # Cờ môi trường
@@ -79,5 +78,8 @@ NovelReader_Translate/
 
 - `python -m pytest tests/test_architecture_refactor.py tests/test_cloud_sync_manager.py tests/test_api.py tests/test_jobs.py -q`
 - `python -m uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1`
-- `python scripts/package_notebooks.py` để dựng lại notebook/ZIP phân phối sau khi pull.
 - Đổi code bằng cách mở sandbox MoLab mới hoặc cập nhật checkout cũ *khi không còn job chạy*. Không xóa `data/` hay `output_*/` vì đó là checkpoint thực.
+
+## Dọn repo
+
+Repo ưu tiên MoLab: các bản Colab/ZIP xuất sẵn và script tạo chúng đã được gỡ khỏi nhánh chính. Để khởi chạy MoLab, mở `NovelReader_Molab.py`, notebook tự tải mã nguồn mới vào sandbox khi cần. `scripts/hunt_vps.py` và các chẩn đoán giọng thủ công cũ cũng được gỡ. Không xóa `data/`, `models/`, `output_text/` và `output_audio/` trên máy đang chạy vì đó là dữ liệu runtime (không nằm trong Git).
