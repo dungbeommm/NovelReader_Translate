@@ -147,3 +147,5 @@ The root notebook keeps *blank* HF/zrok inline token slots for a **private noteb
 Tests: `python -m pytest tests/test_architecture_refactor.py tests/test_api.py tests/test_jobs.py -q`. Run `python scripts/package_notebooks.py` after pulling to rebuild distributable Colab notebook/ZIP from the updated packages. MoLab's empty-sandbox bootstrap clones the current repo.
 
 Additional service boundaries: `server/auth/access.py` owns session authentication, `monitoring/logger.py` owns logger setup, and `storage/sync_manager.py` owns the periodic + final Hugging Face checkpoint lifecycle. Compatibility imports via `web.access` are preserved.
+
+Kiến trúc và luồng xử lý mới: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). **Lưu ý:** thư mục repo đã clone trong sandbox cũ không tự cập nhật khi GitHub có commit mới; cần đồng bộ checkout khi job đã dừng hoặc dùng sandbox mới. Các gói Colab/ZIP lưu sẵn cần dựng lại bằng script.

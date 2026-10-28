@@ -1073,7 +1073,7 @@ def _(Path, json, mo, os, repo_dir, subprocess, sys, urllib, zr_account_token):
     _zc_share_log.write_text("", encoding="utf-8")
     _zc_share_out = open(_zc_share_log, "w", encoding="utf-8")
     _zc_share_proc = subprocess.Popen(
-        [str(_zc_bin), "share", "public", "http://127.0.0.1:8000", "--headless"],
+        __import__("server.tunnel.zrok", fromlist=["public_share_command"]).public_share_command(str(_zc_bin)),
         cwd=str(repo_dir),
         stdin=subprocess.DEVNULL,
         stdout=_zc_share_out,
