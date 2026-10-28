@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_DIRS = ('audio', 'monitoring', 'scripts', 'storage', 'translation', 'tts', 'web', 'workflows', 'tests')
+SOURCE_DIRS = ('audio', 'core', 'monitoring', 'notebook', 'scripts', 'server', 'storage', 'translation', 'tts', 'web', 'workflows', 'tests')
 SOURCE_FILES = ('main.py', 'paths.py', 'requirements.txt', 'requirements-dev.txt',
                 'requirements-vieneu.txt', 'README.md', 'LICENSE', 'Dockerfile',
                 'compose.yaml', '.env.example', '.dockerignore')

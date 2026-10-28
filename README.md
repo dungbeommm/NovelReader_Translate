@@ -130,3 +130,18 @@ Có thể thử Web batch 128 → 192 → 256 và so thời gian cùng vài chư
 không tự tăng ngân sách CT2 nội bộ 96. GPU không cần đầy VRAM để chạy hiệu quả.
 Nếu truyện đã lưu batch 64, nhập 96 trong giao diện; bản mới không tự ghi đè thiết lập
 đã lưu của truyện. Không cần chỉnh mã nguồn. Giữ beam 2 và một worker TTS.
+
+## Module architecture (MoLab + FastAPI)
+
+- `core/`: canonical runtime singleton, env flags, cross-process `job.lock` and non-secret `job_state.json`.
+- `notebook/`: MoLab GPU/bootstrap/model setup and control-plane HTTP client.
+- `server/`: FastAPI app, API router registration and zrok share URL helper.
+- `translation/`, `audio/`, `tts/`, `storage/`, `monitoring/`: existing domain modules preserved.
+- `web/static/`: original HTML/CSS/JavaScript kept unchanged.
+- `web/application.py`, `web/runtime.py`: compatibility facades for existing imports and tests.
+
+While WebUI is reachable, Marimo sends import/start/pause/resume/stop to FastAPI rather than starting another local job. When WebUI is offline, Marimo can work locally. A per-database advisory lease blocks concurrent translation workers. A second Store is opened with recovery disabled if another worker is active, so it cannot silently reset in-progress chapter rows. File operations still use idle checks; use a single notebook and WebUI on one sandbox.
+
+The root notebook keeps *blank* HF/zrok inline token slots for a **private notebook copy only**. Never commit real tokens to this public repo. Revoke any tokens previously committed.
+
+Tests: `python -m pytest tests/test_architecture_refactor.py tests/test_api.py tests/test_jobs.py -q`. Run `python scripts/package_notebooks.py` after pulling to rebuild distributable Colab notebook/ZIP from the updated packages. MoLab's empty-sandbox bootstrap clones the current repo.

@@ -29,9 +29,8 @@ def WEB_DASHBOARD(json, mo, os, re, repo_dir, time, urllib):
         _zrok_host = ""
         _zrok_log = repo_dir / "data/logs/zrok_share.log"
         if _zrok_log.exists():
-            _hosts = re.findall(r"([A-Za-z0-9.-]+[.]shares[.]zrok[.]io)", _zrok_log.read_text(errors="replace"))
-            if _hosts:
-                _zrok_host = _hosts[-1]
+            from server.tunnel.zrok import extract_share_host
+            _zrok_host = extract_share_host(_zrok_log.read_text(errors="replace"))
         _link = ("https://" + _zrok_host + "/?access_token=" + _token) if (_zrok_host and _token) else ""
 
         _models = []
@@ -291,27 +290,13 @@ def _(Path, os, shutil, subprocess, sys, urllib, zipfile):
     ):
         (repo_dir / folder_name).mkdir(parents=True, exist_ok=True)
 
-    # Kiểm tra GPU phần cứng với nvidia-smi
-    gpu_detected = False
-    gpu_label = "Không phát hiện GPU (Chế độ CPU)"
-    vram_display = "0 GB"
-    try:
-        smi_proc = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=10
-        )
-        if smi_proc.returncode == 0 and smi_proc.stdout.strip():
-            smi_parts = [p.strip() for p in smi_proc.stdout.strip().split(",", 1)]
-            gpu_label = smi_parts[0]
-            if len(smi_parts) > 1:
-                mem_gb = float(smi_parts[1]) / 1024.0
-                vram_display = f"{mem_gb:.1f} GB"
-            gpu_detected = True
-            print(f"✅ GPU Phát hiện: {gpu_label} (VRAM: {vram_display})")
-        else:
-            print("⚠️ Runtime chưa gắn GPU NVIDIA (đang chạy CPU).")
-    except Exception:
-        print("⚠️ Không thể gọi nvidia-smi.")
+    # Chỉ nhận diện GPU ở bước này; CUDA thực tế được smoke-test ở bước 4.
+    from notebook.gpu_manager import detect_gpu as nr_detect_gpu
+    gpu_info = nr_detect_gpu()
+    gpu_detected = gpu_info["detected"]
+    gpu_label = gpu_info["name"]
+    vram_display = gpu_info["vram"]
+    print(f"✅ GPU: {gpu_label} ({vram_display})" if gpu_detected else "⚠️ Runtime chưa gắn GPU NVIDIA (CPU).")
 
     step1_ready = True
     return gpu_detected, repo_dir
@@ -445,10 +430,8 @@ def _(
         "PYTHONUNBUFFERED": "1",
         # Google Drive API
     }
-    os.environ.update(env_map)
-    # Không để COLAB_GPU="0" (chuỗi có giá trị True trong kiểm tra boolean).
-    if not gpu_detected:
-        os.environ.pop("COLAB_GPU", None)
+    from notebook.bootstrap import apply_runtime_environment
+    apply_runtime_environment(env_map, gpu_detected)
 
     # Thêm toàn bộ các thư mục thư viện nvidia cuDNN / cuBLAS vào LD_LIBRARY_PATH
     discovered_nvidia_libs = []
@@ -498,12 +481,10 @@ def _(
     subprocess.run(tts_command,cwd=str(repo_dir),env=dict(os.environ),check=True)
 
     # Kiểm tra đúng cấu trúc CTranslate2 và tải trước cho cả CPU lẫn GPU.
-    from translation.engines import is_model_downloaded as nr_is_model_downloaded
+    from notebook.model_loader import ensure_translation_model as nr_ensure_model
     chosen_model = model_selector.value or "HachimiMT-60-QT"
-    if not nr_is_model_downloaded(chosen_model):
-        print(f"📥 Đang tải model dịch thuật {chosen_model}...")
-        subprocess.run([sys.executable, str(repo_dir / "scripts/download_model.py"), "--model", chosen_model],
-                       cwd=str(repo_dir), env=dict(os.environ), check=True)
+    if nr_ensure_model(repo_dir, chosen_model):
+        print(f"✅ Đã tải model dịch {chosen_model}.")
 
     # 4b. Kiểm tra ORT Execution Providers
     cuda_provider_confirmed = False
@@ -566,6 +547,8 @@ def _(json, mo, os, repo_dir, step4_ready, subprocess, urllib):
     from storage.cloud_settings import save_key as nr_save_key, save_repo_id as nr_save_repo_id, load_key as nr_load_key
     from storage.files import export_txt as nr_export_txt, export_epub as nr_export_epub
     from audio import audio_service as nr_audio
+    from notebook.session_manager import BackendClient as nr_BackendClient
+    nr_client = nr_BackendClient()
     # Không thay thế dữ liệu nếu tác vụ cũ còn chạy.
     try:
         _req = urllib.request.Request("http://127.0.0.1:8000/api/state", headers={"X-Novel-Access": os.environ.get("NOVEL_WEB_ACCESS_TOKEN", "")})
@@ -586,6 +569,7 @@ def _(json, mo, os, repo_dir, step4_ready, subprocess, urllib):
     mo.callout(mo.md("### ✅ Backend notebook đã sẵn sàng\nDùng bảng điều khiển NovelReader phía dưới."), kind="success")
     return (
         nr_Config,
+        nr_client,
         nr_audio,
         nr_checkpoints,
         nr_export_epub,
@@ -607,6 +591,7 @@ def _(
     json,
     mo,
     nr_Config,
+    nr_client,
     model_selector,
     nr_checkpoints,
     nr_hf,
@@ -667,11 +652,23 @@ def _(
                     raise ValueError("ZIP có mật khẩu không được hỗ trợ.")
                 data = "\n\n".join(decode_text(archive.read(x))[0] for x in sorted(entries, key=lambda x:x.filename)).encode("utf-8")
                 name = Path(name).stem + ".txt"
+        if nr_client.available():
+            return nr_client.upload_book(name, data).get("book")
         return nr_runtime.import_book(name, data).get("book")
     def nr_start_job():
         if nr_cloud_auto.value and not nr_load_key():
             raise ValueError('Bật checkpoint tự động cần có token HF. Hãy cấu hình HF hoặc tắt tự đồng bộ.')
+        if nr_client.available():
+            return nr_client.start_job(nr_settings())
         nr_runtime.job.start(nr_settings(), reset=False)
+        return nr_runtime.job.summary()
+    def nr_control(action):
+        if nr_runtime.job.thread is not None and nr_runtime.job.thread.is_alive():
+            getattr(nr_runtime.job, action)()
+            return nr_runtime.job.summary()
+        if nr_client.available():
+            return nr_client.control(action)
+        getattr(nr_runtime.job, action)()
         return nr_runtime.job.summary()
     def nr_draft():
         nr_runtime.ensure_idle()
@@ -764,7 +761,7 @@ def _(
         "☁️ Hugging Face": mo.vstack([nr_hf_repo,nr_hf_token,nr_button("Áp dụng & kiểm tra HF",nr_hf_configure),mo.md("Nếu kho chưa tồn tại, nút dưới tạo bucket riêng tư trong tài khoản có quyền ghi."),nr_button("Tạo bucket HF riêng tư",nr_hf_create),nr_cloud_auto,mo.md("Tự lưu bản dịch và SQLite sau mỗi 10 chương hoặc 10 phút, cùng một bản khi kết thúc; audio không nằm trong bản tự lưu."),nr_include_audio,mo.hstack([nr_button("Tạo checkpoint ZIP",nr_local_backup),nr_button("Sao lưu lên HF",nr_cloud_backup)]),mo.md("### Khôi phục"),nr_restore_upload,nr_restore_link,nr_restore_confirm,nr_button("Khôi phục checkpoint",nr_restore,"warn")]),
     })
     mo.vstack([mo.md("# 📚 NovelReader — Bảng điều khiển notebook"),
-        mo.hstack([nr_button("▶ Bắt đầu / tiếp tục chương chưa dịch", nr_start_job,"success"), nr_button("⏸ Tạm dừng", nr_runtime.job.pause),nr_button("▶ Tiếp tục",nr_runtime.job.resume),nr_button("■ Hủy tác vụ",nr_runtime.job.stop,"danger")]),
+        mo.hstack([nr_button("▶ Bắt đầu / tiếp tục chương chưa dịch", nr_start_job,"success"), nr_button("⏸ Tạm dừng", lambda: nr_control("pause")),nr_button("▶ Tiếp tục",lambda: nr_control("resume")),nr_button("■ Hủy tác vụ",lambda: nr_control("stop"),"danger")]),
         nr_controls,mo.hstack([nr_button("Gộp audio đã có", nr_merge),nr_refresh])])
     return (
         nr_bitrate,
@@ -778,10 +775,13 @@ def _(
 
 
 @app.cell
-def _(mo, nr_get_notice, nr_refresh, nr_runtime, repo_dir):
+def _(mo, nr_client, nr_get_notice, nr_refresh, nr_runtime, repo_dir):
     # NOVELREADER_NATIVE_PROGRESS
     _ = nr_refresh.value
-    _nr_summary = nr_runtime.job.summary()
+    try:
+        _nr_summary = nr_client.state()["progress"] if nr_client.available() else nr_runtime.job.summary()
+    except (OSError, ValueError):
+        _nr_summary = nr_runtime.job.summary()
     _nr_book = nr_runtime.store.book()
     _nr_rows = nr_runtime.store.list() if _nr_book else []
     _nr_done = int(_nr_summary.get("done",0))
@@ -1087,9 +1087,9 @@ def _(Path, json, mo, os, repo_dir, subprocess, sys, urllib, zr_account_token):
     for _zc_try in range(60):
         if _zc_share_log.exists():
             _zc_log_text = _zc_share_log.read_text(errors="replace")
-            _zc_hosts = _zc_re.findall(r"(?i)\b([a-z0-9-]+\.shares\.zrok\.io)\b", _zc_log_text)
-            if _zc_hosts:
-                _zc_host = _zc_hosts[-1]
+            from server.tunnel.zrok import extract_share_host
+            _zc_host = extract_share_host(_zc_log_text)
+            if _zc_host:
                 break
         if _zc_share_proc.poll() is not None:
             break
