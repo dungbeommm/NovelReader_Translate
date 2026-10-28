@@ -1,5 +1,14 @@
 """Standalone launcher should neither create duplicate workers nor expose secret tokens."""
-from notebook import webui_launcher as launcher
+import ast
+import importlib.util
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location(
+    "novelreader_webui_launcher_test", ROOT / "notebook/webui_launcher.py")
+launcher = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(launcher)
 
 
 def test_log_tail(tmp_path):
@@ -30,3 +39,16 @@ def test_no_token_zrok_does_not_block_webui(monkeypatch, tmp_path):
     result = launcher.launch(tmp_path, zrok_token="")
     assert result["url"] == ""
     assert result["access_code"] == "login-code"
+
+
+def test_two_notebooks_are_launchers_only():
+    code = (ROOT / "NovelReader_Molab.py").read_text(encoding="utf-8")
+    ast.parse(code)
+    assert "mo.ui." not in code
+    assert "ZROK_ACCOUNT_TOKEN_INLINE" in code
+    notebook = json.loads((ROOT / "NovelReader_Colab.ipynb").read_text(encoding="utf-8"))
+    assert notebook["nbformat"] == 4
+    assert len([c for c in notebook["cells"] if c["cell_type"] == "code"]) == 2
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            ast.parse("".join(cell["source"]))

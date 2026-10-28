@@ -82,4 +82,8 @@ NovelReader_Translate/
 
 ## Dọn repo
 
-Repo ưu tiên MoLab: các bản Colab/ZIP xuất sẵn và script tạo chúng đã được gỡ khỏi nhánh chính. Để khởi chạy MoLab, mở `NovelReader_Molab.py`, notebook tự tải mã nguồn mới vào sandbox khi cần. `scripts/hunt_vps.py` và các chẩn đoán giọng thủ công cũ cũng được gỡ. Không xóa `data/`, `models/`, `output_text/` và `output_audio/` trên máy đang chạy vì đó là dữ liệu runtime (không nằm trong Git).
+Repo ưu tiên MoLab: notebook Colab đã được viết lại dưới dạng launcher nhẹ dùng chung `notebook/webui_launcher.py`. Gói ZIP nguồn cũ và script đóng gói đã được gỡ khỏi nhánh chính. Để khởi chạy MoLab, mở `NovelReader_Molab.py`, notebook tự tải mã nguồn mới vào sandbox khi cần. `scripts/hunt_vps.py` và các chẩn đoán giọng thủ công cũ cũng được gỡ. Không xóa `data/`, `models/`, `output_text/` và `output_audio/` trên máy đang chạy vì đó là dữ liệu runtime (không nằm trong Git).
+
+## Notebook WebUI-only
+
+Hai notebook không chứa nút dịch/TTS/HF. Chúng chỉ cài thư viện, bật FastAPI/zrok và in `WEBUI_URL`, `MA_TRUY_CAP` cùng log Uvicorn, zrok, job. Toàn bộ thao tác nghiệp vụ nằm trên WebUI. Các phiên sandbox cũ có thể cần cập nhật source trước khi chạy bản notebook mới.

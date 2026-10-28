@@ -76,15 +76,19 @@ def _(os, sys, Path, subprocess, zipfile, urllib):
     if str(repo_dir) not in sys.path:
         sys.path.insert(0, str(repo_dir))
     os.chdir(repo_dir)
-    from notebook.webui_launcher import launch
-    session = launch(repo_dir)
-    return repo_dir, session
+    # Import by path, so Jupyter's preloaded 'notebook' package cannot shadow us.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "novelreader_webui_launcher", repo_dir / "notebook/webui_launcher.py")
+    launcher = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(launcher)
+    session = launcher.launch(repo_dir)
+    return launcher, repo_dir, session
 
 
 @app.cell
-def _(repo_dir, session):
-    from notebook.webui_launcher import print_logs
-    print_logs(session, lines=45)
+def _(launcher, session):
+    launcher.print_logs(session, lines=45)
     return
 
 
