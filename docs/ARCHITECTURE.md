@@ -1,3 +1,7 @@
+## MoLab native runtime
+
+`NovelReader_Molab.py` dùng `notebook/molab_native.py` để điều khiển Store/ManagedJob trong kernel. Không chạy HTTP server hoặc tunnel. Source thiếu được khôi phục bởi `notebook/molab_bootstrap.py`. HF checkpoint định kỳ và khôi phục dùng chung storage với WebUI. Colab vẫn dùng WebUI launcher.
+
 # NovelReader — kiến trúc module
 
 Mục tiêu: MoLab/Marimo làm bảng điều khiển, **một tiến trình giữ quyền chạy job** trên mỗi SQLite, WebUI FastAPI phục vụ HTTP qua tunnel, và Hugging Face lưu kết quả/checkpoint.

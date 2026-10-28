@@ -296,7 +296,8 @@ class Job:
             lambda error: self.emit('cloud_checkpoint_error', error=error),
             enabled=config.get('cloud_checkpoint', False),
             every=config.get('cloud_checkpoint_every', 10),
-            minutes=config.get('cloud_checkpoint_minutes', 10))
+            minutes=config.get('cloud_checkpoint_minutes', 10),
+            include_audio=config.get('checkpoint_include_audio', False))
         try:
             backend = config.get('backend', 'ct2')
             try:

@@ -7,6 +7,7 @@ class ManagedJob(Job):
     def __init__(self, store):
         super().__init__(store)
         self.lease = JobLease(store.path.with_name("job.lock"))
+        self.cloud_error = ''
 
     @property
     def active(self):
@@ -33,6 +34,10 @@ class ManagedJob(Job):
                 pass
 
     def emit(self, type, **data):
+        if type == 'cloud_checkpoint_error':
+            self.cloud_error = data.get('error', '')
+        elif type == 'cloud_checkpoint_done':
+            self.cloud_error = ''
         self._persist()
         super().emit(type, **data)
 
