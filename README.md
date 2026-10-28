@@ -145,3 +145,5 @@ While WebUI is reachable, Marimo sends import/start/pause/resume/stop to FastAPI
 The root notebook keeps *blank* HF/zrok inline token slots for a **private notebook copy only**. Never commit real tokens to this public repo. Revoke any tokens previously committed.
 
 Tests: `python -m pytest tests/test_architecture_refactor.py tests/test_api.py tests/test_jobs.py -q`. Run `python scripts/package_notebooks.py` after pulling to rebuild distributable Colab notebook/ZIP from the updated packages. MoLab's empty-sandbox bootstrap clones the current repo.
+
+Additional service boundaries: `server/auth/access.py` owns session authentication, `monitoring/logger.py` owns logger setup, and `storage/sync_manager.py` owns the periodic + final Hugging Face checkpoint lifecycle. Compatibility imports via `web.access` are preserved.

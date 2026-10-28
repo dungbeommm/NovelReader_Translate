@@ -9,7 +9,7 @@ from storage.files import MAX_FILE
 from core import runtime
 from core.config import tunnel_allowed
 from server.api import ROUTERS
-from web.access import protect_request, handle_login
+from server.auth.access import protect_request, handle_login
 from web.routes import books, translation, audio, system, progress, huggingface, checkpoints
 
 @asynccontextmanager

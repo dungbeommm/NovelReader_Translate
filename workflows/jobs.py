@@ -6,6 +6,7 @@ import logging
 import inspect
 import os
 from workflows.audio_queue import AudioQueue
+from core.config import env_enabled
 from monitoring.tasks import TaskTelemetry, characters
 from translation.engines import create_engine, invert_opener_spacing
 from translation.text import make_plan, assemble, postprocess
@@ -288,38 +289,14 @@ class Job:
         audio_queue = None
         export_dirty = False
         target_id_set = set(target_chapter_ids) if target_chapter_ids else None
-        cloud_completed = 0
-        cloud_last_submitted = 0
-        cloud_last_started = time.monotonic()
-        cloud_sync_thread = None
-
-        def maybe_sync_cloud():
-            nonlocal cloud_completed, cloud_last_submitted, cloud_last_started, cloud_sync_thread
-            if not config.get('cloud_checkpoint'):
-                return
-            cloud_completed += 1
-            now = time.monotonic()
-            every = max(1, int(config.get('cloud_checkpoint_every', 10)))
-            minutes = max(1, int(config.get('cloud_checkpoint_minutes', 10)))
-            if cloud_completed - cloud_last_submitted < every and now - cloud_last_started < minutes * 60:
-                return
-            if cloud_sync_thread is not None and cloud_sync_thread.is_alive():
-                return
-
-            def sync_snapshot():
-                try:
-                    from storage.checkpoints import upload_checkpoint
-                    # Audio is omitted from incremental snapshots to avoid huge archives.
-                    result = upload_checkpoint(self.store, include_audio=False)
-                    self.emit('cloud_checkpoint_done', url=result['url'])
-                except Exception as exc:
-                    log.exception('Lỗi checkpoint định kỳ Hugging Face')
-                    self.emit('cloud_checkpoint_error', error=str(exc)[:300])
-
-            cloud_sync_thread = threading.Thread(target=sync_snapshot, name='hf-checkpoint', daemon=True)
-            cloud_sync_thread.start()
-            cloud_last_submitted = cloud_completed
-            cloud_last_started = now
+        from storage.sync_manager import CloudSyncManager
+        cloud_sync = CloudSyncManager(
+            self.store,
+            lambda result: self.emit('cloud_checkpoint_done', url=result['url']),
+            lambda error: self.emit('cloud_checkpoint_error', error=error),
+            enabled=config.get('cloud_checkpoint', False),
+            every=config.get('cloud_checkpoint_every', 10),
+            minutes=config.get('cloud_checkpoint_minutes', 10))
         try:
             backend = config.get('backend', 'ct2')
             try:
@@ -335,7 +312,7 @@ class Job:
                     self.message = ''
             self.emit('status')
             if config.get('generate_audio', True) and config.get('audio_pipeline', True):
-                default_workers = 2 if (os.getenv('COLAB_GPU') or os.getenv('KAGGLE_KERNEL_RUN_TYPE')) else 1
+                default_workers = 2 if (env_enabled('COLAB_GPU') or os.getenv('KAGGLE_KERNEL_RUN_TYPE')) else 1
                 audio_workers = max(1, min(8, int(config.get('audio_workers', os.getenv('AUDIO_WORKERS', default_workers)))))
                 if config.get('tts_engine') == 'vieneu':
                     audio_workers = 1  # shared SDK; GPU batching is inside each long infer()
@@ -433,7 +410,7 @@ class Job:
                         log.info('TIMING translation chapter=%s seconds=%.3f', chapter['position'], time.perf_counter() - chapter_started)
                         self.telemetry.translation_end('done')
                         self.emit('chapter_done', chapter_id=current)
-                        maybe_sync_cloud()
+                        cloud_sync.chapter_done()
 
                         if config.get('generate_audio', True) and not self.stop_flag.is_set():
                             queue_audio((current, chapter['position'], title, paras))
@@ -507,15 +484,6 @@ class Job:
                         errors = group_failed or any(c['status'] == 'error' or c.get('audio_status') == 'error' for c in self.store.list())
                     self.status = 'error' if errors and not self.stop_flag.is_set() else 'ready'
                     self.message = 'Có lỗi dịch hoặc audio. Kiểm tra chương lỗi và thông báo audio.' if self.status == 'error' else ''
-            # Complete in-flight snapshot before saving the final state.
-            if cloud_sync_thread is not None:
-                cloud_sync_thread.join()
-            if config.get('cloud_checkpoint'):
-                try:
-                    from storage.checkpoints import upload_checkpoint
-                    result = upload_checkpoint(self.store, include_audio=config.get('checkpoint_include_audio', False))
-                    self.emit('cloud_checkpoint_done', url=result['url'])
-                except Exception as exc:
-                    log.exception('Không lưu được checkpoint Hugging Face; checkpoint cục bộ vẫn còn')
-                    self.emit('cloud_checkpoint_error', error=str(exc)[:300])
+            # Finish in-flight periodic upload, then save final consistent snapshot.
+            cloud_sync.finish(include_audio=config.get('checkpoint_include_audio', False))
             self.emit('job_finished')
