@@ -21,3 +21,17 @@ def test_every_chapter_and_final_upload(monkeypatch):
     manager.finish()
     assert successes == [{"url": "hf://test"}, {"url": "hf://test"}]
     assert errors == []
+
+
+def test_periodic_checkpoint_honors_audio_option(monkeypatch):
+    from storage import checkpoints
+    captured = []
+    def upload(store, include_audio=False):
+        captured.append(include_audio)
+        return {'url': 'hf://test'}
+    monkeypatch.setattr(checkpoints, 'upload_checkpoint', upload)
+    manager = CloudSyncManager(object(), lambda result: None, lambda error: None,
+                               enabled=True, every=1, include_audio=True)
+    manager.chapter_done()
+    manager.finish(include_audio=True)
+    assert captured == [True, True]

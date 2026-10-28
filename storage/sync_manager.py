@@ -8,11 +8,12 @@ log = logging.getLogger(__name__)
 
 class CloudSyncManager:
     def __init__(self, store, on_success, on_error, *, enabled=False,
-                 every=10, minutes=10):
+                 every=10, minutes=10, include_audio=False):
         self.store = store
         self.on_success = on_success
         self.on_error = on_error
         self.enabled = bool(enabled)
+        self.include_audio = bool(include_audio)
         self.every = max(1, int(every))
         self.period = max(60, int(minutes) * 60)
         self.completed = 0
@@ -39,7 +40,8 @@ class CloudSyncManager:
         if self.thread is not None and self.thread.is_alive():
             return
         self.thread = threading.Thread(
-            target=self._upload, name="hf-checkpoint", daemon=True)
+            target=self._upload, kwargs={'include_audio': self.include_audio},
+            name="hf-checkpoint", daemon=True)
         self.thread.start()
         self.submitted = self.completed
         self.last_started = now

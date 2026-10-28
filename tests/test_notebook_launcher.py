@@ -41,11 +41,13 @@ def test_no_token_zrok_does_not_block_webui(monkeypatch, tmp_path):
     assert result["access_code"] == "login-code"
 
 
-def test_two_notebooks_are_launchers_only():
+def test_molab_is_native_and_colab_remains_a_launcher():
     code = (ROOT / "NovelReader_Molab.py").read_text(encoding="utf-8")
     ast.parse(code)
-    assert "mo.ui." not in code
-    assert "ZROK_ACCOUNT_TOKEN_INLINE" in code
+    assert "mo.ui." in code
+    assert "controller.start(" in code
+    assert "launcher.launch(" not in code
+    assert "ZROK_ACCOUNT_TOKEN_INLINE" not in code
     notebook = json.loads((ROOT / "NovelReader_Colab.ipynb").read_text(encoding="utf-8"))
     assert notebook["nbformat"] == 4
     assert len([c for c in notebook["cells"] if c["cell_type"] == "code"]) == 2
