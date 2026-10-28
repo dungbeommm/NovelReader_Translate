@@ -124,6 +124,10 @@ def _(controller, load_book, mo, os, restore_file, restore_hf):
     _saved = controller.saved_config()
     from translation.engines import MODELS
     _models = {item["name"]: key for key, item in MODELS.items()}
+    _models.update({"HF Space · " + MODELS[_key]["name"]: "space:" + _key
+                    for _key in ("HachimiMT-60-QT", "HachimiMT-60", "MoxhiMT-60")})
+    if _saved['engine'] not in _models.values():
+        _models["Cấu hình đã lưu: " + _saved['engine']] = _saved['engine']
     _model_label = next((label for label, key in _models.items() if key == _saved['engine']), next(iter(_models)))
     settings_form = mo.md("""
     **Cấu hình dịch và audio**
