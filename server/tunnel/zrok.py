@@ -1,7 +1,7 @@
 """Common zrok public-share utilities (no background kill/restart side effects)."""
 import re
 
-SHARE_HOST = re.compile(r"(?i)\b([a-z0-9-]+\.shares\.zrok\.io)\b")
+SHARE_HOST = re.compile(r"(?i)\b([a-z0-9-]+\.(?:share|shares)\.zrok\.io)\b")
 
 
 def extract_share_host(log_text: str) -> str:
