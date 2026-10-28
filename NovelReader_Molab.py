@@ -100,9 +100,20 @@ def _():
     from pathlib import Path
     import marimo as mo
 
-    # HF_TOKEN is configured through MoLab secrets or the private HF settings UI.
-    if os.environ.get("HF_TOKEN"):
-        os.environ["HUGGING_FACE_HUB_TOKEN"] = os.environ["HF_TOKEN"]
+    # ============================================================
+    # CAU HINH TOKEN TRUC TIEP (chinh sua trong ban notebook RIENG)
+    # Khong commit token that len GitHub public. Token cu da lo can thu hoi.
+    # ============================================================
+    HF_TOKEN_INLINE = ""  # Dan HF token MOI cua ban vao giua cap dau ngoac kep
+    ZROK_ACCOUNT_TOKEN_INLINE = ""  # Dan zrok token MOI cua ban tai day
+
+    # Uu tien gia tri nhung truc tiep; neu de trong, dung bien moi truong.
+    if HF_TOKEN_INLINE.strip():
+        os.environ["HF_TOKEN"] = HF_TOKEN_INLINE.strip()
+    if os.environ.get("HF_TOKEN", "").strip():
+        os.environ["HUGGING_FACE_HUB_TOKEN"] = os.environ["HF_TOKEN"].strip()
+    if ZROK_ACCOUNT_TOKEN_INLINE.strip():
+        os.environ["ZROK_ACCOUNT_TOKEN"] = ZROK_ACCOUNT_TOKEN_INLINE.strip()
     return (
         Path,
         datetime,
