@@ -1,7 +1,9 @@
 """The only remote export backend."""
-from pathlib import PurePosixPath
+import tempfile
+from pathlib import Path, PurePosixPath
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 from storage import huggingface_service as service
 from storage.cloud_settings import load_key
@@ -52,8 +54,15 @@ def storage_upload(file: UploadFile = File(...), path: str = Form('')):
 
 @router.get('/api/storage/download')
 def storage_download(path: str):
-    filename = storage_action(lambda: service.download_repository_file(path))
-    return FileResponse(filename, filename=PurePosixPath(path).name)
+    with tempfile.NamedTemporaryFile(prefix='novel-hf-download-', delete=False) as handle:
+        target = Path(handle.name)
+    try:
+        storage_action(lambda: service.download_repository_file(path, target))
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    return FileResponse(target, filename=PurePosixPath(path).name,
+                        background=BackgroundTask(target.unlink, missing_ok=True))
 
 
 @router.get('/api/storage/status')

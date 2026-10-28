@@ -66,7 +66,7 @@ def test_reject_tamper_traversal_and_arbitrary_urls(book, tmp_path):
     for value in ['http://127.0.0.1', 'https://evil.com/u/abcd', 'https://pixeldrain.com@127.0.0.1/u/abcd', '../../data', 'https://pixeldrain.com/u/abcd?x=1']:
         with pytest.raises(ValueError):
             huggingface_service.checkpoint_path(value)
-    assert huggingface_service.checkpoint_path(huggingface_service.BASE_URL + '/blob/main/checkpoints/test/file.zip') == 'checkpoints/test/file.zip'
+    assert huggingface_service.checkpoint_path(huggingface_service.BASE_URL + '/tree/main/checkpoints/test/file.zip') == 'checkpoints/test/file.zip'
 
 
 def test_reject_checksum_damage_before_db_mutation(book, tmp_path):

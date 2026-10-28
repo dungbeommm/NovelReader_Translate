@@ -665,9 +665,9 @@ def _(
         nr_runtime.ensure_idle()
         repo = nr_hf_repo.value.strip()
         if len(repo.split("/")) != 2 or any(not x for x in repo.split("/")):
-            raise ValueError("Kho HF phải theo dạng tài_khoản/tên_dataset.")
+            raise ValueError("Kho HF phải theo dạng tài_khoản/tên_bucket.")
         nr_hf.REPO_ID = repo
-        nr_hf.BASE_URL = "https://huggingface.co/datasets/" + repo
+        nr_hf.BASE_URL = "https://huggingface.co/buckets/" + repo
         if nr_hf_token.value.strip():
             os.environ["HF_TOKEN"] = nr_hf_token.value.strip()
             nr_save_key(nr_hf_token.value.strip())
@@ -678,9 +678,9 @@ def _(
             os.environ["HF_TOKEN"] = nr_hf_token.value.strip()
             nr_save_key(nr_hf_token.value.strip())
         repo = nr_hf_repo.value.strip()
-        if len(repo.split("/")) != 2:
-            raise ValueError("Nhập dataset theo dạng tài_khoản/tên_dataset.")
-        nr_hf.client().create_repo(repo_id=repo,repo_type="dataset",private=True,exist_ok=True)
+        if len(repo.split("/")) != 2 or any(not x for x in repo.split("/")):
+            raise ValueError("Nhập bucket theo dạng tài_khoản/tên_bucket.")
+        nr_hf.client().create_bucket(bucket_id=repo, private=True, exist_ok=True)
         return nr_hf_configure()
     def nr_local_backup():
         with nr_runtime.job.lock:
@@ -735,7 +735,7 @@ def _(
     nr_bitrate = mo.ui.dropdown(options=["64k", "96k", "128k", "192k"], value="96k", label="Bitrate")
     nr_group = mo.ui.checkbox(label="Tự động gộp audio")
     nr_group_size = mo.ui.number(start=2, stop=500, value=50, label="Số chương / nhóm")
-    nr_hf_repo = mo.ui.text(value=nr_hf.REPO_ID, label="Dataset Hugging Face", full_width=True)
+    nr_hf_repo = mo.ui.text(value=nr_hf.REPO_ID, label="Bucket Hugging Face", full_width=True)
     nr_hf_token = mo.ui.text(kind="password", label="Token HF mới (bỏ trống để giữ token đã cấu hình)", full_width=True)
     nr_include_audio = mo.ui.checkbox(label="Kèm audio trong checkpoint")
     nr_restore_upload = mo.ui.file(filetypes=[".zip"], max_size=2*1024**3, label="Checkpoint ZIP")
@@ -745,7 +745,7 @@ def _(
     nr_controls = mo.ui.tabs({
         "📥 Truyện": mo.vstack([mo.md("### Nạp truyện\nFile tối đa 50 MB. Nạp truyện sẽ thay truyện đang có."), nr_upload, nr_replace, nr_button("Nạp truyện", nr_import_uploaded, "success")]),
         "⚙️ Dịch & giọng": mo.vstack([mo.hstack([nr_model,nr_batch]), mo.hstack([nr_start,nr_end,nr_honorific]), nr_glossary, nr_make_audio, mo.hstack([nr_tts,nr_voice,nr_speed]), mo.hstack([nr_format,nr_bitrate]), mo.hstack([nr_group,nr_group_size]), nr_button("Lưu cấu hình",nr_draft)]),
-        "☁️ Hugging Face": mo.vstack([nr_hf_repo,nr_hf_token,nr_button("Áp dụng & kiểm tra HF",nr_hf_configure),mo.md("Nếu kho chưa tồn tại, nút dưới tạo dataset riêng tư trong tài khoản có quyền ghi."),nr_button("Tạo dataset HF riêng tư",nr_hf_create),nr_include_audio,mo.hstack([nr_button("Tạo checkpoint ZIP",nr_local_backup),nr_button("Sao lưu lên HF",nr_cloud_backup)]),mo.md("### Khôi phục"),nr_restore_upload,nr_restore_link,nr_restore_confirm,nr_button("Khôi phục checkpoint",nr_restore,"warn")]),
+        "☁️ Hugging Face": mo.vstack([nr_hf_repo,nr_hf_token,nr_button("Áp dụng & kiểm tra HF",nr_hf_configure),mo.md("Nếu kho chưa tồn tại, nút dưới tạo bucket riêng tư trong tài khoản có quyền ghi."),nr_button("Tạo bucket HF riêng tư",nr_hf_create),nr_include_audio,mo.hstack([nr_button("Tạo checkpoint ZIP",nr_local_backup),nr_button("Sao lưu lên HF",nr_cloud_backup)]),mo.md("### Khôi phục"),nr_restore_upload,nr_restore_link,nr_restore_confirm,nr_button("Khôi phục checkpoint",nr_restore,"warn")]),
     })
     mo.vstack([mo.md("# 📚 NovelReader — Bảng điều khiển notebook"),
         mo.hstack([nr_button("▶ Bắt đầu / tiếp tục chương chưa dịch", nr_start_job,"success"), nr_button("⏸ Tạm dừng", nr_runtime.job.pause),nr_button("▶ Tiếp tục",nr_runtime.job.resume),nr_button("■ Hủy tác vụ",nr_runtime.job.stop,"danger")]),

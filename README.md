@@ -1,10 +1,10 @@
 # NovelReader
 
-Xuất mặc định và checkpoint dùng duy nhất dataset Hugging Face **`uri410/novelreader-storage`**. Google Drive và Pixeldrain đã được gỡ khỏi mã chạy, giao diện và dependencies. Vẫn có thể chọn tải tệp về máy.
+Xuất mặc định và checkpoint dùng duy nhất bucket Hugging Face **`uri410/novelreader-storage`**. Google Drive và Pixeldrain đã được gỡ khỏi mã chạy, giao diện và dependencies. Vẫn có thể chọn tải tệp về máy.
 
 TXT/EPUB được lưu trong `exports/<truyện>/<lượt-xuất>/`; audio trong `audio/<truyện>/<lượt-xuất>/` dưới dạng từng tệp gốc, giữ thư mục con; checkpoint ZIP trong `checkpoints/<truyện>/<lượt-xuất>/`. Mỗi lượt có timestamp và mã riêng để tránh ghi đè.
 
-Cần tạo dataset đúng địa chỉ trên và cấp quyền đọc/ghi cho token. Cấu hình `HF_TOKEN` trong môi trường của tiến trình chạy backend. Với PowerShell:
+Cần tạo bucket đúng địa chỉ trên và cấp quyền đọc/ghi cho token. Cấu hình `HF_TOKEN` trong môi trường của tiến trình chạy backend. Với PowerShell:
 
 ```powershell
 $env:HF_TOKEN = Read-Host 'Hugging Face token' -MaskInput
@@ -13,7 +13,7 @@ python -m uvicorn main:app --host 127.0.0.1 --port 8000
 
 Backend cũng hỗ trợ token lưu riêng tại `data/private/huggingface.json`; tệp này nằm ngoài Git, notebook đóng gói và checkpoint. Với Docker Compose, đặt `HF_TOKEN` trong `.env` (xem `.env.example`); Compose truyền vào container. Không nhúng token vào JavaScript hay notebook chia sẻ.
 
-Trong Cài đặt → Lưu trữ, bấm **Kiểm tra kết nối**. Khôi phục cloud nhận link `blob/main`/`resolve/main` hoặc đường dẫn `checkpoints/...zip` trong đúng kho cố định. Thư mục `docs/` giữ hướng dẫn GPU/TTS, giám sát tài nguyên và mẫu đầu vào.
+Trong Cài đặt → Lưu trữ, bấm **Kiểm tra kết nối**. Khôi phục cloud nhận link `tree/main`/`resolve` hoặc đường dẫn `checkpoints/...zip` trong đúng kho cố định. Thư mục `docs/` giữ hướng dẫn GPU/TTS, giám sát tài nguyên và mẫu đầu vào.
 
 `NovelReader_Molab.py` và `NovelReader_Colab.ipynb` chứa mã nguồn mới, không phụ thuộc ZIP cũ trên GitHub. Thiết lập biến môi trường `HF_TOKEN` trong runtime notebook trước khi khởi động Web. Sau khi sửa mã, chạy `python scripts/package_notebooks.py` để cập nhật cả hai notebook và ZIP nguồn; script loại dữ liệu runtime, token và model khỏi gói.
 

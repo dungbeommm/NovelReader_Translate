@@ -900,7 +900,7 @@ function renderStorageFiles() {
       download.append(storageIcon('download')); actions.append(download);
     }
     const link = document.createElement('a');
-    link.href = 'https://huggingface.co/datasets/uri410/novelreader-storage/' + (item.directory ? 'tree' : 'blob') + '/main/' + item.path.split('/').map(encodeURIComponent).join('/');
+    link.href = 'https://huggingface.co/buckets/uri410/novelreader-storage/tree/main/' + item.path.split('/').map(encodeURIComponent).join('/');
     link.target = '_blank'; link.rel = 'noopener noreferrer';
     link.title = 'Mở ' + item.name + ' trên Hugging Face'; link.setAttribute('aria-label', link.title);
     link.append(storageIcon('arrow-up-right')); actions.append(link); row.append(actions);
@@ -1041,7 +1041,7 @@ async function loadHuggingFaceSettings() {
   }
   try {
     const checkpoint = await api('/api/checkpoints/status');
-    if (checkpoint.last_cloud?.url?.startsWith('https://huggingface.co/datasets/uri410/novelreader-storage/')) {
+    if (checkpoint.last_cloud?.url?.startsWith('https://huggingface.co/buckets/uri410/novelreader-storage/')) {
       const output = $('checkpoint-status');
       const link = document.createElement('a');
       link.href = checkpoint.last_cloud.url;

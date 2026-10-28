@@ -1,4 +1,4 @@
-"""Exports and checkpoints in the single NovelReader Hugging Face dataset."""
+"""Exports and checkpoints in the single NovelReader Hugging Face bucket."""
 import json
 import shutil
 import tempfile
@@ -8,15 +8,15 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, unquote, urlsplit
 
-from huggingface_hub import HfApi, RepoFolder, hf_hub_download
+from huggingface_hub import BucketFolder, HfApi
 from storage.cloud_settings import load_key
 from storage.files import export_txt, export_epub
 from storage.store import _safe_filename
 
 REPO_ID = 'uri410/novelreader-storage'
-REPO_TYPE = 'dataset'
+REPO_TYPE = 'bucket'
 ENDPOINT = 'https://huggingface.co'
-BASE_URL = f'{ENDPOINT}/datasets/{REPO_ID}'
+BASE_URL = f'{ENDPOINT}/buckets/{REPO_ID}'
 
 
 def client():
@@ -28,7 +28,7 @@ def client():
 
 def check_connection():
     api = client()
-    info = api.repo_info(repo_id=REPO_ID, repo_type=REPO_TYPE)
+    info = api.bucket_info(REPO_ID)
     account = api.whoami()
     return {'ok': True, 'repo_id': REPO_ID, 'private': info.private,
             'username': account.get('name') if isinstance(account, dict) else None,
@@ -46,22 +46,26 @@ def repository_path(value, *, allow_root=True):
     return value
 
 
+def _path_taken(api, path):
+    if any(True for _ in islice(api.get_bucket_paths_info(REPO_ID, [path]), 1)):
+        return True
+    return any(True for _ in islice(api.list_bucket_tree(REPO_ID, prefix=path + '/', recursive=True), 1))
+
+
 def list_directory(path=''):
     path = repository_path(path)
-    entries = list(islice(client().list_repo_tree(
-        REPO_ID, path_in_repo=path or None, repo_type=REPO_TYPE,
-        recursive=False, expand=True), 501))
+    entries = list(islice(client().list_bucket_tree(
+        REPO_ID, prefix=path or None, recursive=False), 501))
     rows = []
     for entry in entries[:500]:
         name = PurePosixPath(entry.path).name
         if name == '.gitkeep':
             continue
-        folder = isinstance(entry, RepoFolder)
-        commit = getattr(entry, 'last_commit', None)
-        date = getattr(commit, 'date', None)
+        folder = isinstance(entry, BucketFolder)
+        timestamp = getattr(entry, 'uploaded_at', None)
         rows.append({'name': name, 'path': entry.path, 'directory': folder,
                      'size': None if folder else entry.size,
-                     'updated_at': date.isoformat() if date else None})
+                     'updated_at': timestamp.isoformat() if timestamp else None})
     rows.sort(key=lambda row: (not row['directory'], row['name'].casefold()))
     return {'path': path, 'entries': rows, 'truncated': len(entries) > 500,
             'file_bytes': sum(row['size'] or 0 for row in rows),
@@ -75,25 +79,23 @@ def upload_to_directory(data, filename, path='', *, folder=False):
         raise ValueError('Tên không được chứa đường dẫn thư mục.')
     destination = f'{path}/{name}' if path else name
     api = client()
-    revision = api.repo_info(REPO_ID, repo_type=REPO_TYPE).sha
-    if api.get_paths_info(REPO_ID, [destination], repo_type=REPO_TYPE, revision=revision):
+    if _path_taken(api, destination):
         raise FileExistsError('Tên đã tồn tại trong thư mục.')
+    # Buckets have no empty directories; a zero-byte marker keeps the folder visible.
     target = destination + '/.gitkeep' if folder else destination
-    api.upload_file(path_or_fileobj=b'' if folder else data, path_in_repo=target,
-                    repo_id=REPO_ID, repo_type=REPO_TYPE, parent_commit=revision,
-                    commit_message=f'NovelReader: add {destination}')
+    api.batch_bucket_files(REPO_ID, add=[(b'' if folder else data, target)])
     return {'ok': True, 'path': destination}
 
 
-def download_repository_file(path):
+def download_repository_file(path, destination):
     path = repository_path(path, allow_root=False)
     api = client()
-    revision = api.repo_info(REPO_ID, repo_type=REPO_TYPE).sha
-    info = api.get_paths_info(REPO_ID, [path], repo_type=REPO_TYPE, revision=revision)
-    if len(info) != 1 or isinstance(info[0], RepoFolder):
+    info = list(api.get_bucket_paths_info(REPO_ID, [path]))
+    if len(info) != 1:
         raise ValueError('Không tìm thấy tệp.')
-    return hf_hub_download(repo_id=REPO_ID, filename=path, repo_type=REPO_TYPE,
-                           revision=revision, token=load_key(), endpoint=ENDPOINT)
+    api.download_bucket_files(REPO_ID, [(info[0], destination)],
+                              raise_on_missing_files=True)
+    return Path(destination)
 
 
 def batch_path(title, category):
@@ -101,8 +103,8 @@ def batch_path(title, category):
     return f'{category}/{_safe_filename(title)}/{stamp}_{uuid.uuid4().hex[:12]}'
 
 
-def result(path, filename, size, *, directory=False, files=1):
-    url = f'{BASE_URL}/{"tree" if directory else "blob"}/main/{quote(path, safe="/")}'
+def result(path, filename, size, *, files=1):
+    url = f'{BASE_URL}/tree/main/{quote(path, safe="/")}'
     return {'ok': True, 'repo_id': REPO_ID, 'id': path, 'path': path,
             'url': url, 'filename': filename, 'size_bytes': size,
             'size_mb': round(size / 1024**2, 2), 'total_files': files}
@@ -110,9 +112,7 @@ def result(path, filename, size, *, directory=False, files=1):
 
 def upload_file(source, filename, *, category='exports', title='novel'):
     path = f'{batch_path(title, category)}/{Path(filename).name}'
-    client().upload_file(path_or_fileobj=source, path_in_repo=path,
-                         repo_id=REPO_ID, repo_type=REPO_TYPE,
-                         commit_message=f'NovelReader {category}: {filename}')
+    client().batch_bucket_files(REPO_ID, add=[(source, path)])
     size = len(source) if isinstance(source, bytes) else Path(source).stat().st_size
     return result(path, filename, size)
 
@@ -139,18 +139,18 @@ def export_book(store, kind):
     if not files:
         raise ValueError('Chưa có audio để xuất.')
     path = batch_path(title, 'audio')
-    # Snapshot only finished audio; upload_folder never sees credentials or temp files.
+    # Snapshot only finished audio; the upload never sees credentials or temp files.
     with tempfile.TemporaryDirectory(prefix='novel-hf-audio-') as work:
         size = 0
+        add = []
         for source in files:
             target = Path(work) / source.relative_to(store.audio_dir)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
             size += target.stat().st_size
-        client().upload_folder(folder_path=work, path_in_repo=path,
-                               repo_id=REPO_ID, repo_type=REPO_TYPE,
-                               commit_message=f'NovelReader audio: {title}')
-    return result(path, title, size, directory=True, files=len(files))
+            add.append((target, f'{path}/{target.relative_to(work).as_posix()}'))
+        client().batch_bucket_files(REPO_ID, add=add)
+    return result(path, title, size, files=len(files))
 
 
 def export_audio_file(store, filename):
@@ -170,13 +170,12 @@ def checkpoint_path(value):
     value = value.strip()
     if value.startswith('https://'):
         parsed = urlsplit(value)
-        prefix = f'/datasets/{REPO_ID}/'
-        if parsed.netloc != 'huggingface.co' or parsed.query or parsed.fragment or not parsed.path.startswith(prefix):
+        prefixes = (f'/buckets/{REPO_ID}/tree/main/', f'/buckets/{REPO_ID}/resolve/')
+        prefix = next((p for p in prefixes if parsed.path.startswith(p)), None)
+        if (parsed.netloc != 'huggingface.co' or parsed.query or parsed.fragment
+                or prefix is None):
             raise ValueError('Chỉ nhận checkpoint trong kho Hugging Face cố định.')
-        suffix = parsed.path[len(prefix):]
-        if not suffix.startswith(('blob/main/', 'resolve/main/')):
-            raise ValueError('Link checkpoint không hợp lệ.')
-        value = unquote(suffix.split('/', 2)[2])
+        value = unquote(parsed.path[len(prefix):])
     path = PurePosixPath(value)
     if (path.is_absolute() or '..' in path.parts or '\\' in value or ':' in value
             or not value.startswith('checkpoints/') or path.suffix != '.zip'
@@ -188,14 +187,12 @@ def checkpoint_path(value):
 def download_checkpoint(value, destination, max_bytes):
     filename = checkpoint_path(value)
     api = client()
-    # Pin metadata and download to the same revision to avoid a size-check race.
-    revision = api.repo_info(REPO_ID, repo_type=REPO_TYPE).sha
-    info = api.get_paths_info(REPO_ID, [filename], repo_type=REPO_TYPE, revision=revision)
+    info = list(api.get_bucket_paths_info(REPO_ID, [filename]))
     if len(info) != 1 or not isinstance(getattr(info[0], 'size', None), int) or info[0].size > max_bytes:
         raise ValueError('Checkpoint không tồn tại hoặc vượt giới hạn 2 GB.')
-    cached = hf_hub_download(repo_id=REPO_ID, filename=filename, repo_type=REPO_TYPE,
-                             revision=revision, token=load_key(), endpoint=ENDPOINT)
-    if Path(cached).stat().st_size > max_bytes:
+    api.download_bucket_files(REPO_ID, [(info[0], destination)],
+                              raise_on_missing_files=True)
+    if Path(destination).stat().st_size > max_bytes:
+        Path(destination).unlink(missing_ok=True)
         raise ValueError('Checkpoint vượt giới hạn 2 GB.')
-    shutil.copyfile(cached, destination)
     return Path(destination)

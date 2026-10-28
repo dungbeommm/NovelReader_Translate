@@ -60,7 +60,9 @@ def main():
     payload = base64.b64encode(archive).decode('ascii')
     checksum = hashlib.sha256(archive).hexdigest()
     molab = ROOT / 'NovelReader_Molab.py'
-    molab.write_text(update_source(molab.read_text('utf-8'), payload, checksum), encoding='utf-8')
+    molab_source = molab.read_text('utf-8')
+    if '_overlay_payload = ' in molab_source:
+        molab.write_text(update_source(molab_source, payload, checksum), encoding='utf-8')
     colab = ROOT / 'NovelReader_Colab.ipynb'
     notebook = json.loads(colab.read_text('utf-8'))
     for cell in notebook['cells']:
