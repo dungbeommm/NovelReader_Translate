@@ -22,7 +22,7 @@ def _safe_filename(name: str) -> str:
 
 
 class Store:
-    def __init__(self, path, text_dir=None, audio_dir=None):
+    def __init__(self, path, text_dir=None, audio_dir=None, recover_incomplete=True):
         self.path = Path(path).resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._text_root = Path(text_dir or os.getenv('NOVEL_OUTPUT_TEXT', ROOT / 'output_text')).expanduser().resolve()
@@ -36,15 +36,17 @@ class Store:
             CREATE TABLE IF NOT EXISTS book(id INTEGER PRIMARY KEY,title TEXT,filename TEXT,encoding TEXT,config TEXT DEFAULT '{}');
             CREATE TABLE IF NOT EXISTS chapter(id INTEGER PRIMARY KEY,position INTEGER,title TEXT,source TEXT,status TEXT DEFAULT 'pending',
             plan TEXT DEFAULT '[]',outputs TEXT DEFAULT '[]',translated_title TEXT DEFAULT '',translated TEXT DEFAULT '[]',error TEXT DEFAULT '',audio_status TEXT DEFAULT 'none');
-            UPDATE chapter SET status='pending' WHERE status='translating';
             ''')
+            if recover_incomplete:
+                c.execute("UPDATE chapter SET status='pending' WHERE status='translating'")
             try:
                 c.execute("ALTER TABLE chapter ADD COLUMN audio_status TEXT DEFAULT 'none'")
             except Exception:
                 pass
 
-        with self.connect() as c:
-            c.execute("UPDATE chapter SET audio_status='none' WHERE audio_status IN ('queued', 'generating')")
+        if recover_incomplete:
+            with self.connect() as c:
+                c.execute("UPDATE chapter SET audio_status='none' WHERE audio_status IN ('queued', 'generating')")
 
         # Backward-compatible SQLite migration: persist the output folder per book.
         with self.connect() as c:

@@ -1,0 +1,1 @@
+"""Canonical NovelReader backend services."""
