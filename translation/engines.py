@@ -174,7 +174,9 @@ class TranslatorEngine(ABC):
 
 class LocalEngine(TranslatorEngine):
     def __init__(self, model_key: str = 'HachimiMT-60-QT', backend: str = 'ct2'):
-        self.model_key = model_key if model_key in MODELS else 'HachimiMT-60-QT'
+        if model_key not in MODELS:
+            raise ValueError(f'Model không được hỗ trợ: {model_key}. Chọn trong: {", ".join(MODELS)}')
+        self.model_key = model_key
         self.backend = backend.lower() if backend else 'ct2'
         self.config = MODELS.get(self.model_key, {})
         self.translator = None
@@ -344,7 +346,9 @@ class LocalEngine(TranslatorEngine):
 
 class SpaceEngine(TranslatorEngine):
     def __init__(self, model_key: str = 'HachimiMT-60-QT', timeout=180, interval=0.5):
-        self.model_key = model_key if model_key in MODELS else 'HachimiMT-60-QT'
+        if model_key not in MODELS:
+            raise ValueError(f'Model không được hỗ trợ: {model_key}. Chọn trong: {", ".join(MODELS)}')
+        self.model_key = model_key
         self.timeout = timeout
         self.interval = interval
         self.last = 0
@@ -437,4 +441,4 @@ def create_engine(name: str, backend: str = 'ct2', *args, **kwargs):
         return SpaceEngine(model_key=model_key)
     if name in MODELS:
         return LocalEngine(model_key=name, backend=backend)
-    return LocalEngine(model_key='HachimiMT-60-QT', backend=backend)
+    raise ValueError(f'Model/engine không được hỗ trợ: {name}')

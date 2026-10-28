@@ -67,8 +67,8 @@ def storage_download(path: str):
 
 @router.get('/api/storage/status')
 def status():
-    return {'repo_id': service.REPO_ID, 'repo_type': service.REPO_TYPE,
-            'url': service.BASE_URL, 'has_key': bool(load_key()),
+    return {'repo_id': service.repo_id(), 'repo_type': service.REPO_TYPE,
+            'url': service.base_url(), 'has_key': bool(load_key()),
             'default_destination': 'huggingface'}
 
 

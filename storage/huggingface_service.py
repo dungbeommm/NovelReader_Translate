@@ -9,14 +9,22 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import quote, unquote, urlsplit
 
 from huggingface_hub import BucketFolder, HfApi
-from storage.cloud_settings import load_key
+from storage.cloud_settings import load_key, load_repo_id
 from storage.files import export_txt, export_epub
 from storage.store import _safe_filename
 
 REPO_ID = 'uri410/novelreader-storage'
 REPO_TYPE = 'bucket'
 ENDPOINT = 'https://huggingface.co'
-BASE_URL = f'{ENDPOINT}/buckets/{REPO_ID}'
+BASE_URL = f'{ENDPOINT}/buckets/{REPO_ID}'  # Default only; use base_url() at runtime.
+
+
+def repo_id():
+    return load_repo_id()
+
+
+def base_url():
+    return f'{ENDPOINT}/buckets/{repo_id()}'
 
 
 def client():
@@ -28,11 +36,11 @@ def client():
 
 def check_connection():
     api = client()
-    info = api.bucket_info(REPO_ID)
+    info = api.bucket_info(repo_id())
     account = api.whoami()
-    return {'ok': True, 'repo_id': REPO_ID, 'private': info.private,
+    return {'ok': True, 'repo_id': repo_id(), 'private': info.private,
             'username': account.get('name') if isinstance(account, dict) else None,
-            'message': f'Đã kết nối {REPO_ID}.'}
+            'message': f'Đã kết nối {repo_id()}.'}
 
 
 def repository_path(value, *, allow_root=True):
@@ -47,15 +55,15 @@ def repository_path(value, *, allow_root=True):
 
 
 def _path_taken(api, path):
-    if any(True for _ in islice(api.get_bucket_paths_info(REPO_ID, [path]), 1)):
+    if any(True for _ in islice(api.get_bucket_paths_info(repo_id(), [path]), 1)):
         return True
-    return any(True for _ in islice(api.list_bucket_tree(REPO_ID, prefix=path + '/', recursive=True), 1))
+    return any(True for _ in islice(api.list_bucket_tree(repo_id(), prefix=path + '/', recursive=True), 1))
 
 
 def list_directory(path=''):
     path = repository_path(path)
     entries = list(islice(client().list_bucket_tree(
-        REPO_ID, prefix=path or None, recursive=False), 501))
+        repo_id(), prefix=path or None, recursive=False), 501))
     rows = []
     for entry in entries[:500]:
         name = PurePosixPath(entry.path).name
@@ -69,7 +77,7 @@ def list_directory(path=''):
     rows.sort(key=lambda row: (not row['directory'], row['name'].casefold()))
     return {'path': path, 'entries': rows, 'truncated': len(entries) > 500,
             'file_bytes': sum(row['size'] or 0 for row in rows),
-            'repo_id': REPO_ID}
+            'repo_id': repo_id()}
 
 
 def upload_to_directory(data, filename, path='', *, folder=False):
@@ -83,17 +91,17 @@ def upload_to_directory(data, filename, path='', *, folder=False):
         raise FileExistsError('Tên đã tồn tại trong thư mục.')
     # Buckets have no empty directories; a zero-byte marker keeps the folder visible.
     target = destination + '/.gitkeep' if folder else destination
-    api.batch_bucket_files(REPO_ID, add=[(b'' if folder else data, target)])
+    api.batch_bucket_files(repo_id(), add=[(b'' if folder else data, target)])
     return {'ok': True, 'path': destination}
 
 
 def download_repository_file(path, destination):
     path = repository_path(path, allow_root=False)
     api = client()
-    info = list(api.get_bucket_paths_info(REPO_ID, [path]))
+    info = list(api.get_bucket_paths_info(repo_id(), [path]))
     if len(info) != 1:
         raise ValueError('Không tìm thấy tệp.')
-    api.download_bucket_files(REPO_ID, [(info[0], destination)],
+    api.download_bucket_files(repo_id(), [(info[0], destination)],
                               raise_on_missing_files=True)
     return Path(destination)
 
@@ -104,15 +112,15 @@ def batch_path(title, category):
 
 
 def result(path, filename, size, *, files=1):
-    url = f'{BASE_URL}/tree/main/{quote(path, safe="/")}'
-    return {'ok': True, 'repo_id': REPO_ID, 'id': path, 'path': path,
+    url = f'{base_url()}/tree/main/{quote(path, safe="/")}'
+    return {'ok': True, 'repo_id': repo_id(), 'id': path, 'path': path,
             'url': url, 'filename': filename, 'size_bytes': size,
             'size_mb': round(size / 1024**2, 2), 'total_files': files}
 
 
 def upload_file(source, filename, *, category='exports', title='novel'):
     path = f'{batch_path(title, category)}/{Path(filename).name}'
-    client().batch_bucket_files(REPO_ID, add=[(source, path)])
+    client().batch_bucket_files(repo_id(), add=[(source, path)])
     size = len(source) if isinstance(source, bytes) else Path(source).stat().st_size
     return result(path, filename, size)
 
@@ -149,7 +157,7 @@ def export_book(store, kind):
             shutil.copy2(source, target)
             size += target.stat().st_size
             add.append((target, f'{path}/{target.relative_to(work).as_posix()}'))
-        client().batch_bucket_files(REPO_ID, add=add)
+        client().batch_bucket_files(repo_id(), add=add)
     return result(path, title, size, files=len(files))
 
 
@@ -170,7 +178,7 @@ def checkpoint_path(value):
     value = value.strip()
     if value.startswith('https://'):
         parsed = urlsplit(value)
-        prefixes = (f'/buckets/{REPO_ID}/tree/main/', f'/buckets/{REPO_ID}/resolve/')
+        prefixes = (f'/buckets/{repo_id()}/tree/main/', f'/buckets/{repo_id()}/resolve/')
         prefix = next((p for p in prefixes if parsed.path.startswith(p)), None)
         if (parsed.netloc != 'huggingface.co' or parsed.query or parsed.fragment
                 or prefix is None):
@@ -187,10 +195,10 @@ def checkpoint_path(value):
 def download_checkpoint(value, destination, max_bytes):
     filename = checkpoint_path(value)
     api = client()
-    info = list(api.get_bucket_paths_info(REPO_ID, [filename]))
+    info = list(api.get_bucket_paths_info(repo_id(), [filename]))
     if len(info) != 1 or not isinstance(getattr(info[0], 'size', None), int) or info[0].size > max_bytes:
         raise ValueError('Checkpoint không tồn tại hoặc vượt giới hạn 2 GB.')
-    api.download_bucket_files(REPO_ID, [(info[0], destination)],
+    api.download_bucket_files(repo_id(), [(info[0], destination)],
                               raise_on_missing_files=True)
     if Path(destination).stat().st_size > max_bytes:
         Path(destination).unlink(missing_ok=True)

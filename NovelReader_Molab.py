@@ -100,9 +100,9 @@ def _():
     from pathlib import Path
     import marimo as mo
 
-    # Hugging Face token
-    os.environ["HF_TOKEN"] = "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"
-    os.environ["HUGGING_FACE_HUB_TOKEN"] = os.environ["HF_TOKEN"]
+    # HF_TOKEN is configured through MoLab secrets or the private HF settings UI.
+    if os.environ.get("HF_TOKEN"):
+        os.environ["HUGGING_FACE_HUB_TOKEN"] = os.environ["HF_TOKEN"]
     return (
         Path,
         datetime,
@@ -127,8 +127,8 @@ def _(mo):
     model_selector = mo.ui.dropdown(
         options={
             "HachimiMT-60-QT (Khuyên dùng - Nhanh, chuẩn)": "HachimiMT-60-QT",
-            "HachimiMT-125-QT (Chất lượng cao hơn)": "HachimiMT-125-QT",
-            "HachimiMT-Small (Siêu nhẹ)": "HachimiMT-Small",
+            "HachimiMT-40-QT (Nhẹ, cổ trang)": "HachimiMT-40-QT",
+            "HachimiMT-30 (Siêu nhẹ)": "HachimiMT-30",
         },
         value="HachimiMT-60-QT (Khuyên dùng - Nhanh, chuẩn)",
         label="Dịch thuật (Model)",
@@ -435,6 +435,9 @@ def _(
         # Google Drive API
     }
     os.environ.update(env_map)
+    # Không để COLAB_GPU="0" (chuỗi có giá trị True trong kiểm tra boolean).
+    if not gpu_detected:
+        os.environ.pop("COLAB_GPU", None)
 
     # Thêm toàn bộ các thư mục thư viện nvidia cuDNN / cuBLAS vào LD_LIBRARY_PATH
     discovered_nvidia_libs = []
@@ -483,6 +486,14 @@ def _(
         tts_command += ["--all"]
     subprocess.run(tts_command,cwd=str(repo_dir),env=dict(os.environ),check=True)
 
+    # Kiểm tra đúng cấu trúc CTranslate2 và tải trước cho cả CPU lẫn GPU.
+    from translation.engines import is_model_downloaded as nr_is_model_downloaded
+    chosen_model = model_selector.value or "HachimiMT-60-QT"
+    if not nr_is_model_downloaded(chosen_model):
+        print(f"📥 Đang tải model dịch thuật {chosen_model}...")
+        subprocess.run([sys.executable, str(repo_dir / "scripts/download_model.py"), "--model", chosen_model],
+                       cwd=str(repo_dir), env=dict(os.environ), check=True)
+
     # 4b. Kiểm tra ORT Execution Providers
     cuda_provider_confirmed = False
     if gpu_detected:
@@ -505,20 +516,6 @@ def _(
                 print("⚠️ CUDAExecutionProvider chưa xuất hiện trong phiên kiểm tra.")
         except Exception as ort_err:
             print(f"⚠️ Kiểm tra ORT: {ort_err}")
-
-        # 4c. Tải model dịch thuật được chọn trước khi smoke test
-        chosen_model = model_selector.value or "HachimiMT-60-QT"
-        model_dir = repo_dir / "models/translation" / chosen_model
-        if not (model_dir / "model.bin").is_file() or not (model_dir / "source.spm").is_file():
-            print(f"📥 Đang tải model dịch thuật '{chosen_model}'...")
-            try:
-                subprocess.run(
-                    [sys.executable, str(repo_dir / "scripts/download_model.py"), "--model", chosen_model],
-                    cwd=str(repo_dir), env=dict(os.environ), check=True
-                )
-                print(f"✅ Đã tải xong model dịch thuật '{chosen_model}'.")
-            except Exception as dl_err:
-                print(f"⚠️ Tải model dịch thuật thất bại: {dl_err}")
 
         # 4d. Chạy GPU Smoke-test thực tế
         print(f"🚀 Chạy GPU smoke-test với model '{chosen_model}'...")
@@ -555,7 +552,7 @@ def _(json, mo, os, repo_dir, step4_ready, subprocess, urllib):
     from web.schemas import Config as nr_Config
     from storage import checkpoints as nr_checkpoints
     from storage import huggingface_service as nr_hf
-    from storage.cloud_settings import save_key as nr_save_key
+    from storage.cloud_settings import save_key as nr_save_key, save_repo_id as nr_save_repo_id, load_key as nr_load_key
     from storage.files import export_txt as nr_export_txt, export_epub as nr_export_epub
     from audio import audio_service as nr_audio
     # Không thay thế dữ liệu nếu tác vụ cũ còn chạy.
@@ -586,6 +583,8 @@ def _(json, mo, os, repo_dir, step4_ready, subprocess, urllib):
         nr_hf,
         nr_runtime,
         nr_save_key,
+        nr_save_repo_id,
+        nr_load_key,
         nr_set_notice,
     )
 
@@ -597,10 +596,13 @@ def _(
     json,
     mo,
     nr_Config,
+    model_selector,
     nr_checkpoints,
     nr_hf,
     nr_runtime,
     nr_save_key,
+    nr_save_repo_id,
+    nr_load_key,
     nr_set_notice,
     os,
     repo_dir,
@@ -634,7 +636,8 @@ def _(
             audio_bitrate=nr_bitrate.value, honorific_mode=nr_honorific.value,
             start_pos=int(nr_start.value), end_pos=int(nr_end.value) if nr_end.value else None,
             auto_group_audio=nr_group.value, group_size=int(nr_group_size.value),
-            cloud_checkpoint=False).model_dump()
+            cloud_checkpoint=bool(nr_cloud_auto.value), cloud_checkpoint_every=10,
+            cloud_checkpoint_minutes=10).model_dump()
     def nr_import_uploaded():
         nr_runtime.ensure_idle()
         if nr_runtime.store.book() and not nr_replace.value:
@@ -655,6 +658,8 @@ def _(
                 name = Path(name).stem + ".txt"
         return nr_runtime.import_book(name, data).get("book")
     def nr_start_job():
+        if nr_cloud_auto.value and not nr_load_key():
+            raise ValueError('Bật checkpoint tự động cần có token HF. Hãy cấu hình HF hoặc tắt tự đồng bộ.')
         nr_runtime.job.start(nr_settings(), reset=False)
         return nr_runtime.job.summary()
     def nr_draft():
@@ -666,8 +671,7 @@ def _(
         repo = nr_hf_repo.value.strip()
         if len(repo.split("/")) != 2 or any(not x for x in repo.split("/")):
             raise ValueError("Kho HF phải theo dạng tài_khoản/tên_bucket.")
-        nr_hf.REPO_ID = repo
-        nr_hf.BASE_URL = "https://huggingface.co/buckets/" + repo
+        nr_save_repo_id(repo)  # Shared config read by both notebook and FastAPI.
         if nr_hf_token.value.strip():
             os.environ["HF_TOKEN"] = nr_hf_token.value.strip()
             nr_save_key(nr_hf_token.value.strip())
@@ -721,7 +725,7 @@ def _(
         return mo.ui.button(label=label, kind=kind, on_click=lambda value: (nr_run_task(label, fn), (value or 0)+1)[1], value=0)
     nr_upload = mo.ui.file(filetypes=[".txt", ".epub", ".zip"], max_size=50*1024*1024, label="Chọn truyện TXT / EPUB / ZIP")
     nr_replace = mo.ui.checkbox(label="Cho phép thay truyện hiện tại khi nạp file")
-    nr_model = mo.ui.dropdown(options=["HachimiMT-60-QT", "HachimiMT-125-QT", "HachimiMT-Small"], value="HachimiMT-60-QT", label="Model dịch")
+    nr_model = mo.ui.dropdown(options=["HachimiMT-60-QT", "HachimiMT-40-QT", "HachimiMT-30"], value=model_selector.value, label="Model dịch")
     nr_batch = mo.ui.number(start=1, stop=1024, value=96, label="Batch size")
     nr_start = mo.ui.number(start=1, value=1, label="Từ chương")
     nr_end = mo.ui.number(start=0, value=0, label="Đến chương (0 = hết)")
@@ -735,9 +739,10 @@ def _(
     nr_bitrate = mo.ui.dropdown(options=["64k", "96k", "128k", "192k"], value="96k", label="Bitrate")
     nr_group = mo.ui.checkbox(label="Tự động gộp audio")
     nr_group_size = mo.ui.number(start=2, stop=500, value=50, label="Số chương / nhóm")
-    nr_hf_repo = mo.ui.text(value=nr_hf.REPO_ID, label="Bucket Hugging Face", full_width=True)
+    nr_hf_repo = mo.ui.text(value=nr_hf.repo_id(), label="Bucket Hugging Face", full_width=True)
     nr_hf_token = mo.ui.text(kind="password", label="Token HF mới (bỏ trống để giữ token đã cấu hình)", full_width=True)
     nr_include_audio = mo.ui.checkbox(label="Kèm audio trong checkpoint")
+    nr_cloud_auto = mo.ui.checkbox(value=True, label="Tự đồng bộ tiến độ lên Hugging Face")
     nr_restore_upload = mo.ui.file(filetypes=[".zip"], max_size=2*1024**3, label="Checkpoint ZIP")
     nr_restore_link = mo.ui.text(label="Hoặc đường dẫn checkpoint trên HF", full_width=True)
     nr_restore_confirm = mo.ui.checkbox(label="Tôi đồng ý thay dữ liệu hiện tại bằng checkpoint")
@@ -745,7 +750,7 @@ def _(
     nr_controls = mo.ui.tabs({
         "📥 Truyện": mo.vstack([mo.md("### Nạp truyện\nFile tối đa 50 MB. Nạp truyện sẽ thay truyện đang có."), nr_upload, nr_replace, nr_button("Nạp truyện", nr_import_uploaded, "success")]),
         "⚙️ Dịch & giọng": mo.vstack([mo.hstack([nr_model,nr_batch]), mo.hstack([nr_start,nr_end,nr_honorific]), nr_glossary, nr_make_audio, mo.hstack([nr_tts,nr_voice,nr_speed]), mo.hstack([nr_format,nr_bitrate]), mo.hstack([nr_group,nr_group_size]), nr_button("Lưu cấu hình",nr_draft)]),
-        "☁️ Hugging Face": mo.vstack([nr_hf_repo,nr_hf_token,nr_button("Áp dụng & kiểm tra HF",nr_hf_configure),mo.md("Nếu kho chưa tồn tại, nút dưới tạo bucket riêng tư trong tài khoản có quyền ghi."),nr_button("Tạo bucket HF riêng tư",nr_hf_create),nr_include_audio,mo.hstack([nr_button("Tạo checkpoint ZIP",nr_local_backup),nr_button("Sao lưu lên HF",nr_cloud_backup)]),mo.md("### Khôi phục"),nr_restore_upload,nr_restore_link,nr_restore_confirm,nr_button("Khôi phục checkpoint",nr_restore,"warn")]),
+        "☁️ Hugging Face": mo.vstack([nr_hf_repo,nr_hf_token,nr_button("Áp dụng & kiểm tra HF",nr_hf_configure),mo.md("Nếu kho chưa tồn tại, nút dưới tạo bucket riêng tư trong tài khoản có quyền ghi."),nr_button("Tạo bucket HF riêng tư",nr_hf_create),nr_cloud_auto,mo.md("Tự lưu bản dịch và SQLite sau mỗi 10 chương hoặc 10 phút, cùng một bản khi kết thúc; audio không nằm trong bản tự lưu."),nr_include_audio,mo.hstack([nr_button("Tạo checkpoint ZIP",nr_local_backup),nr_button("Sao lưu lên HF",nr_cloud_backup)]),mo.md("### Khôi phục"),nr_restore_upload,nr_restore_link,nr_restore_confirm,nr_button("Khôi phục checkpoint",nr_restore,"warn")]),
     })
     mo.vstack([mo.md("# 📚 NovelReader — Bảng điều khiển notebook"),
         mo.hstack([nr_button("▶ Bắt đầu / tiếp tục chương chưa dịch", nr_start_job,"success"), nr_button("⏸ Tạm dừng", nr_runtime.job.pause),nr_button("▶ Tiếp tục",nr_runtime.job.resume),nr_button("■ Hủy tác vụ",nr_runtime.job.stop,"danger")]),
@@ -1123,9 +1128,9 @@ def _(json, urllib):
 
 
 @app.cell
-def _():
-    # ZROK_ACCOUNT_TOKEN_INPUT
-    zr_account_token="mEpVU5H1wLeG"
+def _(os):
+    # ZROK_ACCOUNT_TOKEN_INPUT: set a new token in the MoLab runtime environment.
+    zr_account_token = os.environ.get("ZROK_ACCOUNT_TOKEN", "").strip()
     return (zr_account_token,)
 
 

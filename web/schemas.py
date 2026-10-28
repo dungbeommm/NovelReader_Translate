@@ -25,6 +25,8 @@ class Config(BaseModel):
     audio_workers:int=Field(default=1,ge=1,le=8)
     audio_queue_size:int=Field(default=4,ge=1,le=32)
     cloud_checkpoint:bool=False
+    cloud_checkpoint_every:int=Field(default=10,ge=1,le=10000)
+    cloud_checkpoint_minutes:int=Field(default=10,ge=1,le=1440)
     checkpoint_include_audio:bool=False
     tts_engine:str=Field(default_factory=lambda: os.getenv('NOVEL_TTS_ENGINE', 'piper'),pattern=r'^(piper|vieneu)$')
     vieneu_temperature:float=Field(default=0.8,ge=0.1,le=1.5,allow_inf_nan=False)
