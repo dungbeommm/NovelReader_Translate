@@ -1,4 +1,4 @@
-"""NovelReader MoLab — only start WebUI + zrok and print URL/access code/logs.
+"""NovelReader MoLab — start WebUI + LocalTunnel and print URL/access code/logs.
 
 All book, translation, audio and Hugging Face controls live in the FastAPI WebUI.
 """
@@ -12,7 +12,6 @@ app = marimo.App(width="medium")
 def _():
     # Chỉ điền token thật trong BẢN NOTEBOOK RIÊNG TƯ; không commit lên public GitHub.
     HF_TOKEN_INLINE = ""
-    ZROK_ACCOUNT_TOKEN_INLINE = ""
 
     import os
     import sys
@@ -23,8 +22,6 @@ def _():
 
     if HF_TOKEN_INLINE.strip():
         os.environ["HF_TOKEN"] = HF_TOKEN_INLINE.strip()
-    if ZROK_ACCOUNT_TOKEN_INLINE.strip():
-        os.environ["ZROK_ACCOUNT_TOKEN"] = ZROK_ACCOUNT_TOKEN_INLINE.strip()
 
     return os, sys, Path, subprocess, zipfile, urllib
 
@@ -82,7 +79,7 @@ def _(os, sys, Path, subprocess, zipfile, urllib):
         "novelreader_webui_launcher", repo_dir / "notebook/webui_launcher.py")
     launcher = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(launcher)
-    session = launcher.launch(repo_dir)
+    session = launcher.launch(repo_dir, tunnel="localtunnel")
     return launcher, repo_dir, session
 
 
