@@ -14,6 +14,9 @@ resources = None
 
 def initialize():
     global store, job, resources
+    # Re-importing the Web app must not replace an active worker in-process.
+    if job is not None and job.thread is not None and job.thread.is_alive():
+        return
     directory = data_dir()
     directory.mkdir(parents=True, exist_ok=True)
     logs = directory / 'logs'

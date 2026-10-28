@@ -26,7 +26,11 @@ class ManagedJob(Job):
 
     def _persist(self):
         if self.lease.owned:
-            write_state(self.store.path, super().summary())
+            # Monitoring must not interrupt a working translation on disk errors.
+            try:
+                write_state(self.store.path, super().summary())
+            except (OSError, ValueError, TypeError):
+                pass
 
     def emit(self, type, **data):
         self._persist()

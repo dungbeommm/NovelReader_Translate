@@ -55,3 +55,16 @@ def test_legacy_app_factory():
     from web.application import create_app as legacy
     assert main.app is not None
     assert create_app is legacy
+
+
+def test_job_lease_released_after_worker_exception(tmp_path):
+    from core.job_manager import ManagedJob
+    db = tmp_path / "novel.sqlite3"
+    store = Store(db)
+    job = ManagedJob(store)
+    assert not job.lease.owned
+    try:
+        job.start({"engine": "HachimiMT-60-QT", "glossary": ""})
+    except ValueError:
+        pass
+    assert not job.lease.owned
