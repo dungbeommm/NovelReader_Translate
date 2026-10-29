@@ -6,6 +6,7 @@ services:
     name: novelreader-translate
     runtime: docker
     plan: free
+    autoDeployTrigger: off
     region: singapore
     dockerfilePath: ./Dockerfile.render
     dockerContext: .
