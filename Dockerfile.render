@@ -1,0 +1,26 @@
+# CPU-only WebUI container for Render. The main Dockerfile remains unchanged.
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+    NOVEL_DATA=/app/data \
+    NOVEL_MODELS=/app/models/translation \
+    HACHIMIMT_MODELS_DIR=/app/models/translation \
+    TTS_VOICE_DIR=/app/models/voices \
+    NOVEL_OUTPUT_TEXT=/app/output_text \
+    NOVEL_OUTPUT_AUDIO=/app/output_audio \
+    HF_HOME=/cache/huggingface \
+    OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libgomp1 espeak-ng \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements-render.txt /app/requirements-render.txt
+RUN pip install --no-cache-dir -r requirements-render.txt
+COPY . /app
+RUN useradd -u 10001 -m appuser \
+    && mkdir -p /app/data/logs /app/models/translation /app/models/voices \
+         /app/output_text /app/output_audio /cache/huggingface \
+    && chown -R appuser:appuser /app /cache
+USER appuser
+EXPOSE 8000
+# Never expose the full app to the internet without an access password.
+CMD ["sh", "-c", "if [ -z \"\${NOVEL_WEB_ACCESS_TOKEN:-}\" ]; then echo 'NOVEL_WEB_ACCESS_TOKEN is required for public deployment' >&2; exit 1; fi; exec uvicorn main:app --host 0.0.0.0 --port \${PORT:-8000} --workers 1"]
