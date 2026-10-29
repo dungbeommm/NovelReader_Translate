@@ -23,4 +23,4 @@ RUN useradd -u 10001 -m appuser \
 USER appuser
 EXPOSE 8000
 # Never expose the full app to the internet without an access password.
-CMD ["sh", "-c", "if [ -z \"\${NOVEL_WEB_ACCESS_TOKEN:-}\" ]; then echo 'NOVEL_WEB_ACCESS_TOKEN is required for public deployment' >&2; exit 1; fi; exec uvicorn main:app --host 0.0.0.0 --port \${PORT:-8000} --workers 1"]
+CMD ["sh", "-c", "if [ -z \"${NOVEL_WEB_ACCESS_TOKEN:-}\" ]; then echo 'NOVEL_WEB_ACCESS_TOKEN is required for public deployment' >&2; exit 1; fi; exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
