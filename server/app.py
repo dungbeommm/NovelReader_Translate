@@ -57,6 +57,9 @@ def create_app():
     allow_tunnel = tunnel_allowed()
     if not allow_tunnel:
         allowed = [h.strip() for h in env_hosts.split(",")] if env_hosts else ['localhost', '127.0.0.1', '[::1]', 'testserver']
+        space_host = os.environ.get("SPACE_HOST", "").strip()
+        if space_host and space_host not in allowed:
+            allowed.append(space_host)
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed)
 
     app.middleware('http')(local_guard)

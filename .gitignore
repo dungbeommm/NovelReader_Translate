@@ -8,3 +8,6 @@ output_text/
 output_audio/
 .venv/
 __marimo__/
+target/
+build/
+dist/

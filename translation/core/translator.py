@@ -453,13 +453,38 @@ def _optional_torch():
 
 
 def _require_torch():
-    torch = _optional_torch()
+    # An explicitly requested accelerator may need more than the optional
+    # startup probe's eight seconds on its first Windows DLL load.
+    if os.getenv("HACHIMIMT_TORCH_DEVICE", "auto").strip().lower() == "xpu":
+        try:
+            import torch
+        except ImportError as exc:
+            raise RuntimeError("XPU cần PyTorch Intel GPU trong môi trường đang chạy.") from exc
+    else:
+        torch = _optional_torch()
     if torch is None:
         raise RuntimeError(
             "Backend PyTorch cần cài torch. Engine mặc định CTranslate2 không cần torch. "
             "Nếu muốn dùng PyTorch, cài torch rồi cài: pip install -r requirements-pytorch.txt"
         )
     return torch
+
+
+def _select_torch_device(torch) -> str:
+    requested = os.getenv("HACHIMIMT_TORCH_DEVICE", "auto").strip().lower()
+    if requested not in {"auto", "cpu", "cuda", "xpu"}:
+        raise ValueError("HACHIMIMT_TORCH_DEVICE phải là auto/cpu/cuda/xpu.")
+    if requested == "cpu":
+        return "cpu"
+    if requested != "auto":
+        runtime = getattr(torch, requested, None)
+        if runtime is None or not runtime.is_available():
+            raise RuntimeError(f"PyTorch không thấy thiết bị {requested}; không chuyển sang CPU.")
+        return requested
+    try:
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
 
 
 def _torch_cuda_available() -> bool:
@@ -947,6 +972,8 @@ class HachimiTranslator:
             if self._backend == Backend.TRANSFORMERS:
                 return _torch_cuda_device_name() or self._profile.gpu_name or "CUDA GPU"
             return self._profile.gpu_name or "CUDA GPU"
+        if self.device == "xpu":
+            return f"Intel XPU · {_require_torch().xpu.get_device_name(0)}"
         return "CPU"
 
     @property
@@ -1040,6 +1067,8 @@ class HachimiTranslator:
             self._tokenize_pool = None
         if self._torch_device == "cuda":
             _torch_empty_cuda_cache()
+        elif self._torch_device == "xpu":
+            _require_torch().xpu.empty_cache()
 
     def _get_tokenize_pool(self) -> ThreadPoolExecutor:
         if self._tokenize_pool is None:
@@ -1168,16 +1197,16 @@ class HachimiTranslator:
 
         model_path = ensure_model_files(config, Backend.TRANSFORMERS)
         tokenizer = AutoTokenizer.from_pretrained(model_path)
-        try:
-            self._torch_device = "cuda" if torch.cuda.is_available() else "cpu"
-        except Exception:
-            self._torch_device = "cpu"
+        self._torch_device = _select_torch_device(torch)
         if config.use_marian_class:
             model = MarianMTModel.from_pretrained(model_path)
         else:
             model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
 
-        model = model.to(self._torch_device).eval()
+        if self._torch_device == "xpu":
+            model = model.to(device="xpu", dtype=torch.float16).eval()
+        else:
+            model = model.to(self._torch_device).eval()
         self._tokenizer = tokenizer
         self._torch_model = model
 

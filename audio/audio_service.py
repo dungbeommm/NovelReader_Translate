@@ -207,7 +207,7 @@ def tts_runtime_status():
 
 
 def get_voice(voice_id: str = "ngochuyennew"):
-    """Nạp và cache PiperVoice theo voice_id (tự động kích hoạt GPU CUDA nếu có)."""
+    """Cache PiperVoice; auto CPU/CUDA, or explicitly select Intel OpenVINO."""
     voice_id = (voice_id or "ngochuyennew").strip()
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", voice_id):
         raise ValueError("ID giọng đọc không hợp lệ")
@@ -234,15 +234,21 @@ def get_voice(voice_id: str = "ngochuyennew"):
         from piper import PiperVoice
 
         device = os.getenv('PIPER_DEVICE', 'auto').strip().lower()
-        if device not in {'auto', 'cpu', 'cuda'}:
-            raise ValueError('PIPER_DEVICE phải là auto, cpu hoặc cuda')
+        if device not in {'auto', 'cpu', 'cuda', 'openvino'}:
+            raise ValueError('PIPER_DEVICE phải là auto, cpu, cuda hoặc openvino')
         require_cuda = device == 'cuda' or os.getenv('PIPER_REQUIRE_CUDA') == '1'
-        if device == 'cpu' and require_cuda:
-            raise ValueError('PIPER_DEVICE=cpu xung đột PIPER_REQUIRE_CUDA=1')
-        use_cuda = device != 'cpu' and is_cuda_available_for_piper()
+        if device in {'cpu', 'openvino'} and require_cuda:
+            raise ValueError(f'PIPER_DEVICE={device} xung đột PIPER_REQUIRE_CUDA=1')
+        use_cuda = device in {'auto', 'cuda'} and is_cuda_available_for_piper()
         if require_cuda and not use_cuda:
             raise RuntimeError('Piper không có CUDAExecutionProvider. Chạy lại cell cài GPU, restart runtime rồi kiểm tra CUDA/cuDNN.')
         inst = None
+        if device == 'openvino':
+            from piper.config import PiperConfig
+            from tts.openvino_session import OpenVINOSession
+            with config_path.open(encoding='utf-8') as f:
+                config = PiperConfig.from_dict(json.load(f))
+            inst = PiperVoice(session=OpenVINOSession(model_path), config=config)
         if use_cuda:
             try:
                 inst = PiperVoice.load(
@@ -267,7 +273,11 @@ def get_voice(voice_id: str = "ngochuyennew"):
 
         _voice_instances[cache_key] = inst
         active_providers = getattr(inst.session, "get_providers", lambda: [])() if hasattr(inst, "session") else []
-        device_label = "GPU (CUDA)" if any("CUDA" in str(p) for p in active_providers) else "CPU"
+        device_label = "CPU"
+        if any("CUDA" in str(p) for p in active_providers):
+            device_label = "GPU (CUDA)"
+        elif any("OpenVINO" in str(p) for p in active_providers):
+            device_label = "GPU Intel (OpenVINO)"
         log.info("Đã nạp xong model TTS %s [Thiết bị: %s]", voice_id, device_label)
         return inst
 

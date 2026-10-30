@@ -1,3 +1,15 @@
+---
+title: NovelReader
+emoji: 📚
+colorFrom: blue
+colorTo: green
+sdk: gradio
+sdk_version: "6.30.0"
+python_version: "3.12"
+app_file: app.py
+pinned: false
+---
+
 # NovelReader
 
 Notebook giờ chỉ là **launcher cho WebUI**, không hiển thị bảng điều khiển dịch/TTS/truyện.

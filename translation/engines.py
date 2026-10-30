@@ -199,6 +199,8 @@ class LocalEngine(TranslatorEngine):
             return
         except Exception as exc:
             self.translator = None
+            if self.backend in ('transformers', 'pytorch', 'torch') and os.getenv('HACHIMIMT_TORCH_DEVICE', '').strip().lower() == 'xpu':
+                raise RuntimeError('Không tải được model trên Intel XPU; không chuyển sang CT2/CPU.') from exc
             log.warning("HachimiTranslator core load failed (%s), using fallback CT2 loader: %s", self.model_key, exc)
 
         from .ct2_safe_import import import_ctranslate2
