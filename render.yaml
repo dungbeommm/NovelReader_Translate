@@ -1,0 +1,26 @@
+# Render Blueprint for the full FastAPI WebUI, not GitHub Pages.
+# The free tier is suitable for UI/API testing, NOT long translation/TTS jobs.
+# Free disks are ephemeral; store backups and final results externally.
+services:
+  - type: web
+    name: novelreader-translate
+    runtime: docker
+    plan: free
+    autoDeployTrigger: off
+    region: singapore
+    dockerfilePath: ./Dockerfile.render
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: NOVEL_WEB_ACCESS_TOKEN
+        sync: false
+      - key: ALLOWED_HOSTS
+        value: "*.onrender.com"
+      - key: PIPER_DEVICE
+        value: "cpu"
+      - key: CUDA_VISIBLE_DEVICES
+        value: "-1"
+      - key: AUDIO_WORKERS
+        value: "1"
+      - key: HACHIMIMT_WEB_BATCH_SIZE
+        value: "1"

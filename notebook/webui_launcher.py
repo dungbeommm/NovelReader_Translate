@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import secrets
 import shutil
 import subprocess
@@ -322,7 +323,77 @@ def ensure_zrok(repo_dir, token):
     return "", "zrok không trả về URL: \n" + tail(log, 60)
 
 
-def launch(repo_dir, *, hf_token="", zrok_token=""):
+def _localtunnel_command():
+    if not shutil.which("node") or not shutil.which("npm"):
+        if not (sys.platform.startswith("linux") and os.geteuid() == 0
+                and shutil.which("apt-get")):
+            raise RuntimeError("Cần cài Node.js và npm để chạy LocalTunnel.")
+        _say("Cài Node.js và npm cho LocalTunnel...")
+        for command in (["apt-get", "update", "-qq"],
+                        ["apt-get", "install", "-y", "-qq", "nodejs", "npm"]):
+            installed = _run(command, timeout=300)
+            if installed.returncode:
+                raise RuntimeError("Cài Node.js/npm thất bại: " + installed.stderr[-1500:])
+    prefix = Path("/tmp/novelreader-localtunnel")
+    client = prefix / "node_modules/localtunnel/bin/lt.js"
+    if not client.is_file():
+        _say("Cài LocalTunnel 2.0.2...")
+        installed = _run(
+            [shutil.which("npm"), "install", "--prefix", str(prefix),
+             "--no-audit", "--no-fund", "localtunnel@2.0.2"], timeout=300)
+        if installed.returncode:
+            raise RuntimeError("Cài LocalTunnel thất bại: " + installed.stderr[-1500:])
+    return [shutil.which("node"), str(client), "--port", "8000",
+            "--local-host", "127.0.0.1"]
+
+
+def ensure_localtunnel(repo_dir):
+    logs = Path(repo_dir) / "data/logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    log = logs / "localtunnel.log"
+    pid_file = logs / "localtunnel.pid"
+    pattern = re.compile(r"https://[a-z0-9-]+\.loca\.lt\b", re.I)
+    existing = False
+    try:
+        command = _commandline(int(pid_file.read_text().strip()))
+        existing = "localtunnel/bin/lt.js" in command and "--port 8000" in command
+    except (OSError, ValueError):
+        pass
+    process = None
+    if existing:
+        _say("Giữ nguyên LocalTunnel đang chạy.")
+    else:
+        command = _localtunnel_command()
+        with log.open("w", encoding="utf-8") as output:
+            process = subprocess.Popen(
+                command, cwd=str(repo_dir), env=dict(os.environ),
+                stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
+                start_new_session=True)
+        pid_file.write_text(str(process.pid), encoding="ascii")
+    for _ in range(60):
+        if process is not None and process.poll() is not None:
+            break
+        matches = pattern.findall(tail(log, 200))
+        if matches:
+            return matches[-1] + "/", ""
+        time.sleep(1)
+    return "", "LocalTunnel chưa trả URL; xem data/logs/localtunnel.log:\n" + tail(log, 60)
+
+
+def _localtunnel_password():
+    try:
+        with urllib.request.urlopen("https://loca.lt/mytunnelpassword", timeout=15) as response:
+            value = response.read(256).decode("utf-8").strip()
+        # The public server expects the tunnel machine's public IP, not a WebUI token.
+        import ipaddress
+        return str(ipaddress.ip_address(value))
+    except (OSError, ValueError):
+        return ""
+
+
+def launch(repo_dir, *, hf_token="", zrok_token="", tunnel="zrok"):
+    if tunnel not in ("zrok", "localtunnel"):
+        raise ValueError("Tunnel phải là zrok hoặc localtunnel.")
     repo_dir = Path(repo_dir).resolve()
     if not (repo_dir / "main.py").is_file():
         raise RuntimeError("Không thấy main.py trong repo NovelReader.")
@@ -336,7 +407,10 @@ def launch(repo_dir, *, hf_token="", zrok_token=""):
     ensure_dependencies(repo_dir)
     access_code = ensure_webui(repo_dir)
     try:
-        url, tunnel_error = ensure_zrok(repo_dir, os.getenv("ZROK_ACCOUNT_TOKEN", "").strip())
+        if tunnel == "localtunnel":
+            url, tunnel_error = ensure_localtunnel(repo_dir)
+        else:
+            url, tunnel_error = ensure_zrok(repo_dir, os.getenv("ZROK_ACCOUNT_TOKEN", "").strip())
     except Exception as exc:
         url, tunnel_error = "", f"{type(exc).__name__}: {exc}"
     result = {
@@ -346,6 +420,8 @@ def launch(repo_dir, *, hf_token="", zrok_token=""):
         "gpu": gpu or "CPU",
         "tunnel_error": tunnel_error,
         "repo_dir": str(repo_dir),
+        "tunnel": tunnel,
+        "tunnel_password": _localtunnel_password() if tunnel == "localtunnel" and url else "",
     }
     print_result(result)
     return result
@@ -359,6 +435,9 @@ def print_result(result):
     _say("MA_TRUY_CAP: " + result.get("access_code", ""))
     _say("LOCAL_URL: " + result.get("local_url", URL_LOCAL))
     _say("TAI_NGUYEN: " + result.get("gpu", "CPU"))
+    if result.get("tunnel") == "localtunnel":
+        _say("TUNNEL_PASSWORD: " + (result.get("tunnel_password") or "Không lấy được; mở https://loca.lt/mytunnelpassword từ MoLab để kiểm tra."))
+        _say("Nếu loca.lt hỏi Tunnel Password, nhập TUNNEL_PASSWORD; sau đó đăng nhập WebUI bằng MA_TRUY_CAP.")
     if result.get("tunnel_error"):
         _say("CANH_BAO_TUNNEL: " + result["tunnel_error"])
     _say("Mở WEBUI_URL và nhập MA_TRUY_CAP ở trang đăng nhập.")
@@ -369,7 +448,8 @@ def print_logs(result, lines=45):
     root = Path(result["repo_dir"]) / "data/logs"
     for name, filename in (
         ("WEBUI / Uvicorn", "webui.log"),
-        ("ZROK / Tunnel", "zrok_share.log"),
+        (("LOCALTUNNEL / Tunnel", "localtunnel.log") if result.get("tunnel") == "localtunnel"
+         else ("ZROK / Tunnel", "zrok_share.log")),
         ("ỨNG DỤNG / JOB", "app.log"),
     ):
         _say("\n" + "-" * 16 + " LOGCAT " + name + " " + "-" * 16)

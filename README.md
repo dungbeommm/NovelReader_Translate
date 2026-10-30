@@ -12,6 +12,14 @@ pinned: false
 
 # NovelReader
 
+## Triển khai WebUI lên Render (CPU)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/dungbeommm/NovelReader_Translate)
+
+Cấu hình đã có sẵn tại [render.yaml](render.yaml), [Dockerfile.render](Dockerfile.render) và [requirements-render.txt](requirements-render.txt). Sử dụng **Blueprint Free** ở vùng Singapore. Trong bước tạo Blueprint, đặt `NOVEL_WEB_ACCESS_TOKEN` thành một mật khẩu dài, ngẫu nhiên, giữ bí mật; cần dùng mã này để đăng nhập WebUI. Không commit token lên GitHub. Có thể thêm `HF_TOKEN` tại phần Environment trên Render nếu cần kết nối kho Hugging Face riêng.
+
+**Giới hạn quan trọng:** Render Free chỉ phù hợp kiểm tra giao diện/API, không dành cho dịch hoặc TTS lâu dài. Gói Free có RAM thấp và hệ thống tự ngủ khi không có truy cập; dữ liệu SQLite, chương đã tải lên, model và file audio lưu cục bộ **sẽ bị mất khi restart, redeploy hoặc spin down**. Với các tác vụ thật, cần máy chủ có ổ lưu bền vững hoặc thiết kế tách WebUI khỏi worker xử lý và đồng bộ dữ liệu lên kho từ xa.
+
 Notebook giờ chỉ là **launcher cho WebUI**, không hiển thị bảng điều khiển dịch/TTS/truyện.
 
 ## Notebook
