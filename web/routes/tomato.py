@@ -39,4 +39,7 @@ def tomato_start(payload: TomatoStart):
 def tomato_cancel():
     if not pipeline.downloading():
         raise HTTPException(409, "Không có tác vụ tải nào đang chạy.")
-    return pipeline.cancel()
+    try:
+        return pipeline.cancel()
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
