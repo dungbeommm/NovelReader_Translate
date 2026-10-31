@@ -136,7 +136,7 @@ class TomatoPipeline:
         if not BOOK_ID_RE.fullmatch(book_id):
             raise ValueError("ID truyện phải gồm 8–25 chữ số.")
         with self._lock:
-            if self._status["active"]:
+            if self._status["active"] or (self._thread is not None and self._thread.is_alive()):
                 raise ValueError("Đang tải một truyện khác. Chỉ được chạy một tác vụ.")
             if runtime.job.active:
                 raise ValueError("Hãy kết thúc job dịch hiện tại trước khi tải truyện mới.")
