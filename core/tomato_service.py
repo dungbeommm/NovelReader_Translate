@@ -175,6 +175,10 @@ class TomatoPipeline:
             self._job_id = job["id"]
             while True:
                 if self._cancel.is_set():
+                    try:
+                        client.request("POST", f"/api/jobs/{self._job_id}/cancel")
+                    except TomatoError:
+                        pass
                     raise TomatoError("Đã hủy tải truyện.")
                 info = client.job(self._job_id)
                 if info is None:
@@ -210,6 +214,9 @@ class TomatoPipeline:
             chapters, encoding = parse_file(filename, data)
             if not chapters:
                 raise TomatoError("Tệp tải về không chứa chương hợp lệ.")
+            rust_count = int(progress.get("saved_chapters") or 0)
+            if rust_count and len(chapters) < int(rust_count * 0.9):
+                raise TomatoError(f"Tệp đầu ra chỉ tách được {len(chapters)}/{rust_count} chương. Kiểm tra định dạng TXT/EPUB của Tomato.")
             with runtime.job.lock:
                 if runtime.job.active:
                     raise TomatoError("Đã có job dịch khác hoạt động; không thể thay truyện.")
