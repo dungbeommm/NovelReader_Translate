@@ -1,3 +1,5 @@
+from urllib.error import URLError
+
 """Unit tests for the Rust Tomato integration (no live Fanqie network)."""
 import pytest
 
@@ -60,3 +62,18 @@ def test_pipeline_initial_state_and_cancel_guard():
     assert not bridge.downloading()
     with pytest.raises(ValueError, match="Chỉ được hủy"):
         bridge.cancel()
+
+
+def test_connection_failure_mentions_endpoint_without_password(monkeypatch):
+    import core.tomato_service as mod
+
+    monkeypatch.setenv("TOMATO_WEB_URL", "http://127.0.0.1:18423")
+    monkeypatch.setenv("TOMATO_WEB_PASSWORD", "private-test-secret")
+    def fail(*args, **kwargs):
+        raise URLError("Connection refused")
+    monkeypatch.setattr(mod, "urlopen", fail)
+    client = TomatoClient()
+    with pytest.raises(TomatoError, match="127.0.0.1:18423") as err:
+        client.request("GET", "/api/status")
+    assert "Connection refused" in str(err.value)
+    assert "private-test-secret" not in str(err.value)
