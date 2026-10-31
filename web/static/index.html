@@ -10,6 +10,7 @@
 <link href="/static/fonts/uicons-bold-rounded.css" rel="stylesheet"/>
 <link href="/static/fonts/inter.css" rel="stylesheet"/>
 <link href="/static/fonts/jetbrains-mono.css" rel="stylesheet"/>
+<link href="/static/tomato.css?v=1" rel="stylesheet"/>
 <link href="/static/style.css?v=4.9.4" rel="stylesheet"/><link href="/static/monitor.css?v=4.8.21" rel="stylesheet"/>
 <link href="/static/workspace.css?v=4.9.4" rel="stylesheet"/>
 <link href="/static/material-layout.css?v=40" rel="stylesheet"/>
@@ -89,6 +90,21 @@
   </div>
 
   <div class="source-side-col">
+  <form class="tomato-import" id="tomato-form" aria-label="Tải truyện theo ID Fanqie">
+    <label for="tomato-book-id" class="tomato-import-title"><i class="fi fi-br-book-alt" aria-hidden="true"></i> Tải truyện bằng ID</label>
+    <div class="tomato-id-row">
+      <input id="tomato-book-id" type="text" inputmode="numeric" maxlength="25" pattern="[0-9]{8,25}" required autocomplete="off" placeholder="ID truyện 番茄小说"/>
+      <button type="submit" class="primary" id="tomato-start"><i class="fi fi-br-play" aria-hidden="true"></i> Tải và dịch</button>
+    </div>
+    <div class="tomato-actions">
+      <span class="tomato-status" id="tomato-stage">Chưa bắt đầu</span>
+      <button type="button" id="tomato-cancel" disabled>Hủy tải</button>
+    </div>
+    <progress class="tomato-progress" id="tomato-progress" max="100" value="0" aria-label="Tiến độ tải truyện"></progress>
+    <div class="tomato-actions"><span class="tomato-status" id="tomato-count">0 / 0 chương</span></div>
+    <p class="tomato-status" id="tomato-status" role="status" aria-live="polite">Nhập ID, NovelReader tự tải chữ → tách chương → dịch → TTS.</p>
+    <p class="tomato-help">Sử dụng Tomato Downloader chạy nội bộ; kết quả dịch và audio được quản lý trong NovelReader.</p>
+  </form>
     <label aria-label="Chọn tệp truyện TXT hoặc EPUB" class="dropzone" id="dropzone" role="button" tabindex="0">
       <input accept=".txt,.epub" hidden="" id="file" type="file"/>
       <i aria-hidden="true" class="fi fi-br-upload upload-icon"></i>
@@ -573,6 +589,7 @@
 </div>
 <!-- MODAL CÀI ĐẶT NÂNG CAO -->
 <script defer="" src="/static/app.js?v=4.9.10"></script>
+<script defer src="/static/tomato.js?v=1"></script>
 <dialog id="huggingface-result-dialog" style="width:min(520px,calc(100vw - 32px));background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:22px;">
 <h2 style="margin-top:0;display:flex;align-items:center;gap:8px;"><i aria-hidden="true" class="fi fi-br-cloud"></i> Tải lên Hugging Face thành công!</h2>
 <p id="hf-dialog-filename" style="font-size:13px;color:var(--text);"></p>
