@@ -21,3 +21,5 @@
   .tomato-id-row { flex-direction: column; }
   .tomato-id-row input, .tomato-id-row button { width: 100%; }
 }
+
+.tomato-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
