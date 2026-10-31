@@ -22,6 +22,19 @@ Cấu hình đã có sẵn tại [render.yaml](render.yaml), [Dockerfile.render]
 
 Notebook giờ chỉ là **launcher cho WebUI**, không hiển thị bảng điều khiển dịch/TTS/truyện.
 
+
+## Tải truyện 番茄小说 bằng ID
+
+NovelReader có thêm ô **Tải truyện bằng ID** ngay trong mục **Truyện nguồn**. Chỉ nhập ID, công cụ sử dụng Tomato-Novel-Downloader (dịch vụ Rust riêng) để tải chữ, tự nhập danh sách chương rồi khởi động HachimiMT và TTS theo cài đặt của NovelReader. Không cần mở WebUI Tomato riêng.
+
+Để chạy cả hai dịch vụ trong Docker Compose, thêm `TOMATO_WEB_PASSWORD` vào file `.env` riêng tư, rồi chạy:
+
+```bash
+docker compose -f compose.yaml -f compose.tomato.yaml up -d --build
+```
+
+Hướng dẫn cài local/MoLab, sơ đồ xử lý, API và lưu ý an toàn: **[Tích hợp Tomato Downloader](docs/TOMATO_INTEGRATION.md)**.
+
 ## Notebook
 - [NovelReader_Molab.py](NovelReader_Molab.py): chạy bằng Marimo/MoLab.
 - [NovelReader_Colab.ipynb](NovelReader_Colab.ipynb): chạy bằng Google Colab.
