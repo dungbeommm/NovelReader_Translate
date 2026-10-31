@@ -9,6 +9,8 @@
   const startButton = $t('tomato-start');
   const cancelButton = $t('tomato-cancel');
   const statusLine = $t('tomato-status');
+  const connectionLine = $t('tomato-connection');
+  const checkButton = $t('tomato-check');
   const stage = $t('tomato-stage');
   const count = $t('tomato-count');
   const progress = $t('tomato-progress');
@@ -53,6 +55,29 @@
     }
   }
 
+  async function checkTomatoConnection() {
+    checkButton.disabled = true;
+    connectionLine.textContent = 'Đang kiểm tra dịch vụ Rust…';
+    try {
+      const info = await api('/api/tomato/health');
+      const endpoint = info.url || 'chưa cấu hình';
+      if (info.connected) {
+        connectionLine.textContent = 'Đã kết nối: ' + endpoint + (info.version ? ' · v' + info.version : '');
+        connectionLine.classList.remove('tomato-error');
+      } else {
+        connectionLine.textContent = 'Chưa kết nối: ' + endpoint + '. ' + (info.detail || 'Kiểm tra dịch vụ Rust.');
+        connectionLine.classList.add('tomato-error');
+      }
+    } catch (error) {
+      connectionLine.classList.add('tomato-error');
+      connectionLine.textContent = 'Kiểm tra kết nối thất bại: ' + error.message;
+    } finally {
+      checkButton.disabled = false;
+    }
+  }
+
+  checkButton.addEventListener('click', checkTomatoConnection);
+
   form.addEventListener('submit', event => {
     event.preventDefault();
     safe(async () => {
@@ -82,5 +107,6 @@
   }));
 
   refreshTomato();
+  checkTomatoConnection();
   setInterval(refreshTomato, 3000);
 })();
