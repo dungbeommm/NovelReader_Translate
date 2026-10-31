@@ -76,6 +76,37 @@ Nếu muốn sử dụng trong MoLab, phải cài được executable Linux tư�
 
 Bảo vệ API NovelReader như các endpoint hiện có: xác thực web và header `X-App-Request: novel-translator` đối với các lệnh POST. Không truyền URL do người dùng tự cung cấp vào backend Tomato (chỉ nhận ID chữ số); đích đến Rust được cấu hình từ biến môi trường máy chủ.
 
+
+## Khắc phục: không kết nối được Tomato Downloader
+
+NovelReader **không chứa sẵn tiến trình Rust** trong container Python. Form nhập ID chỉ là client của một Tomato Web Server độc lập.
+
+1. **Chạy Docker Compose**: bắt buộc đưa cả file override `compose.tomato.yaml` vào lệnh:
+
+   ```bash
+   docker compose -f compose.yaml -f compose.tomato.yaml up -d --build
+   docker compose -f compose.yaml -f compose.tomato.yaml ps
+   docker compose -f compose.yaml -f compose.tomato.yaml logs --tail=80 tomato
+   ```
+
+   `web` dùng `TOMATO_WEB_URL=http://tomato:18423` (tên dịch vụ Docker). *Không dùng* `127.0.0.1:18423` trong container Python để truy cập một container khác.
+
+2. **Windows / chạy local không có Docker**: tải binary phù hợp từ [Tomato Releases](https://github.com/zhongbai2333/Tomato-Novel-Downloader/releases). Trong PowerShell:
+
+   ```powershell
+   $env:TOMATO_WEB_ADDR="127.0.0.1:18423"
+   $env:TOMATO_WEB_PASSWORD="mật-khẩu-của-bạn"
+   & ".\\TomatoNovelDownloader-Win64-xxx.exe" --server
+   ```
+
+   Mở NovelReader bằng một cửa sổ PowerShell khác có cùng `TOMATO_WEB_PASSWORD` và `TOMATO_WEB_URL=http://127.0.0.1:18423`. Mở `http://127.0.0.1:18423/api/status` trên máy chạy Rust để kiểm tra cổng.
+
+3. **MoLab / Render / cloud**: `127.0.0.1` bên trong runtime là **máy chủ cloud**, không phải Windows của bạn. Cần chạy Tomato cùng runtime, cùng mạng Docker hoặc trỏ đến một dịch vụ HTTPS riêng tư có thể truy cập từ cloud. Không mở cổng Rust trực tiếp ra Internet khi chưa xác thực.
+
+4. **Chẩn đoán trực tiếp trong UI**: bấm **Kiểm tra kết nối** ở khung tải theo ID, hoặc gọi `GET /api/tomato/health` qua phiên NovelReader. API trả về `connected`, `url`, `version` hoặc `detail`; không trả mật khẩu.
+
+5. Nếu đã chạy Tomato nhưng vẫn lỗi, kiểm tra `TOMATO_WEB_PASSWORD` khớp ở hai tiến trình. HTTP 401/403 khác với lỗi từ chối kết nối; kiểm tra cấu hình proxy/firewall khi cần.
+
 ## Giới hạn được biết
 
 - Phiên bản Rust từ repo chính có thể yêu cầu thư viện Official-API riêng; dùng bản binary/image được tác giả phát hành. Build `no-official-api` có hạn chế API.
