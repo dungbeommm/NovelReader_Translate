@@ -1,8 +1,9 @@
 """NovelReader API for downloading a Fanqie novel by book ID."""
+import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from core.tomato_service import TomatoError, pipeline
+from core.tomato_service import TomatoClient, TomatoError, pipeline
 from web.schemas import Config
 
 router = APIRouter()
@@ -13,6 +14,18 @@ class TomatoStart(BaseModel):
     replace_existing: bool = False
     config: Config = Field(default_factory=Config)
 
+
+
+@router.get("/api/tomato/health")
+def tomato_health():
+    """Troubleshooting endpoint: never return secrets to the browser."""
+    configured_url = os.getenv("TOMATO_WEB_URL", "http://127.0.0.1:18423")
+    try:
+        client = TomatoClient()
+        status = client.request("GET", "/api/status")
+        return {"connected": True, "url": client.url, "version": status.get("version")}
+    except TomatoError as exc:
+        return {"connected": False, "url": configured_url, "detail": str(exc)}
 
 @router.get("/api/tomato/status")
 def tomato_status():
