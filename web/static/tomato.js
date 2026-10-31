@@ -31,7 +31,7 @@
     try {
       const info = await api('/api/tomato/status');
       startButton.disabled = !!info.active;
-      cancelButton.disabled = !info.active;
+      cancelButton.disabled = !info.active || !['starting', 'downloading'].includes(info.stage);
       stage.textContent = labels[info.stage] || info.stage;
       statusLine.textContent = info.message || '';
       statusLine.classList.toggle('tomato-error', info.stage === 'error');
