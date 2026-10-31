@@ -57,7 +57,14 @@ class TomatoClient:
             detail = exc.read(500).decode("utf-8", errors="replace")
             raise TomatoError(f"Tomato API HTTP {exc.code}: {detail}") from exc
         except (URLError, TimeoutError, OSError) as exc:
-            raise TomatoError("Không kết nối được Tomato Downloader. Kiểm tra TOMATO_WEB_URL và dịch vụ Rust.") from exc
+            # Show the actual configured endpoint and reason, without leaking the password.
+            reason = getattr(exc, "reason", exc)
+            cause = str(reason).strip() or type(exc).__name__
+            raise TomatoError(
+                f"Không kết nối được Tomato Downloader tại {self.url} ({cause}). "
+                "Nếu dùng Docker Compose: kiểm tra dịch vụ tomato và TOMATO_WEB_URL=http://tomato:18423. "
+                "Nếu chạy local: mở Tomato-Novel-Downloader --server trước."
+            ) from exc
 
     def job(self, job_id):
         data = self.request("GET", "/api/jobs?" + urlencode({"id": job_id, "all": "true"}))
