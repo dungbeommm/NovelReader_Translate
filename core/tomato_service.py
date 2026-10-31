@@ -104,7 +104,7 @@ class TomatoClient:
             matches = [i for i in candidates if int(i.get("modified_ms") or 0) >= started_ms - 5000]
             if len(matches) != 1:
                 raise TomatoError("Đã tải nhưng không xác định được tệp TXT/EPUB của truyện. Hãy đặt định dạng xuất TXT trong Tomato.")
-        matches.sort(key=lambda i: (i.get("ext") == "txt", int(i.get("modified_ms") or 0)), reverse=True)
+        matches.sort(key=lambda i: (int(i.get("modified_ms") or 0) >= started_ms - 5000, i.get("ext") == "txt", int(i.get("modified_ms") or 0)), reverse=True)
         chosen = matches[0]
         return chosen["name"], self.request("GET", "/download/" + quote(chosen["rel_path"], safe="/"), binary=True)
 
@@ -154,6 +154,9 @@ class TomatoPipeline:
             return dict(self._status)
 
     def cancel(self):
+        with self._lock:
+            if not self._status["active"] or self._status["stage"] not in ("starting", "downloading"):
+                raise ValueError("Chỉ được hủy khi đang tải chương.")
         self._cancel.set()
         job_id = self._job_id
         if job_id is not None and self.downloading():
