@@ -32,6 +32,9 @@ def initialize():
     job = ManagedJob(store)
 
 def ensure_idle():
+    from core.tomato_service import pipeline
+    if pipeline.downloading():
+        raise HTTPException(409, 'Đang tải truyện bằng ID. Hãy đợi tải hoàn tất hoặc hủy tác vụ.')
     if job.active:raise HTTPException(409,'Hãy dừng job dịch trước khi thực hiện thao tác này.')
 
 

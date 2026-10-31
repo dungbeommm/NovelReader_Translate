@@ -1,0 +1,28 @@
+# Optional stack: docker compose -f compose.yaml -f compose.tomato.yaml up -d --build
+# TOMATO_WEB_PASSWORD must be set in .env (never commit it).
+services:
+  web:
+    environment:
+      TOMATO_WEB_URL: http://tomato:18423
+      TOMATO_WEB_PASSWORD: ${TOMATO_WEB_PASSWORD:?Set TOMATO_WEB_PASSWORD in .env}
+    depends_on:
+      - tomato
+
+  tomato:
+    image: zhongbai233/tomato-novel-downloader-webui:latest
+    restart: unless-stopped
+    init: true
+    command: ["--server", "--data-dir", "/data"]
+    environment:
+      TOMATO_WEB_ADDR: 0.0.0.0:18423
+      TOMATO_WEB_PASSWORD: ${TOMATO_WEB_PASSWORD:?Set TOMATO_WEB_PASSWORD in .env}
+    expose:
+      - "18423"
+    volumes:
+      - tomato-data:/data
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+volumes:
+  tomato-data:
